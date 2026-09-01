@@ -48,10 +48,10 @@ object Weld {
         // Angular about the joint centre: each member's own spin, plus each member's momentum about
         // the joint centre. `r × p`, and `r` is the arm from the joint centre to that member's own
         // centre of mass — in the vessel's axes, where the joint centre already is.
-        val shipArmX = shipAbout.comX - joint.about.comX
-        val shipArmY = shipAbout.comY - joint.about.comY
-        val stationArmX = joint.stationComX - joint.about.comX
-        val stationArmY = joint.stationComY - joint.about.comY
+        val shipArmX = shipAbout.comMilliX - joint.about.comMilliX
+        val shipArmY = shipAbout.comMilliY - joint.about.comMilliY
+        val stationArmX = joint.stationComX - joint.about.comMilliX
+        val stationArmY = joint.stationComY - joint.about.comMilliY
 
         // ⚠️ The vessel's momentum is a WORLD quantity and the arms are in the vessel's frame, so one
         // of the two has to be turned before they can be crossed. The momenta come into the frame,
@@ -102,11 +102,11 @@ object Weld {
         val comY = shipPose.toLocalY(station.comX, station.comY) / Composite.PER_MILLI_TILE
         val stationAbout = MassDistribution(
             mass = station.mass,
-            comX = comX,
-            comY = comY,
+            comMilliX = comX,
+            comMilliY = comY,
             gyrationSq = station.about.gyrationSq,
         )
-        val joined = Composite.combined(shipAbout, stationAbout, comX - shipAbout.comX, comY - shipAbout.comY)
+        val joined = Composite.combined(shipAbout, stationAbout, comX - shipAbout.comMilliX, comY - shipAbout.comMilliY)
         return Joint(joined.about, comX, comY)
     }
 

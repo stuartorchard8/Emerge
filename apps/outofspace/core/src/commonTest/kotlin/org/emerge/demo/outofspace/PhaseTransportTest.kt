@@ -186,7 +186,7 @@ class PhaseTransportTest {
         repeat(passes) {
             settleCondensate(
                 edges, sealed(), masses, energies, kelvinOf(masses, energies),
-                down, spin, MassDistribution(mass = 1L, comX = 3_500L, comY = 500L, gyrationSq = 1L),
+                down, spin, MassDistribution(mass = 1L, comMilliX = 3_500L, comMilliY = 500L, gyrationSq = 1L),
             )
         }
     }
@@ -241,7 +241,7 @@ class PhaseTransportTest {
     fun `a spinning ship holds its frost out against the rim`() {
         val (masses, energies) = world(Species.Water, 10L * kg, 100)
         // Axis at x = 2.5 tiles, so the lump at x = 3 is outboard of it and should climb away.
-        val axis = MassDistribution(mass = 1L, comX = 2_500L, comY = 500L, gyrationSq = 1L)
+        val axis = MassDistribution(mass = 1L, comMilliX = 2_500L, comMilliY = 500L, gyrationSq = 1L)
         repeat(30) {
             settleCondensate(
                 edges, sealed(), masses, energies, kelvinOf(masses, energies),

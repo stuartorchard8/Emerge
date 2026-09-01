@@ -275,8 +275,8 @@ fun sweepBodies(
 
     // The centre of mass in each body's own frame — the point it spins about and the point every
     // lever arm is measured from. Fixed for the tick: a rock does not shed cells mid-sweep.
-    val comLocalX = LongArray(n) { bodies[it].about.comX * RigidBody.COM_SCALE }
-    val comLocalY = LongArray(n) { bodies[it].about.comY * RigidBody.COM_SCALE }
+    val comLocalX = LongArray(n) { bodies[it].about.comMilliX * RigidBody.COM_SCALE }
+    val comLocalY = LongArray(n) { bodies[it].about.comMilliY * RigidBody.COM_SCALE }
 
     // Where the wall is going, updated as the bodies shove it. See the note on this function.
     var svx = ship.velocityX
@@ -491,8 +491,8 @@ fun sweepBodies(
             // ⚠️ The ship's centre of mass is a point **in its own grid**, so it goes out through
             // the ship's pose exactly as a body's goes out through the body's. It was a bare grid
             // coordinate before only because the grid was the frame.
-            comX = next.toWorldX(shipAbout.comX * RigidBody.COM_SCALE, shipAbout.comY * RigidBody.COM_SCALE),
-            comY = next.toWorldY(shipAbout.comX * RigidBody.COM_SCALE, shipAbout.comY * RigidBody.COM_SCALE),
+            comX = next.toWorldX(shipAbout.comMilliX * RigidBody.COM_SCALE, shipAbout.comMilliY * RigidBody.COM_SCALE),
+            comY = next.toWorldY(shipAbout.comMilliX * RigidBody.COM_SCALE, shipAbout.comMilliY * RigidBody.COM_SCALE),
             velocityX = svx,
             velocityY = svy,
             angVel = sav,

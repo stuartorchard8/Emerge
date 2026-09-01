@@ -65,8 +65,8 @@ object Composite {
         return Joint(
             MassDistribution(
                 mass = total,
-                comX = a.comX + jointX,
-                comY = a.comY + jointY,
+                comMilliX = a.comMilliX + jointX,
+                comMilliY = a.comMilliY + jointY,
                 gyrationSq = gyrationSq,
             ),
             jointX,

@@ -881,7 +881,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val moveVelocityX = if (dockedStation == null) startVelocityX else state.velocityXAt(moveAbout.mass)
         val moveVelocityY = if (dockedStation == null) startVelocityY else state.velocityYAt(moveAbout.mass)
         val newPose = if (frozen) state.pose else state.pose
-            .turnedAbout(Coord(spin.toInt()), moveAbout.comX * comScale, moveAbout.comY * comScale)
+            .turnedAbout(Coord(spin.toInt()), moveAbout.comMilliX * comScale, moveAbout.comMilliY * comScale)
             .movedBy(moveVelocityX, moveVelocityY)
         val newPositionX = newPose.x
         val newPositionY = newPose.y
@@ -1435,8 +1435,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             motors.add(
                 Motor(
                     thrust = m.thrust,
-                    leverX = tileCentre(grid.xOf(bell)) - about.comX,
-                    leverY = tileCentre(grid.yOf(bell)) - about.comY,
+                    leverX = tileCentre(grid.xOf(bell)) - about.comMilliX,
+                    leverY = tileCentre(grid.yOf(bell)) - about.comMilliY,
                     massPerTick = m.massPerTick,
                 ),
             )

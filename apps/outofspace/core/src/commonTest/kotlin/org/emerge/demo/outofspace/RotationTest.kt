@@ -65,8 +65,8 @@ class RotationTest {
         val grid = OutofspaceConfig().initialGrid
         val d = box(grid).distribution
 
-        assertEquals(tileCentre((HULL_LEFT + HULL_RIGHT) / 2), d.comX, "centre of mass, x")
-        assertEquals(tileCentre((HULL_TOP + HULL_BOTTOM) / 2), d.comY, "centre of mass, y")
+        assertEquals(tileCentre((HULL_LEFT + HULL_RIGHT) / 2), d.comMilliX, "centre of mass, x")
+        assertEquals(tileCentre((HULL_TOP + HULL_BOTTOM) / 2), d.comMilliY, "centre of mass, y")
         assertTrue(d.mass > 0L, "an empty hull cannot be measured")
         // A hollow box's mass is at its walls, so the radius of gyration is a good fraction of the
         // box. Bounded either side rather than pinned, because the exact figure is a consequence of
@@ -78,7 +78,7 @@ class RotationTest {
     /** `τ = rₓF_y − r_yF_x`, with the arm measured from the centre and not from anywhere else. */
     @Test
     fun `torque is the arm crossed with the force`() {
-        val about = MassDistribution(mass = 1_000L, comX = 10_000L, comY = 10_000L, gyrationSq = 0L)
+        val about = MassDistribution(mass = 1_000L, comMilliX = 10_000L, comMilliY = 10_000L, gyrationSq = 0L)
 
         // Two tiles to starboard of centre, pushed sternward: a positive (clockwise, +y down) twist.
         assertEquals(2L * 7L, torqueAbout(about, atX = 12_000L, atY = 10_000L, impulseX = 0L, impulseY = 7L))
@@ -363,8 +363,8 @@ class RotationTest {
     fun `a body aboard a spinning ship drifts outward on its own`() {
         val cfg = OutofspaceConfig()
         val turning = box(cfg.initialGrid).copy(angImpulse = ONE_SPIN * 40L)
-        val axisX = turning.distribution.comX * (Flight.PER_TILE / Rotation.MILLI_TILE)
-        val axisY = turning.distribution.comY * (Flight.PER_TILE / Rotation.MILLI_TILE)
+        val axisX = turning.distribution.comMilliX * (Flight.PER_TILE / Rotation.MILLI_TILE)
+        val axisY = turning.distribution.comMilliY * (Flight.PER_TILE / Rotation.MILLI_TILE)
         val placed = RigidBody.rockBlob(
             radius = 1,
             positionX = 24L * Flight.PER_TILE, positionY = 16L * Flight.PER_TILE,
@@ -403,8 +403,8 @@ class RotationTest {
             val s = controller.state
             val body = s.bodies.single()
             val perMilli = Flight.PER_TILE / Rotation.MILLI_TILE
-            val dx = body.localCentreX(s.pose) / perMilli - s.distribution.comX
-            val dy = body.localCentreY(s.pose) / perMilli - s.distribution.comY
+            val dx = body.localCentreX(s.pose) / perMilli - s.distribution.comMilliX
+            val dy = body.localCentreY(s.pose) / perMilli - s.distribution.comMilliY
             return isqrt(dx * dx + dy * dy)
         }
 

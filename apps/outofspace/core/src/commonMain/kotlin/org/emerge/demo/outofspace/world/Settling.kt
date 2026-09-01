@@ -68,8 +68,8 @@ fun settleCondensate(
         if (spin != 0L && about.mass > 0L) {
             val spun = centrifugalAt(
                 spin,
-                tileCentre(grid.xOf(tile)) - about.comX,
-                tileCentre(grid.yOf(tile)) - about.comY,
+                tileCentre(grid.xOf(tile)) - about.comMilliX,
+                tileCentre(grid.yOf(tile)) - about.comMilliY,
             )
             downX += spun.x.raw
             downY += spun.y.raw

@@ -288,8 +288,8 @@ class RigidBody(
     val angVel: Long get() = angularVelocity(angImpulse, about)
 
     /** Its centre of mass, in the world — the point it actually spins about. */
-    val comX: Long get() = pose.toWorldX(about.comX * COM_SCALE, about.comY * COM_SCALE)
-    val comY: Long get() = pose.toWorldY(about.comX * COM_SCALE, about.comY * COM_SCALE)
+    val comX: Long get() = pose.toWorldX(about.comMilliX * COM_SCALE, about.comMilliY * COM_SCALE)
+    val comY: Long get() = pose.toWorldY(about.comMilliX * COM_SCALE, about.comMilliY * COM_SCALE)
 
     /**
      * The centre of its **bounding box**, in the world — where it looks like it is, for the plating

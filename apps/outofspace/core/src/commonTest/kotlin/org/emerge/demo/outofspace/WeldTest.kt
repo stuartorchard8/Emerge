@@ -52,8 +52,8 @@ class WeldTest {
 
     @Test
     fun `two equal masses join at their midpoint`() {
-        val a = MassDistribution(mass = 1_000L, comX = 0L, comY = 0L, gyrationSq = 0L)
-        val b = MassDistribution(mass = 1_000L, comX = 4_000L, comY = 0L, gyrationSq = 0L)
+        val a = MassDistribution(mass = 1_000L, comMilliX = 0L, comMilliY = 0L, gyrationSq = 0L)
+        val b = MassDistribution(mass = 1_000L, comMilliX = 4_000L, comMilliY = 0L, gyrationSq = 0L)
         val joint = Composite.combined(a, b, 4_000L, 0L)
         assertEquals(2_000L, joint.about.mass)
         assertEquals(2_000L, joint.offsetX, "the joint centre is not halfway between them")
@@ -63,16 +63,16 @@ class WeldTest {
 
     @Test
     fun `a heavy member barely moves the joint centre`() {
-        val light = MassDistribution(mass = 1L, comX = 0L, comY = 0L, gyrationSq = 0L)
-        val heavy = MassDistribution(mass = 999L, comX = 1_000L, comY = 0L, gyrationSq = 0L)
+        val light = MassDistribution(mass = 1L, comMilliX = 0L, comMilliY = 0L, gyrationSq = 0L)
+        val heavy = MassDistribution(mass = 999L, comMilliX = 1_000L, comMilliY = 0L, gyrationSq = 0L)
         val joint = Composite.combined(light, heavy, 1_000L, 0L)
         assertEquals(999L, joint.offsetX, "the joint centre did not sit on the heavy member")
     }
 
     @Test
     fun `combining is symmetric in the members`() {
-        val a = MassDistribution(mass = 3_000L, comX = 0L, comY = 0L, gyrationSq = 500L)
-        val b = MassDistribution(mass = 7_000L, comX = 0L, comY = 2_000L, gyrationSq = 900L)
+        val a = MassDistribution(mass = 3_000L, comMilliX = 0L, comMilliY = 0L, gyrationSq = 500L)
+        val b = MassDistribution(mass = 7_000L, comMilliX = 0L, comMilliY = 2_000L, gyrationSq = 900L)
         val ab = Composite.combined(a, b, 0L, 2_000L)
         val ba = Composite.combined(b, a, 0L, -2_000L)
         assertEquals(ab.about.mass, ba.about.mass)
@@ -81,7 +81,7 @@ class WeldTest {
 
     @Test
     fun `an empty member changes nothing`() {
-        val a = MassDistribution(mass = 5_000L, comX = 100L, comY = 200L, gyrationSq = 700L)
+        val a = MassDistribution(mass = 5_000L, comMilliX = 100L, comMilliY = 200L, gyrationSq = 700L)
         assertEquals(a, Composite.combined(a, MassDistribution.EMPTY, 9_999L, 9_999L).about)
     }
 

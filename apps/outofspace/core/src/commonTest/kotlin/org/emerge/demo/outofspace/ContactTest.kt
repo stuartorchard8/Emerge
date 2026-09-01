@@ -435,7 +435,7 @@ class ContactTest {
      */
     private fun free(vx: Long, vy: Long, spin: Long = 0L) = Operand(
         mass = MASS,
-        about = MassDistribution(mass = MASS, comX = 0L, comY = 0L, gyrationSq = GYRATION_SQ),
+        about = MassDistribution(mass = MASS, comMilliX = 0L, comMilliY = 0L, gyrationSq = GYRATION_SQ),
         comX = 0L, comY = 0L,
         velocityX = vx, velocityY = vy, angVel = spin,
     )

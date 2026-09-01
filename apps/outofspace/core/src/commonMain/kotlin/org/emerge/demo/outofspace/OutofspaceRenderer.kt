@@ -183,8 +183,8 @@ class OutofspaceRenderer {
         val about = state.distribution
         if (about.mass <= 0L) return
         camera.followVessel(
-            about.comX.toFloat() / Rotation.MILLI_TILE,
-            about.comY.toFloat() / Rotation.MILLI_TILE,
+            about.comMilliX.toFloat() / Rotation.MILLI_TILE,
+            about.comMilliY.toFloat() / Rotation.MILLI_TILE,
         )
     }
 

@@ -426,8 +426,8 @@ class FlightTest {
      */
     @Test
     fun `vented gas takes its share of the air's momentum with it`() {
-        val air = MassDistribution(mass = 500L, comX = 0L, comY = 0L, gyrationSq = 1_000_000L)
-        val ship = MassDistribution(mass = 100_000L, comX = 0L, comY = 0L, gyrationSq = 4_000_000L)
+        val air = MassDistribution(mass = 500L, comMilliX = 0L, comMilliY = 0L, gyrationSq = 1_000_000L)
+        val ship = MassDistribution(mass = 100_000L, comMilliX = 0L, comMilliY = 0L, gyrationSq = 4_000_000L)
 
         // Half the gas goes overboard, and the ship is not moving, so nothing else can act.
         val half = airCoupling(
@@ -475,8 +475,8 @@ class FlightTest {
     /** The hull drags its air toward its own motion, and never past it. */
     @Test
     fun `the drag closes the gap toward the hull and stops there`() {
-        val ship = MassDistribution(mass = 100_000L, comX = 0L, comY = 0L, gyrationSq = 4_000_000L)
-        val air = MassDistribution(mass = 1_000L, comX = 0L, comY = 0L, gyrationSq = 1_000_000L)
+        val ship = MassDistribution(mass = 100_000L, comMilliX = 0L, comMilliY = 0L, gyrationSq = 4_000_000L)
+        val air = MassDistribution(mass = 1_000L, comMilliX = 0L, comMilliY = 0L, gyrationSq = 1_000_000L)
         // The ship carries 1e6 over 100_000 of mass, so air of 1_000 wants exactly 10_000.
         fun dragFrom(held: Long) = airCoupling(
             airMomentumX = held, airMomentumY = 0L, airAngImpulse = 0L,

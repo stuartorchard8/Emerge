@@ -1195,8 +1195,8 @@ object OutofspaceAgentHarness {
             "netTorque" -> grams(state.netTorque)
             // Where the ship turns about and how reluctantly -- both in tiles, both moving, which is
             // the point: a torque booked about last tick's centre is booked about the wrong place.
-            "comX" -> state.distribution.comX.toDouble() / Rotation.MILLI_TILE
-            "comY" -> state.distribution.comY.toDouble() / Rotation.MILLI_TILE
+            "comX" -> state.distribution.comMilliX.toDouble() / Rotation.MILLI_TILE
+            "comY" -> state.distribution.comMilliY.toDouble() / Rotation.MILLI_TILE
             "gyration" -> isqrt(state.distribution.gyrationSq).toDouble() / 1000.0
             // Flight, in tiles rather than in the sim's billionths, so a script can say what it means.
             "mass" -> grams(state.mass)

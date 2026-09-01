@@ -85,12 +85,21 @@ object Rotation {
 data class MassDistribution(
     /** Total mass, identical to [vesselMass] — the same walk, so they cannot disagree. */
     val mass: Long,
-    /** Centre of mass in millitiles from the grid origin. */
-    val comX: Long,
-    /** Centre of mass in millitiles from the grid origin. */
-    val comY: Long,
     /**
-     * Squared radius of gyration about ([comX], [comY]), in [Rotation.GYRATION_SCALE]ths of a tile².
+     * Centre of mass in millitiles ([Rotation.MILLI_TILE]) from the grid origin.
+     *
+     * ⚠️ **A radius, not a position.** Every lever arm in the rotational maths is measured from here
+     * and every one of them is a millitile quantity — see [Rotation]'s note on units, [torqueAbout],
+     * which divides by [Rotation.MILLI_TILE], and [gyrationSq], whose scale only coincides with
+     * [Rotation.GYRATION_SCALE] because a millitile² *is* a micro-tile². Placing the grid in the
+     * world is a different question with a different unit; that one is [comX].
+     */
+    val comMilliX: Long,
+    /** Centre of mass in millitiles from the grid origin — see [comMilliX]. */
+    val comMilliY: Long,
+    /**
+     * Squared radius of gyration about ([comMilliX], [comMilliY]), in [Rotation.GYRATION_SCALE]ths
+     * of a tile².
      *
      * The moment of inertia is `mass × gyrationSq / GYRATION_SCALE`, and is deliberately not stored
      * that way round — see [Rotation.GYRATION_SCALE].
@@ -154,7 +163,7 @@ fun massDistribution(
         gyrationSq += scaledRatio(m, mass, rSq)
     }
 
-    return MassDistribution(mass = mass, comX = comX, comY = comY, gyrationSq = gyrationSq)
+    return MassDistribution(mass = mass, comMilliX = comX, comMilliY = comY, gyrationSq = gyrationSq)
 }
 
 /**
@@ -185,8 +194,8 @@ fun atmosphereDistribution(grid: Grid, masses: MassArray, about: MassDistributio
     for (i in perTile.indices) {
         val m = perTile[i]
         if (m == 0L) continue
-        val rx = tileCentre(grid.xOf(TileIndex(i))) - about.comX
-        val ry = tileCentre(grid.yOf(TileIndex(i))) - about.comY
+        val rx = tileCentre(grid.xOf(TileIndex(i))) - about.comMilliX
+        val ry = tileCentre(grid.yOf(TileIndex(i))) - about.comMilliY
         val rSq = rx * rx + ry * ry
         if (rSq == 0L) continue
         // Mass-normalised inside the call, exactly as [massDistribution] does and for the same
@@ -194,7 +203,7 @@ fun atmosphereDistribution(grid: Grid, masses: MassArray, about: MassDistributio
         // the accumulator by the largest `r²` on the grid however much gas is aboard.
         gyrationSq += scaledRatio(m, mass, rSq)
     }
-    return MassDistribution(mass = mass, comX = about.comX, comY = about.comY, gyrationSq = gyrationSq)
+    return MassDistribution(mass = mass, comMilliX = about.comMilliX, comMilliY = about.comMilliY, gyrationSq = gyrationSq)
 }
 
 /** The centre of tile column/row [n], in millitiles. */
@@ -248,8 +257,8 @@ fun cellDistribution(width: Int, height: Int, cells: BooleanArray, massPerTile: 
     }
     return MassDistribution(
         mass = filled * massPerTile,
-        comX = comX,
-        comY = comY,
+        comMilliX = comX,
+        comMilliY = comY,
         gyrationSq = rSqTotal / filled,
     )
 }
@@ -287,8 +296,8 @@ fun spinSpeed(angVelRaw: Long, r: Long): Long {
  * case the whole feature exists for — two thrusters that cancel linearly and spin the ship hard.
  */
 fun torqueAbout(about: MassDistribution, atX: Long, atY: Long, impulseX: Long, impulseY: Long): Long {
-    val rx = atX - about.comX
-    val ry = atY - about.comY
+    val rx = atX - about.comMilliX
+    val ry = atY - about.comMilliY
     return (rx * impulseY - ry * impulseX) / Rotation.MILLI_TILE
 }
 
