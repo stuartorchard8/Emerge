@@ -1,0 +1,53 @@
+# The counter. What a berth will pay for what you are carrying, and what it will sell you.
+#
+# The trade sheet opens itself the moment the clamps take -- a berth is somewhere the player flew to
+# on purpose, so putting the counter in front of them answers the question they arrived with. It can
+# be closed, and the way back is the docking port's own panel, which is what makes closing it safe.
+#
+# What to read in the shots:
+#   `berthed`   -- the sheet as it opens itself: balance, berth, and the two lists;
+#   `listed`    -- one species put up for sale; its row goes green and the network starts routing;
+#   `ordered`   -- one species on order; the same green, on the other list;
+#   `closed`    -- the sheet dismissed, the world back;
+#   `reopened`  -- the way back in, from the docking port's BERTH section;
+#   `narrow`    -- the same counter on a phone-shaped screen, where the sheet comes off the bottom.
+#
+# ⚠️ Two columns because they answer two questions. SELL is what is LOOSE aboard -- the same view the
+# material picker reads -- because the only thing worth offering is something the network can deliver
+# to the mouth. BUY is what the station is holding, because that is the whole of what is on offer.
+#
+# ⚠️ Prices are per hundred kilograms and there are two of them: the bid on the sell side and the ask
+# on the buy side. They differ, and one "price" column would be lying about one of them.
+
+new
+creative 1
+tool build
+camera centre 44 9 14
+
+# A docking port out on the pad, facing starboard, and a station brought to meet its mouth. The
+# camera is pulled back far enough to hold the ship AND the twenty tiles of station beside it.
+brush DockingPort Right
+material STEEL
+place 38 9
+berth 38 9
+shot berthed
+
+# Put the ship's iron up for sale. The row goes green: from here the network routes iron to the mouth.
+tap IRON
+shot listed
+
+# And order some titanium off the shelf.
+tap TITANIUM
+shot ordered
+
+# Close it. A counter has to be closable or a berth is a modal prison.
+tap close
+shot closed
+
+# The way back: the docking port's own panel carries the door. `berth` is the section that says
+# where you are clamped, offers the interlock, and holds the way back to the counter.
+inspect 38 9
+shot berthpanel
+
+tap TRADE
+shot reopened

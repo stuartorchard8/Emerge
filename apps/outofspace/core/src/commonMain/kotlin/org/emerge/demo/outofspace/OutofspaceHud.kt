@@ -27,6 +27,9 @@ import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.Negligible
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
+import org.emerge.demo.outofspace.world.machine.DockingPort
+import org.emerge.demo.outofspace.world.Prices
+import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.machine.Furnace
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.ThrusterControl
@@ -50,7 +53,7 @@ import org.emerge.render.torus.ui.ActionButton
 import kotlin.math.absoluteValue
 
 /** A full-screen overlay: the game's own controls, or the sim's readouts. One at a time. */
-enum class Sheet { None, Menu, Readouts, SaveLoad }
+enum class Sheet { None, Menu, Readouts, SaveLoad, Trade }
 
 /**
  * How many buildable species the stockpile panel names before it stops counting.
@@ -196,6 +199,16 @@ class OutofspaceHud {
      * so two open at once is two scrims and a player who cannot tell which of them a click reaches.
      */
     private var openSheet: Sheet = Sheet.None
+
+    /**
+     * Whether the vessel was berthed last frame, so that arriving can open the counter by itself.
+     *
+     * ⚠️ **A transition, not a state.** Opening the sheet whenever `docked != null` would reopen it
+     * every frame and the player could never close it, which is the exact failure that makes a modal
+     * a prison. Held here beside [openSheet] for the reason that field is: it is a fact about what
+     * the player is looking at, not about the vessel.
+     */
+    private var wasBerthed: Boolean = false
 
     private val collapsed = mutableSetOf<String>()
     private val expanded = mutableSetOf<String>()
@@ -386,6 +399,16 @@ class OutofspaceHud {
             val inspector = inspectPanel(controller)
             wikiPanel(controller, inspector)
 
+            // ⛔ **Arriving opens the counter, once.** A berth is somewhere the player has flown to
+            // on purpose, so putting the trade sheet in front of them is answering the question they
+            // came with rather than interrupting one. Closing it is theirs, and the way back is on
+            // the docking port's own panel — see [dockControls].
+            val berthed = s.docked != null
+            if (berthed && !wasBerthed) openSheet = Sheet.Trade
+            // ⚠️ And letting go closes it, because a counter you have flown away from is a lie.
+            if (!berthed && wasBerthed && openSheet == Sheet.Trade) openSheet = Sheet.None
+            wasBerthed = berthed
+
             // ⚠️ **Last in the frame.** A sheet dims everything under it and takes every click
             // inside its box, so anything drawn after it would sit on top of a scrim that is
             // supposed to be covering the screen.
@@ -394,6 +417,7 @@ class OutofspaceHud {
                 Sheet.Menu -> menuSheet(controller)
                 Sheet.Readouts -> readoutsSheet(controller, fps, stock)
                 Sheet.SaveLoad -> saveLoadSheet(controller)
+                Sheet.Trade -> tradeSheet(controller)
             }
         }
         // Clear one-shot status messages after they've been displayed.
@@ -527,6 +551,109 @@ class OutofspaceHud {
             )
         } else {
             sheet("oos-readouts", "READOUTS", onDismiss = dismiss, heightFraction = 0.85f, rowHeight = 34f, textSize = 15f, body = body)
+        }
+    }
+
+    /**
+     * The counter: what this berth will pay for what you are carrying, and what it will sell you.
+     *
+     * ### Two columns, and they answer two different questions
+     *
+     * **SELL** lists what is loose aboard — [Stockpile.buildable], the same view the material picker
+     * reads — because the only thing worth offering is something the network can actually deliver to
+     * the mouth. Tapping a row puts that species on the port's sell list, which is what makes the
+     * network start routing it here; tapping again takes it off. Nothing is sold by opening this
+     * sheet, and nothing is sold that the player has not named.
+     *
+     * **BUY** lists what the station is holding, at its asking price, because that is the whole of
+     * what is on offer. Tapping a row places a standing order for one packet.
+     *
+     * ⛔ **This does not sell anything by itself, and that is the design.** Stu weighed the
+     * alternative — no sheet at all, an unfiltered demand the moment you berth — and named its
+     * failure exactly: it is not controllable enough not to be a frustration. An unfiltered mouth
+     * would drain the tanks the player was saving, and it would do it silently, because a demand is
+     * invisible until the belts start moving.
+     *
+     * ⚠️ Prices shown are per hundred kilograms, which is the unit [Prices] quotes in, and they are
+     * the **bid** on the left and the **ask** on the right — the two differ, and a single "price"
+     * column would be lying about one of them.
+     */
+    private fun UiBuilder.tradeSheet(controller: OutofspaceController) {
+        val s = controller.state
+        val station = controller.dockedStation
+        val market = s.dockedMarket
+        val port = s.docked?.let { s.deck[it.portTile] as? DockingPort }
+        val stock = s.stockpile
+
+        val body: org.emerge.render.torus.ui.PanelBuilder.() -> Unit = {
+            if (market == null || port == null) {
+                text("not berthed", 0x9A9A9AFFL)
+            } else {
+                keyValue("BALANCE", "${s.credits} cr", 0x9A9A9AFFL, 0xE0C060FFL)
+                keyValue("BERTH", "STATION ${station?.station?.id ?: 0}")
+                gap()
+
+                title("SELL  ·  what is loose aboard")
+                // Only what the network could actually deliver: a species locked inside a machine or
+                // riding as an impurity is not something the mouth will ever see.
+                val offerable = Species.ALL.filter { stock.buildable(it) > 0L }
+                if (offerable.isEmpty()) {
+                    text("nothing loose to sell", 0x5A5A5AFFL)
+                } else {
+                    for (species in offerable) {
+                        val listed = port.sells(species)
+                        val bid = market.bidFor(species, Capacity.PACKET_MASS)
+                        button(
+                            listOf(
+                                (if (listed) "· " else "  ") to null,
+                                species.name.uppercase() to speciesColor(species),
+                                "  ${mass(stock.buildable(species))}  ·  $bid cr/100kg" to null,
+                            ),
+                            if (listed) 0x2E6B4AFFL else 0x2A3550FFL,
+                        ) { controller.toggleSell(port, species) }
+                    }
+                }
+
+                gap()
+                title("BUY  ·  what this berth has")
+                val onSale = Species.ALL.filter { market.stockOf(it) > 0L }
+                if (onSale.isEmpty()) {
+                    text("the shelves are empty", 0x5A5A5AFFL)
+                } else {
+                    for (species in onSale) {
+                        val ordered = port.buy.any { it.species == species }
+                        val ask = market.askFor(species, Capacity.PACKET_MASS)
+                        val cost = market.buyCost(species, Capacity.PACKET_MASS)
+                        button(
+                            listOf(
+                                (if (ordered) "· " else "  ") to null,
+                                species.name.uppercase() to speciesColor(species),
+                                "  ${mass(market.stockOf(species))}  ·  $ask cr/100kg" to null,
+                            ),
+                            when {
+                                ordered -> 0x2E6B4AFFL
+                                cost > s.credits -> 0x3A3038FFL
+                                else -> 0x2A3550FFL
+                            },
+                        ) { controller.toggleBuy(port, species, Capacity.PACKET_MASS) }
+                    }
+                }
+            }
+        }
+        val dismiss = { openSheet = Sheet.None }
+        // Tall and scrolling, like the readouts: this is two lists whose length is the world's, not
+        // a handful of buttons. ⚠️ The way back in is the docking port's own panel — see
+        // [dockControls], which is why closing this is safe.
+        if (screenW > NARROW_MAX_DP * density) {
+            val w = minOf(READOUTS_WIDTH_DP * density, screenW * 0.6f)
+            val h = screenH * 0.85f
+            sheet(
+                "oos-trade", "TRADE", onDismiss = dismiss,
+                boxX = (screenW - w) * 0.5f, boxY = (screenH - h) * 0.5f, boxW = w, boxH = h,
+                rowHeight = SHEET_ROW_DP, textSize = 14f, body = body,
+            )
+        } else {
+            sheet("oos-trade", "TRADE", onDismiss = dismiss, heightFraction = 0.85f, rowHeight = 34f, textSize = 15f, body = body)
         }
     }
 
@@ -990,6 +1117,10 @@ class OutofspaceHud {
         val thruster = machine as? Thruster
         if (thruster != null) {
             section("thruster", "CONTROL", open = true) { thrusterControls(controller, tile, thruster) }
+        }
+        val dockingPort = machine as? DockingPort
+        if (dockingPort != null) {
+            section("dock", "BERTH", open = true) { dockControls(controller, dockingPort) }
         }
         // Wiring is the one section that starts shut. Every machine has some, most machines never
         // need theirs touched, and it is the longest of the three — so it is the section that would
@@ -1560,6 +1691,41 @@ class OutofspaceHud {
      * in the game would ask them to name things they have never seen, and would let them lock a
      * warehouse onto something that has never come aboard.
      */
+    /**
+     * A docking port's own panel: whether it is berthed, the way back to the trade sheet, and the
+     * engine interlock.
+     *
+     * ⛔ **The way back matters as much as the sheet.** The sheet opens itself on arrival, and a
+     * player who closes it — which they must be able to do, or a berth is a modal prison — has to be
+     * able to get it back without undocking and re-docking. So the port carries the door.
+     */
+    private fun PanelBuilder.dockControls(controller: OutofspaceController, port: DockingPort) {
+        val docked = controller.state.docked
+        if (docked != null) {
+            val station = controller.dockedStation
+            keyValue("BERTHED AT", station?.station?.let { "STATION ${it.id}" } ?: "?", 0x9A9A9AFFL, 0x6EE08AFFL)
+            button("TRADE", 0x2E5A6BFFL) { openSheet = Sheet.Trade }
+            // The interlock. Green when the engines are safe, amber when the player has taken the
+            // pin out — the same colour language the storage locks use.
+            button(
+                if (controller.state.dockedThrustAllowed) "ENGINE INTERLOCK OFF" else "ENGINE INTERLOCK ON",
+                if (controller.state.dockedThrustAllowed) 0xE0A93AFFL else 0x6EE08AFFL,
+            ) { controller.setDockedThrust(!controller.state.dockedThrustAllowed) }
+            button("RELEASE CLAMPS", 0xCC3333FFL) { controller.undock(); openSheet = Sheet.None }
+        } else if (controller.berthInReach(port)) {
+            keyValue("BERTH", "IN REACH", 0x9A9A9AFFL, 0x6EE08AFFL)
+            button("DOCK", 0x3A6EA5FFL) { controller.dock(port) }
+        } else {
+            // ⚠️ Says which of the two conditions is unmet rather than a bare "no": a player two
+            // tiles out and thirty degrees off has no way to tell those apart from the outside.
+            keyValue("BERTH", "NONE IN REACH", 0x9A9A9AFFL, 0x9A9A9AFFL)
+            text("line the port up with a station's berth", 0x5A5A5AFFL)
+        }
+        gap()
+        keyValue("SELLING", if (port.sell.isEmpty()) "nothing" else "${port.sell.size} species")
+        keyValue("ON ORDER", if (port.buy.isEmpty()) "nothing" else "${port.buy.size} species")
+    }
+
     private fun PanelBuilder.storageControls(controller: OutofspaceController, storage: Storage) {
         val grid = controller.state.grid
         val store = bufferTile(grid, storage, storage.center, BufferRole.Inside)

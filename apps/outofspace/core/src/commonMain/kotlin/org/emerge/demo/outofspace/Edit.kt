@@ -147,6 +147,20 @@ sealed interface Edit {
      */
     data class SetDockedThrust(val allowed: Boolean) : Edit
 
+    /**
+     * Replace a docking port's two trade lists wholesale.
+     *
+     * ⛔ **Whole lists, not one entry at a time.** A sell order is a statement about a *set* — the
+     * network's demand is rebuilt from all of them together — so an edit that added or removed one
+     * would have to say what happens to the rest anyway. Passing both lists is the same amount of
+     * work at the call site and leaves nothing implicit.
+     */
+    data class TuneDockingPort(
+        val tile: TileIndex,
+        val sell: List<org.emerge.demo.outofspace.world.SpeciesFilter>,
+        val buy: List<org.emerge.demo.outofspace.world.machine.BuyOrder>,
+    ) : Edit
+
     /** Wire: rewires action term. slot≥end=append, null trigger=remove. Single edit type (add/change/remove are same list op). */
     data class Wire(val tile: TileIndex, val action: Action, val slot: Int, val trigger: Trigger?) : Edit
 

@@ -5,6 +5,8 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.compositionOf
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.BodyKind
+import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.DockNode
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Market
 import org.emerge.demo.outofspace.world.Pose
@@ -152,6 +154,25 @@ class StationTest {
         assertEquals(before - 100L * RATE, s.ore.total, "the reserve did not fall by a kilogram a tick")
         assertEquals(100L * RATE, s.market.stockOf(Species.Iron), "iron never reached the shelves")
         assertEquals(0L, s.market.stockOf(Species.Nickel), "the minority species was separated first")
+    }
+
+    @Test
+    fun `a station keeps its identity and its berths through a tick of work`() {
+        // ⛔ **`Station` is rebuilt from two fields by both of its plants, and its constructor
+        // defaults the other two** — so this went wrong the tick after the world started, silently,
+        // in a value nothing reads until the player tries to dock. It was found by a screenshot of
+        // the trade sheet reading "STATION 0". Exactly the shape `RigidBody.copy` warns about, one
+        // field list over.
+        val berths = listOf(DockNode(0, 5, Direction.Left), DockNode(9, 0, Direction.Up))
+        var s = Station(
+            Mixture.of(Species.Iron to 10L * tonne, energy = 0L),
+            Market.of(Species.Forsterite to 500L * tonne),
+            id = 42,
+            docks = berths,
+        )
+        repeat(10) { s = s.worked() }
+        assertEquals(42, s.id, "the station forgot who it was")
+        assertEquals(berths, s.docks, "the station lost its berths")
     }
 
     @Test

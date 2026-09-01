@@ -2170,6 +2170,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 }
                 is Edit.SetSas -> sas = edit.on
                 is Edit.SetDockedThrust -> dockedThrustAllowed = edit.allowed
+                is Edit.TuneDockingPort -> {
+                    val tile = originAt(edit.tile) ?: return
+                    val m = deck[tile]
+                    if (m is DockingPort) deck[tile] = m.copy(sell = edit.sell, buy = edit.buy)
+                }
                 is Edit.Undock -> {
                     docked = null
                     // Nobody to trade with the moment the clamps let go.

@@ -41,9 +41,16 @@ private fun Station.purified(): Station {
     // Go/no-go: a reserve holding less than a kilogram of its own dominant species does nothing at
     // all rather than dribbling out what is left.
     if (ore[dominant] < RATE) return this
+    // ⚠️ **`id` and `docks` carried explicitly.** `Station`'s constructor defaults them, so rebuilding
+    // one from two fields quietly hands back a station with **no identity and no berths** — and it
+    // does it a tick after the world starts, in a value nothing else reads until the player tries to
+    // dock. Caught by a screenshot reading "STATION 0"; the same shape as `RigidBody.copy`'s warning
+    // one file over, which is why that one is written down there in capitals.
     return Station(
         ore = ore - Mixture.of(dominant to RATE, energy = 0L),
         market = market.absorbing(dominant, RATE),
+        id = id,
+        docks = docks,
     )
 }
 
@@ -101,5 +108,5 @@ private fun Station.brokenDown(): Station {
         moved = moved.absorbing(parts[i].element, share)
         handedOut += share
     }
-    return Station(ore = ore, market = moved)
+    return Station(ore = ore, market = moved, id = id, docks = docks)
 }

@@ -28,6 +28,13 @@ import org.emerge.demo.outofspace.Brush
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.DockNode
+import org.emerge.demo.outofspace.world.Docking
+import org.emerge.demo.outofspace.world.Market
+import org.emerge.demo.outofspace.world.RigidBody
+import org.emerge.demo.outofspace.world.Station
+import org.emerge.demo.outofspace.world.machine.DockingPort
+import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.starterVessel
@@ -435,6 +442,42 @@ object OutofspaceAgentHarness {
                 }
                 // `rock <x> <y> [radius]` — the stand-in for capture until H4, same edit the F6 key
                 // queues, so a script and a player put a rock in the world the same way.
+                // `berth` — put a station's mouth against the docking port at (x, y), and clamp on.
+                //
+                // ⚠️ **Harness-only, and it exists because the real world puts the first station two
+                // hundred tiles out.** Flying there is the game; a script that wants to photograph
+                // the counter should not have to spend fifteen thousand ticks getting to it.
+                "berth" -> {
+                    val port = controller.state.deck[index(t[1], t[2])] as? DockingPort
+                        ?: error("no docking port at (${t[1]},${t[2]})")
+                    val node = DockNode(0, RigidBody.STATION_TILES / 2, Direction.Left)
+                    var post = RigidBody.stationShell(
+                        positionX = 0L, positionY = 0L,
+                        composition = Mixture.of(Species.Steel to Budget.KILOGRAM, energy = 0L),
+                        station = Station(
+                            ore = Mixture.of(Species.Forsterite to 20L * Budget.TONNE, energy = 0L),
+                            market = Market.of(
+                                Species.Iron to 30L * Budget.TONNE,
+                                Species.Copper to 4L * Budget.TONNE,
+                                Species.Titanium to 2L * Budget.TONNE,
+                            ),
+                            id = 1,
+                            docks = listOf(node),
+                        ),
+                    )
+                    val s0 = controller.state
+                    post = post.copy(
+                        positionX = post.positionX +
+                            (Docking.berthWorldX(s0.grid, port, s0.pose) - Docking.nodeWorldX(node, post.pose)),
+                        positionY = post.positionY +
+                            (Docking.berthWorldY(s0.grid, port, s0.pose) - Docking.nodeWorldY(node, post.pose)),
+                    )
+                    controller.reset(s0.copy(bodies = s0.bodies + post))
+                    controller.dock(port)
+                    settle()
+                    println("[agent] berthed at station ${controller.state.docked?.stationId}")
+                }
+                "undock" -> { controller.undock(); settle(); println("[agent] clamps released") }
                 "rock" -> {
                     val (ix, iy) = coordinates(t[1], t[2])
                     controller.dropRock(ix.toFloat(), iy.toFloat())

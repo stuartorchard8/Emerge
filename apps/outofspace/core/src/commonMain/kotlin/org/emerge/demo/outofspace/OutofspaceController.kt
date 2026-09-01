@@ -18,6 +18,10 @@ import org.emerge.demo.outofspace.world.TICK_LADDER
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.Docking
+import org.emerge.demo.outofspace.world.RigidBody
+import org.emerge.demo.outofspace.world.machine.BuyOrder
+import org.emerge.demo.outofspace.world.machine.DockingPort
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.toMachineSettings
@@ -447,6 +451,49 @@ class OutofspaceController(
 
     /** Locks a warehouse onto what it holds most of, or unlocks it — see [Edit.LockStoragePercent]. */
     fun lockStoragePercent(storage: Storage, minPercent: Int?) = pending.add(Edit.LockStoragePercent(storage.center, minPercent))
+
+    // ── Trade ────────────────────────────────────────────────────────────────
+
+    fun dock(port: DockingPort) = pending.add(Edit.Dock(port.center))
+    fun undock() = pending.add(Edit.Undock)
+    fun setDockedThrust(allowed: Boolean) = pending.add(Edit.SetDockedThrust(allowed))
+
+    /** Put [species] up for sale, or take it off the list if it is already on it. */
+    fun toggleSell(port: DockingPort, species: Species) = pending.add(
+        Edit.TuneDockingPort(
+            port.center,
+            sell = if (port.sells(species)) port.sell.filterNot { it.species == species }
+            else port.sell + SpeciesFilter(species, null),
+            buy = port.buy,
+        ),
+    )
+
+    /** Order [mass] more of [species], or cancel the order if there is one. */
+    fun toggleBuy(port: DockingPort, species: Species, mass: Long) = pending.add(
+        Edit.TuneDockingPort(
+            port.center,
+            sell = port.sell,
+            buy = if (port.buy.any { it.species == species }) port.buy.filterNot { it.species == species }
+            else port.buy + BuyOrder(species, mass),
+        ),
+    )
+
+    /** Whether the port at [tile] is lined up with a berth it could take right now. */
+    fun berthInReach(port: DockingPort): Boolean {
+        val s = state
+        if (s.docked != null) return false
+        for (body in s.bodies) {
+            val economy = body.station ?: continue
+            for (i in economy.docks.indices) {
+                if (Docking.canDock(s.grid, port, s.pose, body, i)) return true
+            }
+        }
+        return false
+    }
+
+    /** The station the vessel is berthed at, or null. */
+    val dockedStation: RigidBody?
+        get() = state.docked?.let { link -> state.bodies.firstOrNull { it.station?.id == link.stationId } }
     fun lockStorageSpecies(storage: Storage, species: Species?) = pending.add(Edit.LockStorageSpecies(storage.center, species))
     fun toggleStorageAutoLock(storage: Storage) = pending.add(Edit.TuneStorage(
         storage.center,
