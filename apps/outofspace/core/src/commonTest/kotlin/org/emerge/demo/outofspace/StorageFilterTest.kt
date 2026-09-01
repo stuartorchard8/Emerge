@@ -13,8 +13,10 @@ import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.SpeciesFilter
+import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.tileBillOfMaterials
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.sim.core.PlayerId
@@ -164,6 +166,47 @@ class StorageFilterTest {
 
         assertEquals(0L, s.onTrack(), "a site's lock filled the run with material only the finished tank could take")
         assertEquals(load, s.inStore(s.grid.tile(2, 3), BufferRole.Inside)?.total, "and the source kept it all")
+    }
+
+    /**
+     * The casing arrives from somewhere this fixture does not model — exactly what
+     * `DeckArray.stand(withCasing = true)` does, on a machine that is already standing.
+     */
+    private fun VesselState.finishCasing(centre: TileIndex) {
+        val m = deck[centre]!!
+        val bill = tileBillOfMaterials(m.kind, deck.materialOf(m))
+        for (tile in m.tiles(grid)) {
+            for (sp in Species.ALL) deck.stuff[tile, sp] = bill[sp]
+            deck.stuff.setEnergy(tile, deck.stuff.heatCapacityAt(tile) * Temperature.AMBIENT_KELVIN)
+        }
+    }
+
+    /**
+     * ⛔ **The two appetites are separate because they are SEQUENTIAL**, and this is what says so.
+     *
+     * A ghost's only port is its construction port, at its centre; a finished storage's intake is at
+     * `centre - reach` and the construction port is gone (see `standingPortsOf`). So the site's
+     * demand and the warehouse's demand are never live at the same time, and suppressing one while
+     * the other stands is the whole of the separation — a half-built tank has no store to put
+     * anything in, so there is nothing to be simultaneous with.
+     *
+     * ⚠️ What that costs: the lock is not cancelled, only deferred. The tick the casing is complete
+     * the tank is a warehouse and draws exactly what it was always locked to draw. **Stu's save will
+     * do this**: once (26,18) finishes, the Enstatite it refused for hours is admitted, because
+     * `>=100% pure` is what it says.
+     */
+    @Test
+    fun `a lock is deferred by construction, not cancelled by it`() {
+        val start = tankToTank(SpeciesFilter(null, 100), pureIron(load), receiverIsGhost = true, railTo = 10)
+
+        val asSite = run(start, 40 * RAIL_PERIOD)
+        assertEquals(0L, asSite.received(), "a site took delivery into a store it does not have yet")
+        assertEquals(0L, asSite.onTrack(), "and drew nothing onto the run on the strength of its dials")
+
+        asSite.finishCasing(asSite.grid.tile(10, 3))
+
+        val asWarehouse = run(asSite, 40 * RAIL_PERIOD)
+        assertTrue(asWarehouse.received() > 0L, "a finished warehouse never took up the lock it was placed with")
     }
 
     /**
