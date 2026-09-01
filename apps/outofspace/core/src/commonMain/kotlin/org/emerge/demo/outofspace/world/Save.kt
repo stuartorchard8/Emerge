@@ -26,6 +26,8 @@ import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
+import org.emerge.demo.outofspace.world.machine.DockingPort
+import org.emerge.demo.outofspace.world.machine.BuyOrder
 import org.emerge.demo.outofspace.world.machine.Furnace
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.ThrusterControl
@@ -65,6 +67,10 @@ fun materialBefore(kind: DeckMachineKind): Species = when (kind) {
     DeckMachineKind.Sensor, DeckMachineKind.KeyInput, DeckMachineKind.Pump,
     DeckMachineKind.Thruster, DeckMachineKind.Concentrator,
     DeckMachineKind.Extractor,
+    // ⚠️ A docking port cannot appear in a pre-v21 file — it did not exist — so this branch is
+    // unreachable and is here only because the `when` is exhaustive. Titanium keeps it consistent
+    // with every other installation rather than inventing an answer for a case that cannot arise.
+    DeckMachineKind.DockingPort,
     -> Species.Titanium
     DeckMachineKind.Furnace -> Species.Firebrick
     DeckMachineKind.Bridge, DeckMachineKind.Gauge -> materialBefore(Conduit.Rail)
@@ -466,6 +472,17 @@ object Save {
                 val autoLock = if (m.autoLock)     0b01 else 0
                 val autoUnlock = if (m.autoUnlock) 0b10 else 0
                 put("auto", (autoLock+autoUnlock).toString())
+            }
+            // Two lists, each written as one field so a port with nothing set adds nothing to the
+            // line. A sell order is `species:percent` (percent absent means any purity); a buy order
+            // is `species:mass`. ⚠️ Masses go through the scale like every other mass in the file.
+            is DockingPort -> {
+                if (m.sell.isNotEmpty()) put("sell", m.sell.joinToString(",") {
+                    (it.species?.name ?: "ANY") + ":" + (it.minPercent?.toString() ?: "")
+                })
+                if (m.buy.isNotEmpty()) put("buy", m.buy.joinToString(",") {
+                    it.species.name + ":" + it.remaining
+                })
             }
             is Sensor -> {
                 put("threshold", m.threshold.toString())
@@ -1533,6 +1550,24 @@ object Save {
             DeckMachineKind.Hull -> Hull(tile)
             DeckMachineKind.Airlock -> Airlock(tile)
             DeckMachineKind.Vent -> Vent(tile, ventedMass = massNum("vented", 0L))
+            // Two lists, each one field. ⚠️ `wiring` is applied after this `when` for every kind
+            // (see `withWiring` below), so it is not passed here.
+            DeckMachineKind.DockingPort -> DockingPort(
+                tile,
+                facing(),
+                sell = f["sell"]?.split(",")?.mapNotNull { entry ->
+                    val parts = entry.split(":")
+                    val species = Species.ALL.firstOrNull { it.name == parts[0] }
+                    if (parts[0] != "ANY" && species == null) return@mapNotNull null
+                    SpeciesFilter(species, parts.getOrNull(1)?.takeIf { it.isNotEmpty() }?.toIntOrNull())
+                } ?: emptyList(),
+                buy = f["buy"]?.split(",")?.mapNotNull { entry ->
+                    val parts = entry.split(":")
+                    val species = Species.ALL.firstOrNull { it.name == parts[0] } ?: return@mapNotNull null
+                    val mass = parts.getOrNull(1)?.toLongOrNull() ?: return@mapNotNull null
+                    BuyOrder(species, scale.of(mass))
+                } ?: emptyList(),
+            )
             DeckMachineKind.Storage -> Storage(
                 tile,
                 facing(),

@@ -227,6 +227,9 @@ val DeckMachineKind.fillPermille: Int
         // migration does not quietly change what the ship weighs.
         DeckMachineKind.Gauge -> 40
         DeckMachineKind.Valve -> 15
+        // A collar and a pair of hoppers: mostly structure, and heavier than a warehouse shell
+        // because it is a hole in the ship that has to be strong enough to be one.
+        DeckMachineKind.DockingPort -> 120
     }
 
 /** The same fraction for a bare conduit, which is what a fitting-free length of it is. */

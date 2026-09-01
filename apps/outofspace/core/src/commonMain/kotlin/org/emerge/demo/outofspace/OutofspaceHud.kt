@@ -462,8 +462,13 @@ class OutofspaceHud {
                 // ⚠️ `reconciledMass` is subtracted, and it is shown on its own line whenever it is
                 // non-zero. A write-off that did not appear anywhere would be the panel lying by a
                 // measured amount, which is precisely the failure the write-off exists to end.
-                val drift = s.inTransitMass + s.ventedMass + s.builtMass -
-                    s.extractedMass - s.baselineCargoMass - s.reconciledMass
+                //
+                // ✅ **The expression moved onto [VesselState.massBalance]** when trade added two
+                // more terms to it. There is nothing left for the panel and the harness to disagree
+                // about, which is a better guarantee than the rule that came out of them disagreeing.
+                if (s.exportedMass != 0L) keyValue("Sold", mass(s.exportedMass))
+                if (s.importedMass != 0L) keyValue("Bought", mass(s.importedMass))
+                val drift = s.massBalance
                 if (s.reconciledMass != 0L) {
                     keyValue("Written off", mass(s.reconciledMass), 0x9A9A9AFFL, 0xC8A44AFFL)
                 }

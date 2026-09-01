@@ -47,6 +47,7 @@ import org.emerge.demo.outofspace.world.airlockOpenness
 import org.emerge.demo.outofspace.world.diameter
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
+import org.emerge.demo.outofspace.world.machine.DockingPort
 import org.emerge.demo.outofspace.world.machine.Furnace
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.Mat4
@@ -810,6 +811,13 @@ class OutofspaceRenderer {
 
             is Concentrator -> {
                 footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Concentrator))
+                fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
+            }
+            // A body with a bar, like every other buffered installation. Its own collar and the
+            // berth markings are a docking-increment problem; drawn plainly here so the machine is
+            // visible and selectable while the economy is what is being built.
+            is DockingPort -> {
+                footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.DockingPort))
                 fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
             }
             is Furnace -> {
@@ -1793,6 +1801,8 @@ fun kindColor(kind: DeckMachineKind): Long = when (kind) {
     DeckMachineKind.Sensor -> 0x24303CFFL
     DeckMachineKind.KeyInput -> 0x2E3A4AFFL
     DeckMachineKind.Pump -> 0xB07840FFL
+    // Warmer than the hull it sits in, so a berth reads as a way out rather than as more wall.
+    DeckMachineKind.DockingPort -> 0x7A6A9AFFL
     DeckMachineKind.Thruster -> 0xC04A30FFL
     DeckMachineKind.Concentrator -> 0x2E5A6BFFL
     DeckMachineKind.Furnace -> 0x5E5A3BFFL

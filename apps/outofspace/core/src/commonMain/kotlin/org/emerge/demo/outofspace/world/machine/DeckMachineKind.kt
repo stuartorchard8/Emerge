@@ -86,6 +86,17 @@ enum class DeckMachineKind(
      * had just made. See [Valve].
      */
     Valve("VALVE"),
+
+    /**
+     * Three tiles square: the ship's mouth onto somebody else's economy — `PLAN_economy.md` §5.
+     *
+     * Solid, like every other installation of its size — you do not walk through a docking collar.
+     * ⚠️ **Deliberately NOT `preventAirflow` yet.** Only the hull and the airlock hold air out, and
+     * making a third kind do so changes the vessel's room topology — which is a real change, and it
+     * has nothing to do with money. Whether a docking port is part of the hull boundary is a
+     * question for the docking increment, which is the first one where the answer matters.
+     */
+    DockingPort("DOCK", preventThoroughfare = true, gatesOutput = true),
     ;
 
     companion object {

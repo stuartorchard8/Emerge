@@ -58,6 +58,11 @@ import org.emerge.demo.outofspace.world.BodySlot
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
+import org.emerge.demo.outofspace.world.machine.BuyOrder
+import org.emerge.demo.outofspace.world.machine.DockingPort
+import org.emerge.demo.outofspace.world.Market
+import org.emerge.demo.outofspace.world.Prices
+import org.emerge.demo.outofspace.world.heatCapacityOf
 import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.MotionLog
 import org.emerge.demo.outofspace.world.Cadence
@@ -417,6 +422,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     is Concentrator -> w.refine(cfg, m, on, tile)
                     is Furnace -> w.refine(cfg, m, on, tile)
                     is Extractor -> w.leech(m, on, tile)
+                    is DockingPort -> w.trade(m, on, tile)
                 }
             }
 
@@ -940,6 +946,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             diverters = FlowCursors(w.diverters.snapshot(), w.diverters.mergeSnapshot()),
             tick = state.tick + 1,
             extractedMass = w.extractedMass,
+            importedMass = w.importedMass,
+            exportedMass = w.exportedMass,
+            importedEnergy = w.importedEnergy,
+            exportedEnergy = w.exportedEnergy,
+            credits = w.credits,
+            dockedMarket = w.market,
             ventedMass = w.ventedMass,
             builtMass = w.builtMass,
             scrapping = w.scrapping.toSet(),
@@ -1114,6 +1126,86 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     private fun throttled(perTick: Long, activation: Int, carry: Long): Pair<Long, Long> {
         if (activation <= 0) return 0L to carry
         return Rate.tick(perTick * activation, SignalField.FULL, carry)
+    }
+
+    /**
+     * One tick of a docking port: sell what has arrived, then buy what is on order.
+     *
+     * ⛔ **Both halves book mass AND energy**, in the same statement, because a
+     * [org.emerge.demo.outofspace.chem.Mixture] carries thermal energy and so trade moves heat.
+     * Booking one and not the other makes [VesselState.massBalance] and [VesselState.heatBalance]
+     * wrong in unrelated-looking ways — see [VesselState.importedEnergy].
+     *
+     * ⚠️ **Nothing happens without a counterparty.** A port with no market is a dead end that fills
+     * up, which is exactly what an undocked ship's docking port should be.
+     */
+    private fun Work.trade(m: DockingPort, on: Boolean, tile: TileIndex): DockingPort {
+        if (!on) return m
+        val counterparty = market ?: return m
+        var here = counterparty
+        var machine = m
+
+        // ── Sell whatever the network has delivered ──────────────────────────
+        //
+        // The whole store, every tick. There is no rate: the port is a doorway and the belt feeding
+        // it is what meters the trade, which is the same argument [Extractor]'s single buffer rests
+        // on — a rate upstream of the thing that actually limits throughput is a rate nobody can
+        // observe.
+        val forSale = store(m, tile, BufferRole.Input)
+        if (forSale != null && forSale.total > 0L) {
+            credits += here.sellValue(forSale)
+            exportedMass += forSale.total
+            exportedEnergy += forSale.energy
+            // ⛔ **The counterparty takes ALL of it, including the species it paid nothing for.**
+            // The forfeit tail is not destroyed, it is the station's fee — see [Market.sellValue].
+            here = here.absorbing(forSale)
+            putStore(m, tile, BufferRole.Input, null)
+        }
+
+        // ── Work the standing orders down ────────────────────────────────────
+        //
+        // One order per tick at most, and only into an empty output store: a purchase is a lump, and
+        // two lumps merged inside a buffer is the thing [Packet] refuses to let happen anywhere else.
+        if (store(m, tile, BufferRole.Product) == null) {
+            val orders = machine.buy
+            for (i in orders.indices) {
+                val order = orders[i]
+                val wanted = minOf(order.remaining, Capacity.PACKET_MASS)
+                if (wanted <= 0L) continue
+                if (!here.canSupply(order.species, wanted)) continue
+                val cost = here.buyCost(order.species, wanted)
+                if (cost > credits) continue
+
+                // ⚠️ **Bought matter arrives at ambient**, and that is a claim the heat ledger has to
+                // hear about: the station kept it in a warehouse, not in a furnace. Energy is
+                // computed from what the lump is made of rather than assumed, which is the same rule
+                // `temperatureKelvin` follows and for the same reason.
+                val cold = Mixture.of(order.species to wanted, energy = 0L)
+                val bought = Mixture.of(
+                    order.species to wanted,
+                    energy = heatCapacityOf(cold) * Temperature.AMBIENT_KELVIN,
+                )
+                credits -= cost
+                importedMass += bought.total
+                importedEnergy += bought.energy
+                here = here.releasing(order.species, wanted)
+                putStore(m, tile, BufferRole.Product, bought)
+
+                val left = order.remaining - wanted
+                machine = machine.copy(
+                    buy = orders.toMutableList().also { list ->
+                        // ⛔ A completed order leaves the list rather than lingering at zero. An
+                        // order that never ends would drain the balance the moment the player docked
+                        // somewhere well stocked — see [BuyOrder].
+                        if (left > 0L) list[i] = order.copy(remaining = left) else list.removeAt(i)
+                    },
+                )
+                break
+            }
+        }
+
+        market = here
+        return machine
     }
 
     private fun Work.refine(cfg: OutofspaceConfig, m: Concentrator, on: Boolean, tile: TileIndex): Concentrator {
@@ -1483,6 +1575,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             deck[tile] = value
         }
         var extractedMass: Long = state.extractedMass
+        // Trade's four ledger terms and the bank. See [VesselState.importedMass] for why these are
+        // four and not two, and why none of them is `extractedMass`.
+        var importedMass: Long = state.importedMass
+        var exportedMass: Long = state.exportedMass
+        var importedEnergy: Long = state.importedEnergy
+        var exportedEnergy: Long = state.exportedEnergy
+        var credits: Long = state.credits
+        /** The counterparty on the far side of every docking port, or null when the ship is alone. */
+        var market: Market? = state.dockedMarket
         // Editable conduit layers (array of lists avoids per-tile Conduits rebuild).
         val layers: Array<MutableList<Segment?>> =
             Array(Conduit.entries.size) { state.conduits[Conduit.entries[it]].toMutableList() }
@@ -3438,6 +3539,30 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 accepts.getOrPut(tile) { mutableListOf() }.add(Acceptance.filtered(filter))
             }
 
+            // ── Docking ports: what the player has put up for sale ───────────
+            //
+            // ⛔ **The sell list is what makes the network route cargo to the mouth**, and it is the
+            // whole of the port's demand. Nothing travels toward a place that cannot use it, so a
+            // port selling nothing is inert and the belts back up behind it — correct, and not a
+            // failure to explain away.
+            //
+            // ✅ **One `Acceptance` per order, and the plural falls out for free.** `accepts` is
+            // keyed tile → *list* and `Whitelist.room` admits a lump any demand at the tile wants,
+            // so several filters at one tile already union. `PLAN_economy.md` §5.1 expected to have
+            // to generalise `Acceptance` to a list of species and it did not: the machinery the
+            // locked warehouse needed was already the machinery a sell list needs.
+            for ((tile, at) in ports) {
+                if (rails[tile.index] == null) continue
+                val input = at.firstOrNull { it.kind == PortKind.Input } ?: continue
+                val port = deck[input.owner] as? DockingPort ?: continue
+                // A site cannot trade — the same rule the locked warehouse above follows, and for
+                // the same reason: an unbuilt shell holds nothing and an appetite stated on its
+                // behalf is a demand nothing can satisfy.
+                if (deck.isGhost(input.owner)) continue
+                val list = accepts.getOrPut(tile) { mutableListOf() }
+                for (order in port.sell) list.add(Acceptance.filtered(order))
+            }
+
             // ── Which consumers can use what is standing on the track ────────
             //
             // ⛔ **The one thing the flow graph is told about matter, and for one question only** —
@@ -3765,7 +3890,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // Both take a feed, and both take it the way every buffered kind does — by role
                 // tile, kind-blind. See the machine-list twin above.
                 is Thruster, is Concentrator, is Furnace,
-                is Extractor -> {
+                is DockingPort, is Extractor -> {
                     val role = inputBufferRole(destination) ?: return false
                     val store = bufferTile(grid, destination, destination.center, role) ?: return false
                     val merged = acceptInto(destination, buffers.resourceAt(store), packet) ?: return false
@@ -3788,7 +3913,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // only refusals left are "full" and "not a solid". The demand work is where kind comes
             // back, and it comes back as something a sink *asks for* rather than something it
             // happens to reject at the door.
-            val cap = if (destination is Storage) Storage.CAP else MACHINE_BUFFER_CAP
+            val cap = when (destination) {
+                is Storage -> Storage.CAP
+                // A doorway, not a warehouse — see [DockingPort.CAP]. Cargo waiting to be sold
+                // should be waiting somewhere the player can change their mind about it.
+                is DockingPort -> DockingPort.CAP
+                else -> MACHINE_BUFFER_CAP
+            }
             if ((existing?.total ?: 0L) >= cap) return null
             return if (existing == null) packet.contents
             else existing + packet.contents
@@ -3803,6 +3934,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             DeckMachineKind.Airlock -> Airlock(tile)
             DeckMachineKind.Vent -> Vent(tile)
             DeckMachineKind.Storage -> Storage(tile, facing, autoLock = true, autoUnlock = true)
+            // Placed with both lists empty: a port that has not been told what to trade is inert,
+            // and choosing for the player is the one thing a mouth onto their money must not do.
+            DeckMachineKind.DockingPort -> DockingPort(tile, facing)
             DeckMachineKind.Sensor -> Sensor(tile, facing, threshold = SignalField.FULL, delay = 0, release = 0)
             DeckMachineKind.KeyInput -> WireButton(tile)
             DeckMachineKind.Pump -> Pump(tile, facing)

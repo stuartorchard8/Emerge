@@ -13,6 +13,8 @@ val DeckMachineKind.diameter: Int
         // One tile wide. Its *length* is two, and that is not this number — see [FootprintShape.Nose].
         DeckMachineKind.Thruster -> 1
         DeckMachineKind.Concentrator, DeckMachineKind.Furnace -> 3
+        // A collar big enough to berth against, and the same three tiles a storage claims.
+        DeckMachineKind.DockingPort -> 3
         // Five: it should dominate the deck it sits on, and its heat should have somewhere to be.
         DeckMachineKind.Extractor -> 5
         // Three tiles end to end. Only ever three *along* its facing — see [FootprintShape.Span].

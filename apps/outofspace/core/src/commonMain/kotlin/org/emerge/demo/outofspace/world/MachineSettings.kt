@@ -192,6 +192,16 @@ fun DeckMachine.withSettings(settings: MachineSettings): DeckMachine {
             if (settings.facing is Setting.Present) result = result.copy(facing = settings.facing.value)
             result
         }
+        // Wiring and facing only. The two trade lists are not settings in the clipboard sense —
+        // copying a sell list onto another port would hand it the player's standing orders, which
+        // is a different act from copying how a machine is set up.
+        DeckMachineKind.DockingPort -> {
+            base as DockingPort
+            var result = base
+            if (settings.wiring is Setting.Present) result = result.copy(wiring = settings.wiring.value)
+            if (settings.facing is Setting.Present) result = result.copy(facing = settings.facing.value)
+            result
+        }
         DeckMachineKind.Valve -> {
             base as Valve
             var result = base

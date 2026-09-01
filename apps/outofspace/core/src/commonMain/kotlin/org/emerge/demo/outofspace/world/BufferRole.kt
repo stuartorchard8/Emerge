@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.world.machine.DeckMachine
+import org.emerge.demo.outofspace.world.machine.DockingPort
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Concentrator
@@ -119,6 +120,15 @@ internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
             BufferRole.Waste -> NO_OFFSET
         }
         is Storage -> if (role == BufferRole.Inside) pack(0, 0) else NO_OFFSET
+
+        // Two stores on two doors, and **no `Inside`**: a docking port works nothing. What is
+        // waiting to be sold sits on the input port and what has been bought sits on the output one,
+        // which keeps a purchase the player has not collected from being sold straight back.
+        is DockingPort -> when (role) {
+            BufferRole.Input -> pack(-r, 0)
+            BufferRole.Product -> pack(r, 0)
+            else -> NO_OFFSET
+        }
 
         // The three slots of a gantry, which are the three tiles it stands on: what has just been
         // lifted off the track at the near end, what is over the gap, and what is waiting to be put

@@ -4,6 +4,7 @@ import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachine
+import org.emerge.demo.outofspace.world.machine.DockingPort
 import org.emerge.demo.outofspace.world.machine.DirectedDeckMachine
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Gauge
@@ -107,6 +108,14 @@ private fun localPorts(machine: DeckMachine): List<LocalPort> {
         // player should have to build out of track where they can see it, not something a building
         // does for them out of sight.
         is Storage -> listOf(
+            LocalPort(-r, 0, Direction.Left, PortKind.Input),
+            LocalPort(r, 0, Direction.Right, PortKind.Output),
+        )
+
+        // Cargo to sell in at the back, purchases out the front. The same two doors a storage has,
+        // because from the network's side that is exactly what this is — a tank whose far end
+        // happens to be somebody else's warehouse.
+        is DockingPort -> listOf(
             LocalPort(-r, 0, Direction.Left, PortKind.Input),
             LocalPort(r, 0, Direction.Right, PortKind.Output),
         )

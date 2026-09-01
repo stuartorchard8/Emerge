@@ -13,6 +13,7 @@ import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.machine.MACHINE_OUTPUT_CAP
 import org.emerge.demo.outofspace.world.machine.DeckMachine
+import org.emerge.demo.outofspace.world.machine.DockingPort
 import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.machine.Sensor
@@ -395,6 +396,38 @@ data class VesselState(
      * interest term, both of which this field already permits.
      */
     val credits: Long = 0L,
+    /**
+     * Mass that has come **aboard through a docking port** — bought, and so arriving from off-world.
+     *
+     * ⛔ **Not [extractedMass], and the difference is not cosmetic.** `extractedMass` is a term in
+     * the *rock* ledger as well as this one, so booking a purchase there would close the vessel's
+     * balance and silently open the rock's — the exact failure `reconciledMass`'s own doc records
+     * having to avoid. Two ledgers, two terms, one direction each.
+     */
+    val importedMass: Long = 0L,
+    /** Mass sold through a docking port. Gone from the world, like [ventedMass] and for the same reason. */
+    val exportedMass: Long = 0L,
+    /**
+     * Thermal energy that came aboard with [importedMass], and its twin going the other way.
+     *
+     * ⛔ **A [org.emerge.demo.outofspace.chem.Mixture] carries energy, so trade moves heat.** Sell a
+     * hot lump and real thermal energy leaves the vessel; buy a cold one and it arrives. Book the
+     * mass and not the energy and [heatBalance] reads a leak of exactly the heat that changed hands
+     * — the same shape as `Work.solidBecameGas`, which the vaporizer failed to call for its entire
+     * life. One call books both, and the pair is what keeps both instruments sharp.
+     */
+    val importedEnergy: Long = 0L,
+    val exportedEnergy: Long = 0L,
+    /**
+     * The counterparty currently reachable through a docking port, or null when the ship is alone.
+     *
+     * ⏸ **A stub, and named as one.** Trade needs somebody on the other side of the mouth, and
+     * stations do not exist until the increment after this one — so this is where a market is put
+     * for now, and it is what docking will set. It is deliberately **not saved**: there is nothing
+     * to persist while nothing owns a market, and writing a transient one to disk is building the
+     * shape the station increment would then have to delete.
+     */
+    val dockedMarket: Market? = null,
     /**
      * The centre tiles of the deck machines the player has marked for deconstruction.
      *
@@ -788,8 +821,31 @@ data class VesselState(
      * switch is `EnergyLedgers.PARKED` in commonTest, and the parked list is in the plan.
      */
     val heatBalance: Long
-        get() = storedEnergy + radiatedEnergy + solidToAirEnergy -
-            generatedEnergy - insertedEnergy - acquiredEnergy - baselineEnergy
+        get() = storedEnergy + radiatedEnergy + solidToAirEnergy + exportedEnergy -
+            generatedEnergy - insertedEnergy - acquiredEnergy - importedEnergy - baselineEnergy
+
+    /**
+     * **The** mass identity, in one place: everything the vessel has ever had must still be
+     * somewhere or be accounted for having left.
+     *
+     * ```
+     * inTransit + vented + built + exported − extracted − imported − baselineCargo == 0
+     * ```
+     *
+     * ⛔ **Written down once, because it was written down four times and one of them was wrong.**
+     * The HUD checked only `extracted == inTransit + vented` and so read the ship the player had
+     * built as an 8.8 t leak — see `reference_oos_mass_ledger`. The suite and the harness had it
+     * right, which is why the rule that came out of that was "if the panel and the harness disagree,
+     * the harness is right". A single definition is a better rule: there is nothing left to
+     * disagree.
+     *
+     * ⚠️ **Every new way for matter to cross the vessel's boundary has to be added here**, and the
+     * failure mode when it is not is not an error — it is an instrument that reads a leak for ever
+     * and that everyone learns to ignore.
+     */
+    val massBalance: Long
+        get() = inTransitMass + ventedMass + builtMass + exportedMass -
+            extractedMass - importedMass - reconciledMass - baselineCargoMass
 
     /** Pressure of a tile as a percentage of one atmosphere, for readouts. */
     fun pressurePercentAt(tile: TileIndex): Int =
@@ -1024,6 +1080,10 @@ fun fullness(machine: DeckMachine?, centre: TileIndex, grid: Grid, buffers: Buff
     // Neither holds anything, so neither has a fullness. A gauge's reading is a different question
     // and reaches the wire by its own route — see [OutofspaceReducer]'s gauge pass.
     is Gauge, is Valve -> 0
+    // What is waiting to be sold. A sensor on a docking port asks "is my cargo backing up because
+    // nobody is buying", which is the same shape of question it asks of every other machine.
+    is DockingPort -> (buffers.massAt(bufferTile(grid, machine, centre, BufferRole.Input)!!) *
+        SignalField.FULL / DockingPort.CAP).toInt()
     // Slots occupied, not mass: a bridge is full when there is nowhere to put the next lump, and
     // three small packets back it up exactly as three large ones do.
     is Bridge -> {

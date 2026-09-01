@@ -1032,8 +1032,18 @@ object OutofspaceAgentHarness {
             // from a file written before the ledger was anchored, so every script that starts from
             // `new` is unaffected -- but a script that loads a save and asserts `massBalance = 0`
             // would otherwise be asserting the absence of a scar rather than the absence of a leak.
-            "massBalance" -> grams(state.inTransitMass + state.ventedMass + state.builtMass - state.extractedMass - state.baselineCargoMass - state.reconciledMass)
+            // ✅ One definition now, on the state — see [VesselState.massBalance]. The panel reads
+            // the same property, so the "if they disagree the harness is right" rule has nothing
+            // left to arbitrate.
+            "massBalance" -> grams(state.massBalance)
             "reconciledMass" -> grams(state.reconciledMass)
+            // Trade's four ledger terms plus the bank. `credits` is a COUNT, not a mass — it does
+            // not go through `grams()`, which would divide it by a million.
+            "credits" -> state.credits.toDouble()
+            "importedMass" -> grams(state.importedMass)
+            "exportedMass" -> grams(state.exportedMass)
+            "importedEnergy" -> joules(state.importedEnergy)
+            "exportedEnergy" -> joules(state.exportedEnergy)
             // The two terms `massBalance` is made of that had no readout of their own. Diagnosing a
             // drift means asking which term moved, and a field that is only ever *inside* a sum
             // cannot answer that — this was found while proving that 7.8 t of a "leak" on a real
@@ -1124,6 +1134,7 @@ object OutofspaceAgentHarness {
             "ventedMass", "inTransitMass", "stockpileMass", "baselineCargoMass", "reconciledMass", "storedEnergy", "generatedEnergy",
             "radiatedEnergy", "solidToAirEnergy", "heatBalance", "airHeatBalance",
             "massBalance", "builtMass", "rockCount", "rockMass",
+            "credits", "importedMass", "exportedMass", "importedEnergy", "exportedEnergy",
             "rockX", "rockY", "rockVX", "rockVY",
             "hottestSolidK", "hottestAirK", "peakSpeed", "impulseX", "impulseY",
             "ventMomentumX", "ventMomentumY", "ventAngImpulse",
