@@ -1,6 +1,9 @@
 # One-tick causality
 
-Status: **scoped, nothing built** (2026-09-01).
+Status: **built and green** (2026-09-01). One real change — `Work.settled`, which stops a store
+passing on what it has only just been handed. Everything else in the plan below turned out to be
+either already true or a derivation that is deliberately exempt; both are now pinned by tests rather
+than left as incidental. `OneTickCausalityTest` is the guard.
 
 One rule, applied everywhere:
 
@@ -111,13 +114,58 @@ Hard shape first — the case that decides whether the idea survives, not the ea
 3. **Deck / machine state.** Mostly mechanical once 1 and 2 hold.
 4. **Derived state.** Decide the `solidityChanged` question explicitly.
 
+## What was built
+
+1. **Buffers — the one substantive change.** `Work.before` holds the state the tick copied from and
+   is never written; `Work.settled(store)` is `min(before, now)` — what a store held when the tick
+   began *and* still holds. `pushOut` caps what it may hand over by it. Decisions read `before`; the
+   arithmetic still runs against the live layer, which is what keeps mass exact.
+2. **Rail boundaries — already conformant, now guarded.** `pushOut` runs after `advanceRails`, and
+   `advanceSegments` keeps its own `arrived` flag, so neither machine→rail nor rail→rail could ever
+   act twice in a step. Two tests pin it, because it holds today by the order of two calls.
+3. **Machine state — no change needed, and this was checked rather than assumed.** The machines pass
+   runs before the rails pass, so the rail block reads machine state from earlier in the tick only
+   for `kind` and `wiring`, neither of which the machines pass alters. The auto-lock a warehouse
+   applies on delivery cannot change a decision in its own step either: `acceptInto` refuses only on
+   "full" and "not a solid", and the whitelist that a filter feeds is built before any delivery
+   happens. ⚠️ `acceptInto` reading the *live* buffer to check "full" is correct and must stay —
+   two deliveries into one tank in one step have to see each other, or they would both find it empty
+   and overfill it. That is the accounting side of the rule, not a violation of it.
+4. **Derived state — exempt, deliberately and narrowly.** See the note at the `solidityChanged`
+   re-derive in `OutofspaceSim`. `structure` is recomputed from scratch each tick and holds nothing
+   between ticks, so it is not state that was *emitted*. Making a finished casing wait a tick was
+   considered and rejected: the passes that move air run earlier, so the wall would appear after air
+   had been let back into its tile, and the building would then have to displace air that only
+   arrived because the building was not yet there — the same problem with an extra tick of wrongness
+   in front of it.
+
+### The two the scope listed and this did not change
+
+Both were reclassified on closer reading rather than quietly dropped.
+
+- **Deconstruction rebuilding the flow graph mid-pass** (violation 3) is the same category as
+  `structure`: the graph is a derivation, rebuilt from scratch when the tile set changes and holding
+  nothing between ticks. Exempt for the reason recorded above, not overlooked. What matters for
+  causality is that no *matter* moves twice, and `advanceSegments` guarantees that independently.
+- **`leech` reading its own product buffer** (violation 5) is conformant in practice: the machines
+  pass runs before the rails pass, so what it reads is what last tick's `pushOut` left. It reads a
+  store that nothing else has written this tick.
+
+## What did not change
+
+Throughput. The `min(before, now)` shape means a store hands on what it was *already* holding, so a
+tank with a queue still feeds the run every step — a step of latency, not a halved rate. This is
+pinned separately, because the obvious wrong implementation (a tile that sits out a step after any
+delivery) passes the headline test and fails this one.
+
+Machine emission is likewise unaffected in practice: production lands in a store during the machines
+pass, which runs every tick, while `pushOut` fires every `RAIL_PERIOD`. Only material produced on a
+rail tick itself waits for the following step.
+
 ## Open questions
 
-- **`pushOut` runs only on rail ticks.** "Machines emit every tick" is not true today. Is that
-  something to change, or did it mean every rail *step*?
-- **The `structure` mid-tick re-derive fixes a real bug.** Defer it and accept the bug back, or
-  exempt derived state from the rule?
-- **Is derived state in scope at all?** `structure`, `occupancy`, `apertures` and the flow graph are
-  recomputed from scratch each tick, so they are arguably neither state nor work. Treating them as
-  work would forbid several things that currently exist for good reasons; treating them as
-  derivations exempts them cleanly. Leaning to the latter.
+- **`pushOut` runs only on rail ticks**, so machines put material on track once per 32 ticks. Left
+  as it was — it predates this work and is a separate dial.
+
+- **Other derivations** — `occupancy`, `apertures`, the flow graph — are exempt by the same
+  reasoning as `structure`, but only `structure` re-derives mid-tick today, so only it needed saying.

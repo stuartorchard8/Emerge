@@ -471,6 +471,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // A ghost that finished above is a wall now — see [Work.solidityChanged]. Everything below
         // reads `structure`, and the fluid step in particular would otherwise pour air back into the
         // tile the new casing has just emptied.
+        //
+        // ⛔ **The one place a pass is allowed to see its own tick, and it is deliberate.** Under
+        // one-tick causality (`PLAN_one_tick_causality.md`) nothing reads work; a derivation is
+        // exempt, because `structure` is not state that was *emitted* — it is recomputed from
+        // scratch every tick and holds nothing between them.
+        //
+        // The exemption is kept narrow on purpose. Making a finished casing wait a tick to become
+        // solid was considered and rejected: the passes that move air run earlier, so the wall would
+        // appear *after* the air had already been let back into the tile it now occupies, and the
+        // building would have to displace, on the following tick, air that only arrived because the
+        // building was not yet there. Which is the same displacement problem with an extra tick of
+        // wrongness in front of it. Cheaper and more honest to let completion push the air out at
+        // the moment it completes.
         if (w.solidityChanged) structure = StructureMap.derive(w.grid, w.deck, openness)
 
         // ── Heat ──────────────────────────────────────────────────────────────────

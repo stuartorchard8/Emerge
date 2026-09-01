@@ -30,6 +30,13 @@ import kotlin.test.assertTrue
  * ⚠️ **This is about what a pass may *see*, not about ordering.** Matter still moves exactly once
  * and is still conserved to the gram; a pass still runs before or after its neighbours for the
  * reasons it always did. What changed is that a tile cannot act on its own arrival.
+ *
+ * Two neighbours of this rule are pinned elsewhere and are not repeated here:
+ *  - **Bridges** already held it, and `BridgeTest > a packet crosses a bridge one slot at a time`
+ *    is the assertion — a lump reaching the exit slot rests there "for a whole step" before it is
+ *    set down, because `depositFromBridge` drains before `advanceBridges` shuffles.
+ *  - **Signals**, where the rule first appeared: `WiringTest` and `SignalWiringTest` pin that a
+ *    sensor drives its machine a tick after it fires.
  */
 class OneTickCausalityTest {
 
@@ -129,6 +136,50 @@ class OneTickCausalityTest {
             if (s.onRail(outOfMiddle) != null) seen++
         }
         assertEquals(4, seen, "a full tank should feed the run every step, not every other one")
+    }
+
+    /**
+     * The other half of the same handoff, and it was **already true**.
+     *
+     * `pushOut` runs after `advanceRails` rather than inside it, so a packet a machine sets down has
+     * missed this step's walk and waits for the next — the track cannot carry away what it was
+     * handed a moment ago any more than the tank could pass on what it was just given. Pinned rather
+     * than assumed: it holds today by the order of two calls, which is the kind of thing that is one
+     * refactor away from silently ceasing to be true.
+     */
+    @Test
+    fun `track does not carry away a packet a machine set down this step`() {
+        val stocked = throughLine()
+            .stocked(middle, Mixture.of(Species.Iron to 4 * Capacity.PACKET_MASS, energy = 0).atAmbient())
+
+        val s = run(stocked, RAIL_PERIOD)
+
+        assertEquals(
+            Capacity.PACKET_MASS,
+            s.onRail(outOfMiddle)?.total,
+            "the packet should be on the first tile beyond the tank",
+        )
+        assertNull(s.onRail(grid.tile(10, y)), "and no further along than that")
+    }
+
+    /**
+     * A packet crosses one tile per step and no more, however the walk happens to be ordered.
+     *
+     * `advanceSegments` keeps this with an `arrived` flag rather than by trusting `FlowGraph.order`,
+     * because a run with an output port partway along it moves by both rules at once. Four steps,
+     * four tiles.
+     */
+    @Test
+    fun `a packet crosses one tile per step and no more`() {
+        var s = throughLine().riding(grid.tile(9, y), packet())
+        for (step in 1..3) {
+            s = run(s, RAIL_PERIOD)
+            assertEquals(
+                Capacity.PACKET_MASS,
+                s.onRail(grid.tile(9 + step, y))?.total,
+                "after $step step(s) it should be exactly $step tiles along",
+            )
+        }
     }
 
     /**
