@@ -893,7 +893,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (frozen || bodiesToDrift.none { it.kind == BodyKind.STATION }) bodiesToDrift
             else bodiesToDrift.map { body ->
                 val station = body.station ?: return@map body
-                body.copy(station = station.worked())
+                // ⚠️ **Trade first, then the station's own plants.** The docking port ran in the
+                // machine loop above and left its result in `w.market`; installing it here before
+                // [Station.worked] is what makes a tick read "the ship sold me this, now I separate
+                // it" rather than the two overwriting each other.
+                val traded =
+                    if (w.docked?.stationId == station.id && w.market != null) {
+                        Station(station.ore, w.market!!, station.id, station.docks)
+                    } else station
+                body.copy(station = traded.worked())
             }
         // ⛔ **The docked station does not drift.** It is not free any more — its pose is the
         // vessel's pose plus a frozen offset, and letting the sweep integrate it as well would have
@@ -2162,7 +2170,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 }
                 is Edit.SetSas -> sas = edit.on
                 is Edit.SetDockedThrust -> dockedThrustAllowed = edit.allowed
-                is Edit.Undock -> docked = null
+                is Edit.Undock -> {
+                    docked = null
+                    // Nobody to trade with the moment the clamps let go.
+                    market = null
+                }
                 is Edit.Dock -> {
                     val tile = originAt(edit.tile) ?: return
                     val port = deck[tile] as? DockingPort ?: return
@@ -2185,6 +2197,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                                 nodeIndex = i,
                             )
                             docked = cap.link
+                            // ✅ **Where steps 2 and 3 finally meet.** The port has been trading
+                            // against a stub since it was built; berthing is what puts a real
+                            // station's shelves on the other side of the mouth.
+                            market = economy.market
                             // ⛔ The exchange, booked through the stores that exist to name it: the
                             // vessel takes the station's momentum, so the station has handed it over.
                             // Negative `handed` is the vessel *receiving* — the same idiom the

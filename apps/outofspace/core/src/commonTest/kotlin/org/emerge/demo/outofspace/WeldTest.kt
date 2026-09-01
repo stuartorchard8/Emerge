@@ -9,6 +9,7 @@ import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.Segment
+import org.emerge.demo.outofspace.world.SpeciesFilter
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DockingPort
 import org.emerge.demo.outofspace.world.machine.Hull
@@ -258,4 +259,47 @@ class WeldTest {
         val (world, _) = berthedWorld()
         assertTrue(Save.write(world).lineSequence().none { it.startsWith("dock ") })
     }
+    // ── Where steps 2 and 3 meet ─────────────────────────────────────────────
+
+    @Test
+    fun `berthing puts the station's shelves on the other side of the mouth`() {
+        val (world, port) = berthedWorld()
+        assertEquals(null, world.dockedMarket, "the fixture already had a counterparty")
+        val docked = run(world, 1, Edit.Dock(port.center))
+        val market = assertNotNull(docked.dockedMarket, "berthing did not open a counterparty")
+        assertEquals(Budget.TONNE, market.stockOf(Species.Iron), "the counterparty is not the station's")
+    }
+
+    @Test
+    fun `letting go closes the counterparty`() {
+        val (world, port) = berthedWorld()
+        val docked = run(world, 1, Edit.Dock(port.center))
+        assertNotNull(docked.dockedMarket)
+        assertEquals(null, run(docked, 1, Edit.Undock).dockedMarket, "an undocked ship kept trading")
+    }
+
+    @Test
+    fun `what the ship sells reaches the station's own shelves`() {
+        // ⛔ The seam between the docking port and the station, end to end: a lump in the mouth, sold
+        // to the berth the ship is bolted to, landing in that station's stock and paid for out of
+        // that station's prices.
+        val (world, port) = berthedWorld()
+        val selling = world.copy(
+            deck = world.deck.also {
+                it[port.center] = port.copy(sell = listOf(SpeciesFilter(Species.Titanium, null)))
+            },
+        ).stocked(port.center, Mixture.of(Species.Titanium to 500L * Budget.KILOGRAM, energy = 0L).atAmbient())
+
+        var s = run(selling, 1, Edit.Dock(port.center))
+        repeat(5) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
+
+        assertTrue(s.credits > 0L, "the station paid nothing")
+        assertTrue(s.exportedMass > 0L, "nothing left the vessel")
+        val station = s.bodies.single { it.kind == BodyKind.STATION }
+        assertTrue(
+            assertNotNull(station.station).market.stockOf(Species.Titanium) > 0L,
+            "the titanium was sold to nobody",
+        )
+    }
+
 }
