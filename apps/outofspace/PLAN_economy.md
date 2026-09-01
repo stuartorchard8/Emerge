@@ -1,7 +1,8 @@
 # Economy
 
-Status: **steps 1–2 BUILT and green** (`97bd3e79`, `46f28c80`, 2026-09-01) — money, prices, valuation,
-and the docking port. All five open decisions settled (§10); steps 3–6 not started. Numbers in §3
+Status: **steps 1–3 BUILT and green** (`97bd3e79`, `46f28c80`, `c10fd62f`, 2026-09-01) — money, prices,
+valuation, the docking port and stations. Steps 4–6 not started.
+⛔ **One decision has re-opened: a 100×100 station does not fit the tick budget — §10b.** Numbers in §3
 and §3.6 are measured off the live species tables, not invented. Steps in §9.
 
 The milestone is an **early- and mid-game arc**. The end game already exists and is fun — collect
@@ -432,10 +433,10 @@ it; **a round trip at one station loses money** (§3.5); the whole thing runs in
 ⚠️ **The `heatBalance` half of this criterion could not be met and should not have been written** —
 see §10a. `massBalance` is asserted every tick for a thousand ticks and holds.
 
-**3. Stations.** `BodyKind.STATION`, the `Station` record, despawn exemption, spawn exclusion zone,
-§6.1's two industrial processes, save lines. Save **21 → 22**.
-*Done when:* a station survives the player flying 2,000 tiles away and back; a glutted station
-visibly works its ore down; the broadphase cost of a station-sized body has been **measured**.
+**3. ✅ BUILT — stations** (`c10fd62f`). `BodyKind.STATION` + `Station` on `RigidBody`,
+`RigidBody.stationShell`, despawn exemption, 32-tile clearance, `world/StationIndustry.kt`, save v22
+with a `station` line. 14 tests in 0.28 s.
+⛔ **The measurement came back badly — see §10b. The station size is now an open question.**
 
 **4. Docking.** Proximity and alignment test, soft capture, the composite body, undock.
 *Done when:* `momentumBalanceX/Y` and `angularBalance` are zero across dock → burn → undock; a
@@ -540,6 +541,63 @@ to be priced near the one under test**; forsterite (930 against iron's 1,000) is
 (only the hull and the airlock hold air out, and making a third kind do so changes room topology —
 a docking question, not a money one), and `dockedMarket` is **not saved** (nothing owns a market
 until stations exist, and persisting a transient one is building the shape step 3 would delete).
+
+## 10b. ⛔ MEASURED: a 100×100 station does not fit the tick budget
+
+The plan asked for this number before committing to a size (§6 item 3). Taken with 24 rocks around
+the station and the ship beside it, 200 ticks, medians of five interleaved runs:
+
+| world | 200 ticks | per tick |
+|---|---|---|
+| rocks only | 100 ms | 0.5 ms |
+| + **100×100 hollow, adjacent** | **2,413 ms** | **12.1 ms** |
+| + 100×100 solid, adjacent | 17,937 ms | 89.7 ms |
+| + 100×100 hollow, **1,000 tiles away** | 120 ms | 0.6 ms |
+| + **20×20 hollow, adjacent** | **143 ms** | **0.7 ms** |
+
+✅ **The hollow shell is worth 7.4×**, exactly as §6 argued — and it is **not enough**. 12 ms a tick
+against a budget of ~3.5 ms mean / 8.5 ms p95 (`reference_oos_perf_levers`) means one station in view
+costs more than the entire rest of the game.
+
+✅ **The far-away row is the diagnosis.** A station nobody is near costs nothing, so none of this is
+per-body per-tick work — not `cellDistribution` over a 10,000-cell bounding box, not `boundRadius`,
+not the industry step. **It is entirely contacts**, which is precisely the failure mode §6 named: a
+station's bound radius culls nothing in its own neighbourhood, so every rock nearby pays
+`cells × cells`. It is superlinear in station size because a bigger station both has more cells *and*
+sweeps more rocks into its broad phase.
+
+⚠️ **The clearance zone does not save it.** No rock *spawns* within 32 tiles — but rocks drift, and
+the player will deliberately haul cargo to a station to sell it. The expensive case is the normal one.
+
+⛔ **Reported, not optimised.** The fix is the coarse box decomposition already parked in §6 — bound
+the per-cell walk, or decouple a body's colliders from its cell mask — and inventing one inside an
+economy increment is exactly what `feedback_no_unrequested_functionality` forbids. Station size is a
+plain argument to `RigidBody.stationShell`, so nothing downstream is blocked either way.
+
+**The choice, and it is Stu's:**
+
+1. **20×20 stations now** (0.7 ms/tick, comfortable), 100×100 when the decomposition lands.
+2. **Un-park the coarse box decomposition** and do it before step 4.
+3. Something in between — ~40×40 was not measured but should land near 2–3 ms/tick.
+
+### What step 3 turned up besides
+
+⚠️ **Separating and cracking interact, and a test that forgets it measures both plants at once.** A
+station whose dominant ore species is a **compound** puts it on the shelf and the cracker takes it
+straight back off — 100 kg separated read as 32 kg on the shelf. The purification test uses **iron**,
+an element, which cannot be cracked, so it measures one plant.
+
+⚠️ **Cracking is continuous, not glut-triggered, and §3.4's framing was slightly too strong.** The
+gain is exactly zero at *list* prices — but a station is never at list: with any stock at all a
+compound is fractionally discounted against its own emptier element shelves, so cracking always pays
+a little. At a kilogram a tick that is a slow background drift toward elements which self-limits as
+those shelves fill. ✅ **This is good and emergent**: a station is where you go to buy *elements*,
+which is exactly what a player building a ship needs. The discriminating test is therefore "a station
+already rich in the elements does not crack the compound", not "a station at list prices does not".
+
+⚠️ **The save version bump is a record, not a guard.** The reader has no upper-version check, so an
+older build handed a v22 file skips the `station` lines and loads a world silently missing its
+trading posts. v22 is what a person diagnosing that would read.
 
 ## 11. Hazards carried in from memory
 
