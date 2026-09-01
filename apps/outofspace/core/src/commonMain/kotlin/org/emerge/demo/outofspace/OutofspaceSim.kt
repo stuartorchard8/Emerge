@@ -1441,6 +1441,22 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val deck: DeckArray = state.deck.copyOf()
         val buffers: BufferLayer = state.buffers.copyOf()
 
+        /**
+         * **The world as it stood when the tick began**, which is the only thing a pass may reason
+         * from. See `PLAN_one_tick_causality.md`.
+         *
+         * ⛔ **Never written to.** [buffers], [rail] and [deck] above are copies taken from it, so
+         * the two halves of the double buffer already exist and this costs nothing — what it buys is
+         * the ability to ask what was true *before* this tick started meddling.
+         *
+         * ⚠️ **A decision reads this; an accounting entry does not.** Taking matter out of a store
+         * has to come off what is actually there, or two passes drawing on one source would each see
+         * a full store and between them take more than existed. So a pass asks `before` whether it
+         * may act and by how much, and then does the arithmetic against [buffers]. [settled] is that
+         * pair of questions asked once.
+         */
+        val before: VesselState = state
+
         /** Everything riding on the track — see [RailLayer]. Mutated in place through the tick. */
         val rail: RailLayer = state.rail.copyOf()
 
@@ -3152,7 +3168,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // (Bridges are excluded above; thrusters/vents have no output port.)
             if (m.kind.gatesOutput && !m.wiring.isOn(Action.Run, signals.at(port.owner))) return
 
-            val buffer = bufferFor(m, port) ?: return
+            val store = outputStoreTile(m, port) ?: return
+            val buffer = buffers.resourceAt(store) ?: return
+            // ⛔ **Only what it was already holding.** A packet delivered into this very store
+            // earlier in this same block is not on offer until next step — see [settled].
+            val settled = settled(store)
+            if (settled <= 0L) return
             // ⚠️ **A source holds on to what nothing wants, and lets go of no more than is wanted.**
             // A tank that emptied itself down a run with no consumer on it used to fill that run
             // solid, and a full run is what makes a marked rail unable to hand its metal back — the
@@ -3168,7 +3189,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (useful <= 0L) return
             // Only as much as will actually fit: an empty tile takes a whole packet, a partial one
             // takes what tops it up.
-            val room = minOf(rail.headroom(tile), useful)
+            val room = minOf(rail.headroom(tile), useful, settled)
             // ⚠️ **Some kinds ship whole packets or nothing** — see [DeckMachineKind
             // .shipsWholePackets]. A machine whose store is a hopper rather than a pair of finished
             // packets holds its remainder back instead of sending a runt lump that will own a tile
@@ -3248,9 +3269,30 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         /** Which of a machine's buffers drains through [port]. */
         private fun bufferFor(m: DeckMachine, port: Port): Mixture? {
-            val role = outputBufferRole(m, port.stream) ?: return null
-            return buffers.resourceAt(bufferTile(grid, m, port.owner, role) ?: return null)
+            return buffers.resourceAt(outputStoreTile(m, port) ?: return null)
         }
+
+        /** Where the store that [port] drains actually lives. */
+        private fun outputStoreTile(m: DeckMachine, port: Port): TileIndex? {
+            val role = outputBufferRole(m, port.stream) ?: return null
+            return bufferTile(grid, m, port.owner, role)
+        }
+
+        /**
+         * How much of [store] may leave this tick: **what it was already holding when the tick
+         * began**, less anything that has gone since.
+         *
+         * ⛔ **This is what stops a machine passing on what it has only just been handed.** A storage
+         * takes delivery during [advanceRails] and its output port is drained a few lines later in
+         * the same block; without this it would put the arriving packet straight back on the track,
+         * having held it for no time at all. Reading [Work.before] makes the tick's own delivery
+         * invisible to the tile that received it until the next one.
+         *
+         * ⚠️ **Both terms are load-bearing.** `before` alone would let a store hand over matter that
+         * something else has already taken this tick; `buffers` alone is the bug. The smaller of the
+         * two is what was there at the start *and* is still there now.
+         */
+        fun settled(store: TileIndex): Long = minOf(before.buffers.massAt(store), buffers.massAt(store))
 
         /** Write back what is left in the buffer that drained through [port]. */
         private fun drained(m: DeckMachine, port: Port, rest: Mixture?) {
