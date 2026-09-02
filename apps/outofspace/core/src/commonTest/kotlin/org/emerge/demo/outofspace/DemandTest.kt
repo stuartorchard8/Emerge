@@ -511,6 +511,107 @@ class DemandTest {
      *   ^ marked wire        wants 14.9kg            site on it: blocked, and not in the division
      * ```
      */
+    // ── 5. Sources let go once, not all at once ──────────────────────────────
+
+    /**
+     * ⛔ **The blind spot [Demand.covered] cannot cover, because the material is not there yet.**
+     * What stands on the network is read once, when the walk is made; every source that consults
+     * [Whitelist.room] afterwards is looking at that same picture, so in one pass they all see the
+     * whole appetite and they all shed a packet for it.
+     *
+     * Stu's save, 2026-09-03: seven wires marked for deconstruction down column `(11,9..15)`, one
+     * wire site at `(12,8)` short of exactly one tile's worth of copper, and all seven put 14.9kg
+     * on the track in the same rail step. Six of those packets had nowhere on the network to go.
+     *
+     * The fix is that letting go is **said out loud** — see [Whitelist.promise] — so the second
+     * source to ask is looking at a smaller number than the first.
+     */
+    @Test
+    fun `a source lets go of nothing a source before it has already been let go for`() {
+        val grid = cfg.initialGrid
+        val wireBill = conduitBillOfMaterials(Conduit.Signal, Species.Copper)
+        val copper = Mixture.of(Species.Copper to wireBill.total, energy = 0)
+
+        // Two marked wires up a corridor, and one wire site on the end of it wanting exactly one
+        // tile's worth — which is precisely what either of them holds.
+        val far = grid.tile(2, 3)
+        val near = grid.tile(3, 3)
+        val site = grid.tile(4, 3)
+        val tiles = setOf(far, near, site)
+
+        val flow = FlowGraph.build(
+            tiles,
+            sources = setOf(far, near),
+            sinks = setOf(site),
+            linked = { tile, dir -> tile in tiles && grid.neighbour(tile, dir) in tiles },
+            grid = grid,
+        )
+        val whitelist = Whitelist.of(
+            flow,
+            grid.size,
+            acceptanceAt = { tile ->
+                if (tile != site) null
+                else listOf(Acceptance.forBill(wireBill, wireBill.total, stopsTraffic = false))
+            },
+            loadOn = { _, _ -> 0L },
+        )
+
+        assertEquals(wireBill.total, whitelist.room(near, copper), "the site wants one tile of copper")
+        assertEquals(wireBill.total, whitelist.room(far, copper), "and either wire could supply it")
+
+        whitelist.promise(near, copper, wireBill.total)
+
+        assertEquals(
+            0L, whitelist.room(far, copper),
+            "the second wire shed a tile of copper for a site the first had already covered",
+        )
+        assertEquals(
+            0L, whitelist.room(near, copper),
+            "and it would have gone on shedding for the same site itself",
+        )
+        // ⛔ The control, and the reason a promise is read by `room` and not by `permits`: what has
+        // been let go of is *committed*, and it still has to be allowed to travel to the site it
+        // was let go for. Rationing the road as well as the tap is the deadlock [Demand] warns of.
+        assertTrue(
+            whitelist.permits(near, copper),
+            "the copper already on the track was forbidden to move toward the site it is for",
+        )
+    }
+
+    /**
+     * The same rule where a player meets it: a stroke of DELETE across a run, and one small site.
+     *
+     * ⚠️ **The assertion is a mass, not a count of tiles**, and that is the rule stated honestly. A
+     * rail holds 130.6kg and a packet is 100kg, so one tile's worth of demand is served by one whole
+     * tile and a third of the next — two segments shedding between them, which is right. What must
+     * not happen is four segments each shedding a packet for one segment's worth of appetite.
+     */
+    @Test
+    fun `a condemned run lets go of one site's worth between them, not one each`() {
+        val grid = cfg.initialGrid
+        val bill = conduitBillOfMaterials(Conduit.Rail, materialBefore(Conduit.Rail))
+        val rails = arrayOfNulls<Segment>(grid.size)
+        joinRow(grid, rails, 2, 9, 3)
+        var s = VesselState(
+            grid, DeckArray(grid),
+            conduits = Conduits.ofRails(rails.toList()),
+            buffers = BufferLayer.empty(grid.size),
+            rail = RailLayer.empty(grid.size),
+        ).copy(creative = false)
+
+        // One more tile of track, unbuilt: the only thing on this network that wants iron, and it
+        // wants exactly one tile's worth of it.
+        s = run(s, 1, OutofspaceInput(listOf(fixtureLay(grid.tile(9, 3), grid.tile(10, 3), Conduit.Rail))))
+        // Four tiles of the finished run condemned in one stroke, which is one drag of DELETE.
+        s = run(s, 1, OutofspaceInput((2..5).map { Edit.Remove(grid.tile(it, 3), DeleteLayer.Rail) }))
+        s = run(s, RAIL_PERIOD)
+
+        assertEquals(
+            bill.total, onTrack(s),
+            "one site short of ${bill.total}ug was shed for by every marked tile at once",
+        )
+    }
+
     @Test
     fun `a site behind a plug takes no share of matter that cannot reach it`() {
         val grid = cfg.initialGrid

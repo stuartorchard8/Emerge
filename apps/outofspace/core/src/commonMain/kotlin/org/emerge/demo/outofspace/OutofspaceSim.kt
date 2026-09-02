@@ -2967,6 +2967,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                                 }
                                 stuff.setEnergy(tile, stuff.energyAt(tile) - energy)
                                 builtMass -= moved
+                                // ⛔ **Said out loud, so the next tile of the marked run can hear
+                                // it.** Every segment in this loop asked the same whitelist in the
+                                // same pass, and until a source booked what it let go of they all
+                                // read the same untouched appetite and all shed a packet for it —
+                                // seven wires coming apart into one wire site. See
+                                // [Whitelist.promised].
+                                whitelist.promise(tile, recovered, moved)
                             }
                         }
                     }
@@ -3123,6 +3130,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 if (rail.resourceAt(onto) == null) { rail.put(onto, offered); true }
                 else rail.loadOnto(onto, offered)
             if (!landed) return false
+            whitelist.promise(onto, offered, offered.total)
             buffers.put(store, (held - moving).takeIf { it.total > 0L })
             return true
         }
@@ -3192,6 +3200,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             }
             takeEnergyEvenlyOffFootprint(tiles, movedEnergy)
             builtMass -= moved
+            whitelist.promise(centre, recovered, moved)
             var left = 0L
             for (t in tiles) left += deck.stuff.massAt(t)
             return left == 0L
@@ -3552,6 +3561,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val (packet, rest) = takePacket(buffer, room) ?: return
             val wasEmpty = rail.isEmpty(tile)
             if (!rail.loadOnto(tile, packet.contents)) return
+            // Booked against what wanted it, so the next port to ship this step is looking at an
+            // appetite this packet has already been taken out of — see [Whitelist.promise].
+            whitelist.promise(tile, packet.contents, packet.contents.total)
             drained(m, port, rest.orNull())
             // Only an empty tile counts as an appearance. Topping up a lump already standing there
             // is a change of mass, which draws itself from the mass the tile started the tick with.
@@ -3750,6 +3762,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val cold = Mixture.of(species to mass, energy = 0L)
             val bought = Mixture.of(species to mass, energy = heatCapacityOf(cold) * Temperature.AMBIENT_KELVIN)
             if (!rail.loadOnto(onto, bought)) return null
+            // A purchase is a source like any other: two mouths buying for the same site would
+            // otherwise each buy the whole of what it is short of, and the second packet is bought
+            // with real credits and comes to rest with nothing able to take it.
+            whitelist.promise(onto, bought, bought.total)
 
             credits -= cost
             importedMass += bought.total
@@ -3998,7 +4014,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     appetites,
                     walls = ghosts,
                 )
-                whitelist = Whitelist.of(flow, rails.size, { accepts[it] }, loadOn)
+                whitelist = Whitelist.of(flow, rails.size, { accepts[it] }, loadOn).also {
+                    // ⚠️ **The rebuild is a new picture of the network, not a new step.** What the
+                    // passes above have already let go of is still on its way, and a fresh
+                    // whitelist that had forgotten it would let the ports below ship for the same
+                    // appetite a second time.
+                    it.carryPromisesFrom(whitelist)
+                }
             }
             this.whitelist = whitelist
 

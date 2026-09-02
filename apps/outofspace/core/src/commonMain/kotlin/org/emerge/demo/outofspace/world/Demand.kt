@@ -286,6 +286,34 @@ class Whitelist private constructor(
      */
     private val unlimited: BooleanArray,
 ) {
+    /**
+     * What sources have already let go of **during the life of this whitelist**, per sink.
+     *
+     * ⛔ **The hole [Demand.covered] cannot see, because it is not there yet.** `covered` is what
+     * stands on the network, read once when the walk was made; every source consulting [room]
+     * afterwards is therefore looking at the same picture, and none of them can see what the ones
+     * before it have just put down. One sink short of a single wire, seven wires marked for
+     * deconstruction on the corridor that reaches it, and all seven read "14.9kg wanted" in the same
+     * pass and shed 14.9kg apiece. Stu's save, 2026-09-03: column `(11,9..15)` emptying itself into
+     * one wire site at `(12,8)`.
+     *
+     * So a source that lets go **says so**, and the next one to ask is looking at a smaller number.
+     * The promise dies with the whitelist — by the next rail step the material is standing on the
+     * track and `covered` counts it, which is the same fact arriving by its usual road, so nothing
+     * is charged twice.
+     *
+     * ⚠️ **Which source wins is the order the pass walks in**, and that is the point rather than a
+     * flaw: the alternative to somebody going first is everybody going at once, which is the bug.
+     * Ascending tile order means the near end of a marked run comes apart before the far end, which
+     * is also the order a player would expect to watch it go.
+     *
+     * ⚠️ **A promise can be wrong, and it costs a step.** Nothing reserves a route, so a lump
+     * promised to one site may be eaten by another on the way; the sink that was counted on then
+     * reads short next step and the source that held back pours after all. Self-correcting, because
+     * the whole picture is rebuilt from the world every rail step.
+     */
+    private val promised = HashMap<Acceptance, Long>()
+
     /** True when anything at all may leave [tile] — the common case, and free to ask. */
     fun permitsAnything(tile: TileIndex): Boolean =
         tile.index in unlimited.indices && unlimited[tile.index]
@@ -332,6 +360,13 @@ class Whitelist private constructor(
             if (d.acceptance.isUnlimited) return true
             found = true
             if (!rationed) return true
+            // ⛔ **[promised] is deliberately not read here, and [room] is where it is.** This is the
+            // question a *moving* lump asks, and material already on the track is already committed:
+            // subtract what has been promised and the very lump a source has just put down is
+            // forbidden to advance toward the site it was let go for — the deadlock [Demand] warns
+            // about, reached from the other end. Promises ration what is *let go of*, never what is
+            // already in the corridor.
+            //
             // ⚠️ **Per sink, clamped at nought, and then added up.** A sink with more on its way
             // than it can use is done — it does not lend its surplus to the sink beside it, which
             // is what a single subtraction across the whole tile would have it do.
@@ -359,11 +394,85 @@ class Whitelist private constructor(
         for (d in here) {
             if (!d.wants(mixture)) continue
             if (d.acceptance.isUnlimited) return Acceptance.UNLIMITED
-            val remaining = d.acceptance.wanted - d.covered
+            val remaining = remaining(d)
             if (remaining > 0L) owed = saturated(owed, remaining)
         }
         return owed
     }
+
+    /**
+     * Books [mass] of [mixture] out of [tile] against the sinks it was let go for — see [promised].
+     *
+     * ⛔ **Called by whoever let go, and only after it has landed.** A source that asked [room] and
+     * then found the tile occupied has promised nothing; booking the intention rather than the
+     * deposit would hold the next source back on behalf of material that never left.
+     *
+     * Divided among the sinks in proportion to what each still wants, which is [chargeStandingLoad]'s
+     * rule for a lump already on the track and has to be: the two are the same material a step
+     * apart, and a lump is eaten exactly once however many sinks could have eaten it.
+     *
+     * ⚠️ **The shares add up to [mass] exactly.** A gram of demand that nobody is charged for is a
+     * gram some source will send after this one and nothing will eat.
+     */
+    fun promise(tile: TileIndex, mixture: Mixture, mass: Long) {
+        if (mass <= 0L || permitsAnything(tile)) return
+        val here = routes.getOrNull(tile.index) ?: return
+        var wantedHere = 0L
+        for (d in here) {
+            if (!d.wants(mixture)) continue
+            // Nothing to ration. An endless sink is why [room] answered [Acceptance.UNLIMITED] in
+            // the first place, and a promise against a number that never runs down means nothing.
+            if (d.acceptance.isUnlimited) return
+            val remaining = remaining(d)
+            if (remaining > 0L) wantedHere = saturated(wantedHere, remaining)
+        }
+        if (wantedHere <= 0L) return
+
+        // ⛔ **Apportioned off a running total, never a share at a time.** The same arithmetic
+        // [org.emerge.demo.outofspace.chem.Mixture.take] uses and for the same reason: shares taken
+        // one at a time each truncate on their own, so they sum to less than what left the source
+        // and the grams nobody was charged for are grams the next source will send after them.
+        var seen = 0L
+        var given = 0L
+        var last: Acceptance? = null
+        for (d in here) {
+            if (!d.wants(mixture)) continue
+            val remaining = remaining(d)
+            if (remaining <= 0L) continue
+            seen = saturated(seen, remaining)
+            val upTo = scaledRatio(minOf(seen, wantedHere), wantedHere, mass)
+            val share = upTo - given
+            if (share <= 0L) continue
+            promised[d.acceptance] = promisedTo(d.acceptance) + share
+            given = upTo
+            last = d.acceptance
+        }
+        // Whatever the truncation left over goes to the last sink charged, so that what was
+        // promised is exactly what was let go of.
+        val remainder = last ?: return
+        if (given < mass) promised[remainder] = promisedTo(remainder) + (mass - given)
+    }
+
+    /**
+     * Carries [previous]'s promises onto this whitelist.
+     *
+     * The graph is rebuilt mid-step when something has finished coming apart and left the network.
+     * What was promised before that is still promised: the material is on the track either way, and
+     * the sink it was let go for is the same sink.
+     */
+    fun carryPromisesFrom(previous: Whitelist) {
+        promised.putAll(previous.promised)
+    }
+
+    private fun promisedTo(sink: Acceptance): Long = promised[sink] ?: 0L
+
+    /**
+     * What [d]'s sink is still short of: what it wants, less what is already coming — both what
+     * stands on the network ([Demand.covered]) and what has been let go for it since ([promised]).
+     *
+     * ⛔ **Never asked of an endless sink**, whose [Acceptance.wanted] is not a quantity.
+     */
+    private fun remaining(d: Demand): Long = d.acceptance.wanted - d.covered - promisedTo(d.acceptance)
 
     companion object {
         /** Permits nothing anywhere: a world whose flow has not been worked out yet. */
