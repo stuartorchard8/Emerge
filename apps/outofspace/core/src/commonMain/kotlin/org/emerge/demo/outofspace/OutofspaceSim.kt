@@ -889,7 +889,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // Frozen: the sky neither gains a rock nor loses one. Spawning is a function of where the
         // ship has got to, and it has not got anywhere.
         val bodiesToDrift = if (frozen) w.bodies.toList() else RockSpawner.process(
-            pose = state.pose,
             tick = state.tick,
             bodies = w.bodies.toList(),
             vesselTileX = vesselTileX,

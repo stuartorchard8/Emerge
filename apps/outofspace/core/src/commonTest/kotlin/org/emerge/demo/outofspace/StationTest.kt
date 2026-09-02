@@ -121,7 +121,7 @@ class StationTest {
         // Eleven chunks of window at 64 tiles apiece is ~700; two thousand is well outside it, which
         // is exactly the distance that despawns everything else.
         for (step in 1..40) {
-            bodies = RockSpawner.process(Pose.IDENTITY, 10_000L + step, bodies, step * 50L, 0L)
+            bodies = RockSpawner.process(10_000L + step, bodies, step * 50L, 0L)
         }
         val stations = bodies.filter { it.kind == BodyKind.STATION }
         assertEquals(1, stations.size, "the station was despawned when the player left")
@@ -134,7 +134,7 @@ class StationTest {
         RockSpawner.reset()
         val post = station(atTileX = 0, atTileY = 0)
         var bodies = listOf(post)
-        for (step in 1..60) bodies = RockSpawner.process(Pose.IDENTITY, 10_000L + step, bodies, 0L, 0L)
+        for (step in 1..60) bodies = RockSpawner.process(10_000L + step, bodies, 0L, 0L)
 
         val clear = RockSpawner.STATION_CLEARANCE_TILES * Flight.PER_TILE
         val minX = post.positionX - clear

@@ -167,21 +167,24 @@ object RockSpawner {
      * Bodies whose chunk leaves the WINDOW_SIZE×WINDOW_SIZE window are despawned.
      */
     /**
-     * Where the grid sits in the world, for this call only.
+     * ⛔ **Everything here is a world quantity, and there used to be two frames.**
      *
-     * The spawner thinks entirely in **tiles on the grid** — chunks, spawn windows and the overlap
-     * test are all grid quantities — while a body is stored in the world. Rather than convert a
-     * body's position back and forth (which would run it through [rotScale] twice a tick and let it
-     * drift), this converts once in each direction: existing bodies are *read* into the grid frame
-     * for the two comparisons, and a newly spawned body is *written* out of it at birth.
+     * The field is *indexed* by world chunks — [densityForChunk] is asked about `baseChunkX + col`,
+     * and the base comes from the vessel's world tile — and the nav map samples it in world
+     * coordinates. But rocks were *placed* through the vessel's pose, at a tile offset from the
+     * vessel's own chunk, so where a rock landed depended on where the ship happened to be when the
+     * chunk spawned:
      *
-     * Held rather than threaded because the object already keeps `lastVesselChunk` across calls, and
-     * it is rewritten at the top of every [process].
+     * - the same chunk rolled with the ship at world tile 0 put its rock at world tile 6.2, and with
+     *   the ship at tile 32 put it at 38.2 — displaced by `shipTile mod CHUNK_SIZE`, which is a
+     *   *different* displacement for every chunk, since chunks spawn at different moments;
+     * - turning the ship a quarter turn rotated the whole asteroid field about it, moving that rock
+     *   from world chunk (0, 2) to (−3, 0), while the map it is drawn on did not turn.
+     *
+     * Rocks are scenery. They do not slide when the ship flies and they do not turn when it turns,
+     * so there is no pose in this file any more and nothing to convert.
      */
-    private var pose: Pose = Pose.IDENTITY
-
     fun process(
-        pose: Pose,
         tick: Long,
         bodies: List<RigidBody>,
         vesselTileX: Long,
@@ -190,7 +193,6 @@ object RockSpawner {
         if (!enabled) return bodies
         if (tick < ACTIVATE_AFTER_TICK) return bodies
 
-        this.pose = pose
         val vesselChunkX = chunkIndexOf(vesselTileX)
         val vesselChunkY = chunkIndexOf(vesselTileY)
 
@@ -205,12 +207,14 @@ object RockSpawner {
         // ── Despawn bodies outside the WINDOW_SIZE×WINDOW_SIZE window ──
         val result = ArrayList<RigidBody>(bodies.size)
         for (body in bodies) {
-            val bodyTileX = body.localComX(pose) / Flight.PER_TILE
-            val bodyTileY = body.localComY(pose) / Flight.PER_TILE
-            val bodyChunkX = chunkIndexOf(bodyTileX)
-            val bodyChunkY = chunkIndexOf(bodyTileY)
-            val dx = abs(bodyChunkX)
-            val dy = abs(bodyChunkY)
+            // ⚠️ Against the **vessel's** chunk, not against chunk zero. Read in the grid frame a
+            // body's chunk was measured from the grid's origin, which is near the ship but not on
+            // it, so the window a rock had to leave was off-centre by that much and a little more
+            // for however far into a chunk the ship had flown.
+            val bodyChunkX = chunkIndexOf(body.comX / Flight.PER_TILE)
+            val bodyChunkY = chunkIndexOf(body.comY / Flight.PER_TILE)
+            val dx = abs(bodyChunkX - vesselChunkX)
+            val dy = abs(bodyChunkY - vesselChunkY)
             // ⛔ **A station is permanent and is never despawned.** Everything else here is scenery
             // the window may forget; a station is a place the player is expected to come *back* to,
             // and one that evaporated because they flew eleven chunks away would take their money,
@@ -247,7 +251,7 @@ object RockSpawner {
             val newBodies = spawnBodiesForChunk(worldChunkX, worldChunkY, density, mixture)
 
             for (body in newBodies) {
-                if (!wouldOverlap(body.localComX(pose) / Flight.PER_TILE, body.localComY(pose) / Flight.PER_TILE, (body.width / 2), result)) {
+                if (!wouldOverlap(body.comX / Flight.PER_TILE, body.comY / Flight.PER_TILE, (body.width / 2), result)) {
                     result.add(body)
                 }
             }
@@ -343,37 +347,25 @@ object RockSpawner {
             val ry = rng.nextInt(CHUNK_SIZE)
             val radius = rng.nextInt(3)+1  // 1, 2, 3
 
-            val (originTileX, originTileY) = chunkOriginTile(chunkX, chunkY)
-            val tileX = originTileX + rx
-            val tileY = originTileY + ry
+            // The chunk's own tile, in the world. This line existed and its answer was thrown away:
+            // the body was placed from a vessel-relative tile instead, which is the whole of the
+            // misalignment this file's header describes.
+            val worldTileX = chunkX.toLong() * CHUNK_SIZE + rx.toLong()
+            val worldTileY = chunkY.toLong() * CHUNK_SIZE + ry.toLong()
 
-            val (worldTileX, worldTileY) = chunkX.toLong() * CHUNK_SIZE + rx.toLong() to chunkY.toLong() * CHUNK_SIZE + ry.toLong()
-
-            // Born on the grid, stored in the world — the one conversion, done once. See [pose].
-            //
-            // ⚠️ The **centre** of the tile, because a body is placed by its centre of mass now and a
+            // ⚠️ The **centre** of the tile, because a body is placed by its centre of mass and a
             // tile spans `[x, x+1)`. Placing that centre on the tile's corner would sit every rock in
             // the field half a tile up and to the left of the tile it was rolled for.
-            val bornX = tileX.toLong() * Flight.PER_TILE + Flight.PER_TILE / 2L
-            val bornY = tileY.toLong() * Flight.PER_TILE + Flight.PER_TILE / 2L
             bodies.add(RigidBody.rockBlob(
                 radius = radius,
-                positionX = pose.toWorldX(bornX, bornY),
-                positionY = pose.toWorldY(bornX, bornY),
+                positionX = worldTileX * Flight.PER_TILE + Flight.PER_TILE / 2L,
+                positionY = worldTileY * Flight.PER_TILE + Flight.PER_TILE / 2L,
                 composition = composition,
             ))
         }
 
         return bodies
     }
-
-    /**
-     * Tile coordinates of a chunk's top-left corner, in the same vessel-relative tile frame used
-     * for spawned rock positions (see [spawnRocksForChunk]) — the frame the renderer must match to
-     * place chunk-density tiles at the same screen position their rocks would occupy.
-     */
-    internal fun chunkOriginTile(chunkX: Int, chunkY: Int): Pair<Int, Int> =
-        (chunkX - lastVesselChunkX) * CHUNK_SIZE to (chunkY - lastVesselChunkY) * CHUNK_SIZE
 
     /**
      * Deterministic 4-octave 2D simplex noise sampling for rock density per chunk.
@@ -677,10 +669,15 @@ object RockSpawner {
             // asks only for the space it occupies, so this is zero for rocks and the loop is
             // unchanged for them.
             val clear = if (body.kind == BodyKind.STATION) STATION_CLEARANCE_TILES * Flight.PER_TILE else 0L
-            val bodyMinX = body.localComX(pose) - clear
-            val bodyMinY = body.localComY(pose) - clear
-            val bodyMaxX = bodyMinX + body.width * Flight.PER_TILE + 2 * clear
-            val bodyMaxY = bodyMinY + body.height * Flight.PER_TILE + 2 * clear
+            // ⚠️ Centred, like the box built for the candidate above. This measured the existing
+            // body's extent from its position *outwards*, which read that position as a corner —
+            // true while a body was anchored on one, and half a body out ever since.
+            val bodyHalfX = body.width * Flight.PER_TILE / 2L + clear
+            val bodyHalfY = body.height * Flight.PER_TILE / 2L + clear
+            val bodyMinX = body.comX - bodyHalfX
+            val bodyMinY = body.comY - bodyHalfY
+            val bodyMaxX = body.comX + bodyHalfX
+            val bodyMaxY = body.comY + bodyHalfY
 
             if (minX < bodyMaxX && maxX > bodyMinX && minY < bodyMaxY && maxY > bodyMinY) {
                 return true
