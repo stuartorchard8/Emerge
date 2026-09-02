@@ -13,6 +13,7 @@ import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -261,5 +262,69 @@ class EditorToolsTest {
         assertEquals(c.state.injectedAirMass, back.injectedAirMass)
         assertEquals(c.state.injectedAirEnergy, back.injectedAirEnergy)
         assertEquals(0L, back.airBalance, "the reloaded world reads its own past as a leak")
+    }
+
+    // ── Calling a mark off ────────────────────────────────────────────────────
+
+    /**
+     * A condemned run outside creative mode, which is the only world in which a mark exists at all —
+     * in creative a delete simply takes the tile, so there is nothing to call off.
+     *
+     * Built creative and then handed to a second controller with the privilege withdrawn, because
+     * paying for the fixture is not what is under test and a non-creative build is a ghost that
+     * would still be filling itself when the marking started.
+     */
+    private fun condemnedRun(): Pair<OutofspaceController, List<TileIndex>> {
+        val c = OutofspaceController(cfg, layered().state.copy(creative = false))
+        val run = (4..7).map { grid.tile(it, 5) }
+        for (tile in run) c.removeAt(tile, DeleteLayer.Rail)
+        c.stepOnce()
+        assertTrue(
+            run.all { c.state.conduits.at(Conduit.Rail, it)?.deconstructing == true },
+            "fixture: the run should be condemned before anything calls it off",
+        )
+        return c to run
+    }
+
+    /**
+     * The gesture this exists for: a stretch of belt is condemned in one stroke, so it is reprieved
+     * in one, and a player who marked the wrong run does not have to click their way back along it.
+     *
+     * ⚠️ **The middle tile is the assertion.** The drag jumps from one end of the stroke to the far
+     * one without ever being told about the tile between them, which is exactly what a fast pointer
+     * does; a cancel that only answered for the tiles the pointer reported would leave a marked tile
+     * in the middle of a run that looks reprieved, and the player would find out when it vanished.
+     */
+    @Test
+    fun `a cancel drag reprieves every tile of the stroke, including one the pointer skipped`() {
+        val (c, run) = condemnedRun()
+
+        c.tool = Tool.Cancel
+        c.apply(run[0])
+        c.dragTo(run[2])
+        c.endDrag()
+        c.stepOnce()
+
+        for (tile in run.take(3)) assertFalse(
+            c.state.conduits.at(Conduit.Rail, tile)?.deconstructing == true,
+            "the stroke passed over $tile and left it condemned",
+        )
+    }
+
+    /** And it stops where the player stopped: a stroke is not an excuse to reprieve the whole run. */
+    @Test
+    fun `a cancel drag leaves the tile past its end marked`() {
+        val (c, run) = condemnedRun()
+
+        c.tool = Tool.Cancel
+        c.apply(run[0])
+        c.dragTo(run[2])
+        c.endDrag()
+        c.stepOnce()
+
+        assertTrue(
+            c.state.conduits.at(Conduit.Rail, run[3])?.deconstructing == true,
+            "the stroke stopped a tile short and called off a tile it never touched",
+        )
     }
 }

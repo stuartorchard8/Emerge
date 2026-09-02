@@ -33,6 +33,12 @@ enum class Tool(val label: String) {
      *
      * Its own tool rather than a modifier on DELETE, because it is the only way to undo a mark and a
      * player who has condemned the wrong building needs to be able to reach for it deliberately.
+     *
+     * **Drags**, and for the reason every gesture here does: DELETE condemns a run in one stroke, so
+     * the tool that undoes it has to be reachable in one stroke too. The path is stepped out through
+     * [OutofspaceController.dragTo] rather than painted per pointer report — a fast sweep that
+     * skipped a tile would leave one marked in the middle of a run that looks reprieved, and the
+     * player would learn about it when the tile went.
      */
     Cancel("CANCEL"),
 

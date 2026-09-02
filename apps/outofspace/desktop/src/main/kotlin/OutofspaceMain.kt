@@ -216,10 +216,14 @@ fun main() {
             // Cutting drags exactly as building does, and through the controller for the same
             // reason: the gesture has to be stepped out tile by tile, or a fast stroke leaves an
             // uncut tile behind and the belt is still joined where it looks severed.
-            leftDown && controller.tool == Tool.Cut -> if (hovered != TileIndex.NONE && hovered != lastPainted) {
-                controller.dragTo(hovered)
-                lastPainted = hovered
-            }
+            // Cancelling drags through the controller for the third time and the same reason: the
+            // stroke is stepped out tile by tile, so a fast sweep back over a condemned run leaves
+            // no tile still marked in the middle of it.
+            leftDown && (controller.tool == Tool.Cut || controller.tool == Tool.Cancel) ->
+                if (hovered != TileIndex.NONE && hovered != lastPainted) {
+                    controller.dragTo(hovered)
+                    lastPainted = hovered
+                }
             leftDown && controller.tool == Tool.Build -> if (hovered != TileIndex.NONE && hovered != lastPainted) {
                 if (controller.brush is Brush.Run) controller.dragTo(hovered) else controller.place(hovered)
                 lastPainted = hovered

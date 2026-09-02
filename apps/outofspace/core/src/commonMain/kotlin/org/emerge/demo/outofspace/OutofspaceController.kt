@@ -491,7 +491,10 @@ class OutofspaceController(
             }
             Tool.Inspect -> inspect(tile)
             Tool.Delete -> removeAt(tile)
-            Tool.Cancel -> cancelAt(tile)
+            // Calling a mark off drags for the same reason making one does: a player condemns a
+            // stretch of belt in one stroke, and having to click every tile of it back is the tool
+            // being harder to use than the mistake it exists to undo.
+            Tool.Cancel -> { cancelAt(tile); dragFrom = tile }
             // A drag, like building, and the exact inverse of it: what the stroke severs is the
             // *edges* it draws, so a click on its own has nothing to cut and only arms the drag.
             Tool.Cut -> dragFrom = tile
@@ -511,7 +514,7 @@ class OutofspaceController(
      */
     fun dragTo(tile: TileIndex) {
         if (dragFrom == TileIndex.NONE || tile == dragFrom) return
-        if (tool != Tool.Build && tool != Tool.Cut) return
+        if (tool != Tool.Build && tool != Tool.Cut && tool != Tool.Cancel) return
         val grid = state.grid
         if (tile == TileIndex.NONE) return
         var at = dragFrom
@@ -528,6 +531,11 @@ class OutofspaceController(
             // run, and looks cut.
             if (tool == Tool.Cut) {
                 cutAt(at, dir)
+            } else if (tool == Tool.Cancel) {
+                // The tile *entered*, not the one left: the click that armed the drag already called
+                // off `dragFrom`, and cancelling it a second time would be a wasted edit on every
+                // step of every stroke.
+                cancelAt(next)
             } else {
                 // Same refusal as [place], and it has to be here too: a drag is its own edit and
                 // does not go through the brush. An empty palette is one of them now — a drag with
