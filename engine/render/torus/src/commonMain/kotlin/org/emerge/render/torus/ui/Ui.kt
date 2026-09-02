@@ -53,6 +53,7 @@ class Ui {
         val x: Float, val y: Float, val w: Float, val h: Float,
         val textureId: Int,
         val uvMinX: Float, val uvMinY: Float, val uvMaxX: Float, val uvMaxY: Float,
+        val uvCos: Float = 1f, val uvSin: Float = 0f, val round: Boolean = false,
         override val clip: Int = -1,
     ) : DrawCmd
     private class ClickRegion(
@@ -349,6 +350,7 @@ class Ui {
                     centerX, centerY, halfW, halfH,
                     img.uvMinX, img.uvMinY, img.uvMaxX, img.uvMaxY,
                     img.textureId,
+                    uvCos = img.uvCos, uvSin = img.uvSin, round = img.round,
                 )
                 i++
             }
@@ -667,8 +669,9 @@ class Ui {
         x: Float, y: Float, w: Float, h: Float,
         textureId: Int,
         uvMinX: Float, uvMinY: Float, uvMaxX: Float, uvMaxY: Float,
+        uvCos: Float = 1f, uvSin: Float = 0f, round: Boolean = false,
     ) {
-        cmds.add(ImageCmd(x, y, w, h, textureId, uvMinX, uvMinY, uvMaxX, uvMaxY, currentClip))
+        cmds.add(ImageCmd(x, y, w, h, textureId, uvMinX, uvMinY, uvMaxX, uvMaxY, uvCos, uvSin, round, currentClip))
     }
     internal fun emitTextLeft(text: String, x: Float, topY: Float, h: Float, color: Long) {
         cmds.add(TextCmd(text, x, topY, h, color, centered = false, centerX = 0f, clip = currentClip))
@@ -992,15 +995,21 @@ class CanvasBuilder internal constructor(private val ui: Ui) {
 
     fun rect(x: Float, y: Float, w: Float, h: Float, color: Long) = ui.emitRect(x, y, w, h, color)
 
-    /** A textured quad, tinted between [tintLow] (texel 0.0) and [tintHigh] (texel 1.0) — one draw call
-     *  regardless of the source texture's resolution, with GPU bilinear filtering doing the smoothing (set
-     *  on the texture itself, e.g. [org.emerge.render.torus.GPU.configureTexture2DClampLinear]). The uv
-     *  rect need not be [0,1] — panning/zooming is just moving [uvMinX]..[uvMaxY]. */
+    /** A textured quad — one draw call regardless of the source texture's resolution, with GPU bilinear
+     *  filtering doing the smoothing (set on the texture itself, e.g.
+     *  [org.emerge.render.torus.GPU.configureTexture2DClampLinear]). The uv rect need not be [0,1] —
+     *  panning/zooming is just moving [uvMinX]..[uvMaxY].
+     *
+     *  [uvCos]/[uvSin] turn the sampled rect about its own middle, which is how a map rotates without
+     *  its UVs being rebuilt every frame; [round] clips the quad to its inscribed ellipse, leaving what
+     *  is behind the corners untouched rather than darkened. Both are identity by default, so a caller
+     *  that wants a plain square quad writes what it always did. */
     fun image(
         x: Float, y: Float, w: Float, h: Float,
         textureId: Int,
         uvMinX: Float = 0f, uvMinY: Float = 0f, uvMaxX: Float = 1f, uvMaxY: Float = 1f,
-    ) = ui.emitImage(x, y, w, h, textureId, uvMinX, uvMinY, uvMaxX, uvMaxY)
+        uvCos: Float = 1f, uvSin: Float = 0f, round: Boolean = false,
+    ) = ui.emitImage(x, y, w, h, textureId, uvMinX, uvMinY, uvMaxX, uvMaxY, uvCos, uvSin, round)
 
     /** Text centred horizontally on [centerX], its top at [topY], [height] px tall. */
     fun label(text: String, centerX: Float, topY: Float, height: Float, color: Long) =

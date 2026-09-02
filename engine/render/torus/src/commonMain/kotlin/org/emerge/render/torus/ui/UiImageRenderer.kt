@@ -22,8 +22,8 @@ class UiImageRenderer {
     private val uUvMin = GPU.getUniformLocation(program, "uUvMin")
     private val uUvMax = GPU.getUniformLocation(program, "uUvMax")
     private val uImage = GPU.getUniformLocation(program, "uImage")
-    private val uTintLow = GPU.getUniformLocation(program, "uTintLow")
-    private val uTintHigh = GPU.getUniformLocation(program, "uTintHigh")
+    private val uUvRot = GPU.getUniformLocation(program, "uUvRot")
+    private val uRound = GPU.getUniformLocation(program, "uRound")
 
     private val vao = GPU.genAndBindVertexArrays()
     private val quadVbo = GPU.genBuffers()
@@ -44,6 +44,11 @@ class UiImageRenderer {
         uvMinX: Float, uvMinY: Float, uvMaxX: Float, uvMaxY: Float,
         textureId: Int,
         textureUnit: Int = 2,
+        /** `(cos, sin)` of a turn applied to the UVs about the middle of the sampled rect. */
+        uvCos: Float = 1f,
+        uvSin: Float = 0f,
+        /** Clip the quad to its inscribed ellipse — a round instrument rather than a square one. */
+        round: Boolean = false,
     ) {
         GPU.bindVertexArray(vao)
         GPU.useProgram(program)
@@ -54,6 +59,8 @@ class UiImageRenderer {
         GPU.putUniform2f(uHalfSize, halfW, halfH)
         GPU.putUniform2f(uUvMin, uvMinX, uvMinY)
         GPU.putUniform2f(uUvMax, uvMaxX, uvMaxY)
+        GPU.putUniform2f(uUvRot, uvCos, uvSin)
+        GPU.putUniform1f(uRound, if (round) 1f else 0f)
         GPU.drawTriangles(0, 4)
     }
 
