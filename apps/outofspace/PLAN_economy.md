@@ -673,6 +673,111 @@ already asking for" is a real convenience with no hazard in it: the demand syste
 locked warehouse and construction site wants, and a port could fill those orders without the player
 listing species by hand. Worth adding as a *switch* beside the manual list rather than instead of it.
 
+## 10e. The revision — station industry rebuilt (Stu, 2026-09-02)
+
+The arc (step 6) is a playtest, and the first playtest condemned three things at once. All three are
+fixed; §6.1 as written above is history.
+
+### ⛔ Every sale went onto the shelves, so the mixed reserve was never written at all
+
+`market.absorbing(forSale)` was unconditional. A 41%-iron lump was scattered across a shelf per
+species — **already separated, for nothing** — which handed the player the station's own purification
+free and left `Station.ore` permanently empty. A live station ended up quoting well over a hundred
+species in sub-gram quantities; its separator ate the seeded 60 t reserve in a quarter of an hour and
+was dead machinery for the rest of the game.
+
+✅ A lump of **exactly one species** goes on the shelf; anything else goes to the heap.
+⚠️ **Purity is exact, no tolerance.** Two micrograms of forsterite in a tonne of iron sends the lot to
+the heap. That is the standard `BUILD_PURITY_PERCENT` already holds the player to, and a tolerance
+here is the crumb-swallowing rule the construction path tried and reverted
+(`reference_oos_microgram_deadlock`).
+
+### ⛔ A kilogram a tick outran the player
+
+3.8 t/min of free, perfect refining — enough to halve the starter station's own price for its
+dominant ore in under three minutes of nobody doing anything.
+
+✅ `OutofspaceReducer.STATION_PERIOD` = **3,840 ticks, once a minute** at 64 tps.
+⚠️ **A multiple of the tick rate, not a divisor** — the other way round from every other period, and
+the reason this one is stated in minutes. `STATION_OFFSET` = 5, clear of the others mod 8.
+✅ `CONCENTRATION_BATCH` = **a tonne**, and it is a **go/no-go threshold, not just a rate**: under a
+tonne of the dominant species and the separator does nothing at all. That is what stops a station
+picking trace metals out of a dribble of ore — it needs an ore body delivered, and then a tonne a
+minute. It still does it automatically, which is a real service; the mark-up on buying the result
+back is what keeps doing it yourself the better deal.
+⚠️ **The schedule gates the plants, not the counter.** A sale lands on any tick, so the market and the
+consignment are installed every tick; only the working is periodic.
+
+### ⛔ Elemental cracking was the wrong game, and three systems said so
+
+The old `brokenDown` split any compound by `compositionOf` mass share: no reagents, no temperature,
+no cost, **no direction**.
+
+- **Serpentine gave no water.** Mg₃Si₂O₅(OH)₄ by element is Mg/Si/O/H. Nothing in the game could put
+  water back on a station's shelves except selling it some. The `DECOMPOSITIONS` row gives forsterite,
+  enstatite and **two waters**.
+- **Steel only went backwards.** `Fe₉₉C` is a formula in `MINERALS`, so a splitter could take an alloy
+  apart and never make one — and steel is the more useful commodity.
+- **Titanium was free.** Ilmenite is one of the commoner minerals in the game; splitting FeTiO₃ by
+  element routes straight around the reduction chain `PLAN_ambient_chemistry.md` exists for.
+
+✅ **A station runs `REACTIONS`.** Every row scaled so its **largest product** is `REACTION_BATCH`
+(100 kg); available if the shelves hold the whole charge at that size; the most profitable available
+row is run, or none. `Reaction.draw` is the new reagent twin of `split` — both apportioned off one
+stated total, so a batch closes to the microgram. A station is outside every ledger in the game, so
+nothing else would ever catch a drift.
+
+✅ **MEASURED across the whole table: every reaction is exactly value-neutral at list prices** — ±5
+credits of rounding on charges worth 900–14,000. A species' price is *defined* as the sum of its
+elements' and a reaction conserves atoms. So §3.4's mechanism is unchanged and now covers all of
+chemistry: what makes a reaction pay is the **station-local stock discount**, and ⛔ the discount must
+stay per SPECIES stock or both sides of the comparison move together and it dies silently.
+
+### The furnace fee
+
+`heatFee` = heat capacity of the actual charge × (onset − ambient) + any enthalpy the row swallows,
+at `ENERGY_PER_CREDIT`. The codebase already stated the principle, at `Reaction`'s steel row: *"the
+energy a foundry actually spends is spent getting the charge to temperature, which is what
+`onsetKelvin` already makes the player pay for."*
+
+⛔ **An exothermic row is never paid back.** A station has no thermal model, no store for recovered
+heat and nobody to sell it to. It would also be a *large* mistake: burning carbon releases ~30× what
+it costs to light, so a station credited for its own fires would burn every gram it owned for money.
+⚠️ **`Reaction.enthalpy(mass)`, never `enthalpyPerKg × mass`** — 3×10⁹ × 10¹¹ overflows `Long` and
+comes back *negative*, reading as a large exothermic rebate on an endothermic row. It caught out the
+measurement that sized the constant.
+
+✅ `ENERGY_PER_CREDIT` = **a megajoule to the credit**, stated rather than derived (Stu: a fixed cost
+per joule, not tied to the availability of anything to burn). ⚠️ Chosen against the game's own tables:
+a kilogram of carbon fetches 33.7 credits and releases 32.8 MJ, so carbon prices its own combustion at
+1.03 MJ/credit. The measured gradient it buys, as a share of the charge's list value:
+
+| row | onset | fee |
+|---|---|---|
+| Iron → Hematite | 500 K | 1% |
+| Pyrite → Troilite | 1000 K | 3% |
+| **Iron + Carbon → Steel** | 1811 K | 6% |
+| Firebrick | 1700 K | 12% |
+| **Serpentine → …+ water** | 900 K | 16% |
+| Fayalite → Iron | 1250 K | 13% |
+| Forsterite → Periclase + Si | 1800 K | 34% |
+| **Periclase → Magnesium** | 1500 K | 38% |
+| Enstatite → Periclase + Si | 1800 K | 50% |
+| Quartz → Silicon | 2000 K | 60% |
+
+The carbothermic reductions of the silicates are the expensive end, which is true of the real
+process too. ⚠️ **Rutile → Titanium is only 0.8%** and that is fine: the cost of titanium is the
+**magnesium**, which occurs nowhere naturally and is itself a 38% row off periclase.
+
+### ⏸ Still open after this revision
+
+- ⛔ **A station has no sink.** Nothing consumes, exports or decays stock, so holdings are monotone up
+  apart from player purchases and every shelf drifts toward `FLOOR_PRICE` over a long game. There is
+  no equilibrium the economy returns to. Not addressed here.
+- ⚠️ **An existing save still carries the sub-gram shelf dust** the sell bug left. Nothing sweeps it.
+- ⚠️ **A station will run photosynthesis** if it is glutted with algae — `REACTIONS` does not gate that
+  row on light, so this is the game's own chemistry rather than a station-specific oddity.
+
 ## 11. Hazards carried in from memory
 
 - ⛔ `Mixture.take` is the only exact draw; never scale a mixture species-by-species.
