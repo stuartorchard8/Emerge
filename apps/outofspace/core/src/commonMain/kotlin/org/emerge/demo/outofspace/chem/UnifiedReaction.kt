@@ -173,6 +173,25 @@ class Reaction(
     /** [split] writing into a caller's array, for a sweep that must not allocate per tile. */
     fun splitInto(totalMass: Long, out: LongArray) = apportionInto(weights, totalMass, out)
 
+    /**
+     * The mass of each of [reagents], in order, that [totalMass] of everything consumed is made of
+     * — the twin of [split], on the other side of the arrow.
+     *
+     * ⚠️ **Not the same question as [reagentFor], and the difference is conservation.** That one
+     * scales each reagent off the principal independently, which is what the ambient sweep wants
+     * because the principal is what it *has*; the shares it returns need not sum to anything in
+     * particular. This apportions a stated total, so the charge weighs exactly [totalMass] and the
+     * row closes against [split] to the unit whatever the rounding does.
+     *
+     * The caller with a total rather than a principal is a station, whose batch is sized by what it
+     * wants *out* — see `StationIndustry.kt`. It has no ledger watching it, which is the reason to
+     * be exact here rather than an excuse not to be.
+     */
+    fun draw(totalMass: Long): LongArray = apportion(reagentWeights, totalMass)
+
+    private val reagentWeights: LongArray =
+        LongArray(reagents.size) { reagents[it].second.toLong() * reagents[it].first.molarMass }
+
     /** The energy [mass] of the **principal** takes to react, or gives back if it is negative. */
     fun enthalpy(mass: Long): Long = perKilogram(mass, enthalpyPerKg)
 

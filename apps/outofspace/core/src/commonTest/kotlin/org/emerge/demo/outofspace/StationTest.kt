@@ -2,7 +2,7 @@ package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.chem.compositionOf
+import org.emerge.demo.outofspace.chem.REACTIONS
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.BodyKind
 import org.emerge.demo.outofspace.world.Direction
@@ -11,7 +11,9 @@ import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Market
 import org.emerge.demo.outofspace.world.Pose
 import org.emerge.demo.outofspace.world.CONCENTRATION_BATCH
-import org.emerge.demo.outofspace.world.CRACKING_BATCH
+import org.emerge.demo.outofspace.world.REACTION_BATCH
+import org.emerge.demo.outofspace.world.batchMass
+import org.emerge.demo.outofspace.world.heatFee
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.Station
@@ -212,91 +214,143 @@ class StationTest {
         assertEquals(dribble.total, s.ore.total, "a sub-batch reserve was picked over for its gold")
     }
 
-    @Test
-    fun `a station already rich in the elements does not crack the compound`() {
-        // ⛔ **This is §3.4's mechanism from the other side, and it is the discriminating test.**
-        // A compound's *list* price is exactly the sum of its elements', so the only thing that can
-        // ever make cracking pay is the **station-local stock discount**. Give the elements a bigger
-        // glut than the compound and the discount points the other way — so nothing happens.
-        //
-        // ⚠️ **The naive version of this test was wrong and the failure was informative.** It gave a
-        // station 10 t of forsterite and no elements and expected no cracking "because list prices
-        // are neutral". But 10 t is `REFERENCE_STOCK` — a glut by the curve's own definition — so it
-        // cracked, correctly. Neutrality holds at *list*, and a station is never at list.
-        var s = Station(
-            Mixture.EMPTY,
-            Market.of(
-                Species.Forsterite to 10L * tonne,
-                Species.Magnesium to 500L * tonne,
-                Species.Silicon to 500L * tonne,
-                Species.Oxygen to 500L * tonne,
-            ),
-        )
-        val before = s.market.stockOf(Species.Forsterite)
-        repeat(5) { s = s.worked() }
-        assertEquals(before, s.market.stockOf(Species.Forsterite), "a station cracked into shelves already full")
-    }
+    // ── Chemistry ────────────────────────────────────────────────────────────
 
     @Test
-    fun `cracking is a slow drift toward elements, and it self-limits`() {
-        // ⚠️ **A consequence worth writing down: with any stock at all a compound is fractionally
-        // discounted against its own (emptier) element shelves, so a station cracks CONTINUOUSLY
-        // rather than only when glutted.** At a kilogram a tick that is a slow background drift, and
-        // it stops on its own as the element shelves fill. So a station is a good place to buy
-        // *elements* from — which is exactly what a player building a ship wants — and that is
-        // emergent rather than authored.
-        var s = Station(Mixture.EMPTY, Market.of(Species.Quartz to 400L * tonne))
-        repeat(40) { s = s.worked() }
-        val cracked = 400L * tonne - s.market.stockOf(Species.Quartz)
-        assertTrue(cracked > 0L, "nothing cracked at all")
-        assertTrue(cracked <= 40L * CRACKING_BATCH, "more than a batch a batch was cracked")
-        assertEquals(
-            cracked,
-            s.market.stockOf(Species.Silicon) + s.market.stockOf(Species.Oxygen),
-            "mass was lost cracking quartz",
-        )
-    }
-
-    @Test
-    fun `a station glutted in one compound cracks it, and stops when it stops paying`() {
-        // The mechanism: a station drowning in forsterite quotes forsterite cheap while its
-        // magnesium, silicon and oxygen shelves are near list — so cracking pays *because* it is
-        // over-supplied, and it self-limits as the element shelves fill.
-        var s = Station(Mixture.EMPTY, Market.of(Species.Forsterite to 500L * tonne))
+    fun `a station glutted with serpentine cracks it, and gets water out of it`() {
+        // ⛔ **The case that condemned the old splitter.** Taking Mg3Si2O5(OH)4 apart by element
+        // yields magnesium, silicon, oxygen and hydrogen — so under that rule there was no way in
+        // the game for a station to replenish its water except to be sold some. The *reaction* is
+        // right there in `DECOMPOSITIONS` and yields forsterite, enstatite and two waters.
+        var s = Station(Mixture.EMPTY, Market.of(Species.Serpentine to 500L * tonne))
         repeat(20) { s = s.worked() }
 
-        assertTrue(s.market.stockOf(Species.Magnesium) > 0L, "a glutted station never cracked anything")
-        assertTrue(s.market.stockOf(Species.Silicon) > 0L)
-        assertTrue(s.market.stockOf(Species.Oxygen) > 0L)
-        // And the mass is conserved through the crack, remainder included.
-        val elements = compositionOf(Species.Forsterite).sumOf { s.market.stockOf(it.element) }
-        assertEquals(500L * tonne - s.market.stockOf(Species.Forsterite), elements, "mass was lost cracking")
+        assertTrue(s.market.stockOf(Species.Water) > 0L, "a station cracked serpentine and made no water")
+        assertTrue(s.market.stockOf(Species.Forsterite) > 0L, "no forsterite either")
+        assertTrue(s.market.stockOf(Species.Enstatite) > 0L, "no enstatite either")
+        assertEquals(0L, s.market.stockOf(Species.Hydrogen), "the elemental splitter is still in here")
     }
 
     @Test
-    fun `cracking takes the most abundant compound worth cracking`() {
-        // Two gluts, one much larger. The richer shelf goes first — Stu's ordering.
-        var s = Station(
+    fun `a station makes steel out of iron and carbon`() {
+        // ⛔ **The other direction, which the old rule could not express at all.** `Fe99C` is a
+        // formula in `MINERALS`, so a splitter could take an alloy to pieces and never make one —
+        // and steel is the more useful commodity of the two.
+        var s = Station(Mixture.EMPTY, Market.of(Species.Iron to 500L * tonne, Species.Carbon to 50L * tonne))
+        repeat(20) { s = s.worked() }
+
+        assertTrue(s.market.stockOf(Species.Steel) > 0L, "a station sitting on iron and carbon made no steel")
+        assertTrue(s.market.stockOf(Species.Iron) < 500L * tonne, "the steel came from nowhere")
+    }
+
+    @Test
+    fun `titanium costs magnesium, and is not reachable without it`() {
+        // ⛔ **Ilmenite is one of the commoner minerals in the game**, and an elemental splitter
+        // handed over its titanium for nothing — routing straight around the reduction chain
+        // `PLAN_ambient_chemistry.md` exists to make interesting. The real second step spends
+        // magnesium, which does not occur naturally anywhere and has to be made.
+        var dry = Station(Mixture.EMPTY, Market.of(Species.Rutile to 500L * tonne))
+        repeat(20) { dry = dry.worked() }
+        assertEquals(0L, dry.market.stockOf(Species.Titanium), "titanium appeared with no reducing agent")
+        assertEquals(500L * tonne, dry.market.stockOf(Species.Rutile), "the rutile went somewhere")
+
+        var wet = Station(
             Mixture.EMPTY,
-            Market.of(Species.Forsterite to 500L * tonne, Species.Quartz to 100L * tonne),
+            Market.of(Species.Rutile to 500L * tonne, Species.Magnesium to 200L * tonne),
         )
-        repeat(2) { s = s.worked() }
+        repeat(20) { wet = wet.worked() }
+        assertTrue(wet.market.stockOf(Species.Titanium) > 0L, "magnesium bought no titanium")
         assertTrue(
-            s.market.stockOf(Species.Forsterite) < 500L * tonne,
-            "the richer shelf was not the one cracked",
+            wet.market.stockOf(Species.Magnesium) < 200L * tonne,
+            "the titanium arrived without spending the magnesium",
         )
-        assertEquals(100L * tonne, s.market.stockOf(Species.Quartz), "the poorer shelf was cracked first")
     }
 
     @Test
-    fun `separating and cracking both happen in the same batch`() {
-        // Two plants working two stockpiles. Making them take turns would be a rule about the code.
-        val s = Station(
-            Mixture.of(Species.Iron to 10L * tonne, energy = 0L),
-            Market.of(Species.Forsterite to 500L * tonne),
-        ).worked()
-        assertEquals(CONCENTRATION_BATCH, s.market.stockOf(Species.Iron), "nothing was separated")
-        assertTrue(s.market.stockOf(Species.Magnesium) > 0L, "nothing was cracked")
+    fun `at list prices no reaction pays`() {
+        // ⛔ **Every reaction in the game is exactly value-neutral at list**, measured across the
+        // whole table — a species' price is *defined* as the sum of its elements' and a reaction
+        // conserves atoms, so the two sides agree to within a few credits of rounding on charges
+        // worth thousands. ⚠️ A tonne of everything is not "no stock": it is an equal and shallow
+        // holding, so every price sits at very nearly list and no discount points anywhere. What
+        // keeps the rounding from firing a row on its own is [heatFee].
+        val even = Market.of(*Species.ALL.map { it to tonne }.toTypedArray())
+        var s = Station(Mixture.EMPTY, even)
+        repeat(5) { s = s.worked() }
+        assertEquals(even.holdings(), s.market.holdings(), "a station reacted at list prices")
+    }
+
+    @Test
+    fun `a station already rich in a reaction's products does not run it`() {
+        // ⛔ **The discriminating test, and the mechanism from the other side.** The only thing that
+        // can make a reaction pay is the station-local stock discount; glut the products harder than
+        // the reagent and the discount points the other way, so nothing happens. That is also why
+        // the discount must be applied per SPECIES stock and never per element — one level up and
+        // both sides of the comparison move together and the mechanism dies silently.
+        val stocked = Market.of(
+            Species.Serpentine to 10L * tonne,
+            Species.Forsterite to 5_000L * tonne,
+            Species.Enstatite to 5_000L * tonne,
+            Species.Water to 5_000L * tonne,
+        )
+        var s = Station(Mixture.EMPTY, stocked)
+        repeat(20) { s = s.worked() }
+        assertEquals(
+            10L * tonne, s.market.stockOf(Species.Serpentine),
+            "a station reacted into shelves already full",
+        )
+    }
+
+    @Test
+    fun `a batch neither invents nor loses a gram`() {
+        // A station is outside every ledger in the game, so nothing else would ever catch a drift
+        // here — which is the reason to be exact rather than an excuse not to be. Both sides are
+        // apportioned off one stated total, so the row closes by construction.
+        val stocked = Market.of(Species.Serpentine to 500L * tonne)
+        var s = Station(Mixture.EMPTY, stocked)
+        repeat(20) { s = s.worked() }
+        assertEquals(
+            stocked.holdings().total, s.market.holdings().total,
+            "twenty batches of chemistry did not conserve mass",
+        )
+    }
+
+    @Test
+    fun `an exothermic reaction is never paid for its heat`() {
+        // ⛔ **The rebate that must not exist.** A station has no thermal model, no store to put
+        // recovered heat in and nobody to sell it to. Crediting one for its own fires would also be
+        // a large mistake rather than a small one: burning carbon releases about thirty times what
+        // it costs to light, so a station paid for that would burn every gram it owned for the
+        // money. Endothermy is charged; exothermy is free and no more than free.
+        val burn = REACTIONS.first { r ->
+            r.principal == Species.Carbon && r.products.any { it.first == Species.CarbonDioxide }
+        }
+        assertTrue(burn.enthalpy(Budget.KILOGRAM) < 0L, "the row picked is not the exothermic one")
+        val drawn = burn.draw(batchMass(burn))
+        val charge = Mixture.of(
+            *burn.reagents.mapIndexed { i, (species, _) -> species to drawn[i] }.toTypedArray(),
+            energy = 0L,
+        )
+        assertTrue(burn.heatFee(charge) > 0L, "an exothermic row was paid to run")
+    }
+
+    @Test
+    fun `a batch is sized by the largest product, not by the charge`() {
+        // Stu's rule, and the one that makes batches comparable across rows of very different
+        // shapes: a row yielding a tonne of tailings and a kilogram of metal, and one yielding the
+        // reverse, would otherwise be run at sizes whose profits mean different things.
+        for (reaction in REACTIONS) {
+            val total = batchMass(reaction)
+            val yielded = reaction.split(total)
+            assertEquals(total, yielded.sum(), "$reaction did not split its charge exactly")
+            // ⚠️ Two microgrammes of slack, and it is `apportion`'s contract rather than sloppiness:
+            // the total is exact by construction and each individual share is proportional only to
+            // within a unit. Sizing the charge off the batch rounds once more on the way in.
+            assertTrue(
+                yielded.max() in REACTION_BATCH - 2L..REACTION_BATCH,
+                "$reaction's largest product was ${yielded.max()}, not a batch",
+            )
+        }
     }
 
     // ── The save ─────────────────────────────────────────────────────────────

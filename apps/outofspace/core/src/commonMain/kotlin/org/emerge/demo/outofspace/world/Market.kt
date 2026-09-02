@@ -110,6 +110,12 @@ class Market private constructor(private val stock: LongArray) {
     /** True when the trader is actually holding enough of [species] to sell you [mass] of it. */
     fun canSupply(species: Species, mass: Long): Boolean = mass in 0L..stock[species.ordinal]
 
+    /** True when every species in [lump] is on the shelves in at least that quantity. */
+    fun canSupply(lump: Mixture): Boolean {
+        for (species in Species.ALL) if (lump[species] > stock[species.ordinal]) return false
+        return true
+    }
+
     /** This market having taken [lump] onto its shelves — **all of it**, including the forfeit tail. */
     fun absorbing(lump: Mixture): Market {
         val next = stock.copyOf()
@@ -125,6 +131,17 @@ class Market private constructor(private val stock: LongArray) {
         if (mass <= 0L) return this
         val next = stock.copyOf()
         next[species.ordinal] += mass
+        return Market(next)
+    }
+
+    /** This market having handed all of [lump] over. Refuses to go short on any of it. */
+    fun releasing(lump: Mixture): Market {
+        require(canSupply(lump)) { "a market cannot release $lump from ${holdings()}" }
+        val next = stock.copyOf()
+        for (species in Species.ALL) {
+            val mass = lump[species]
+            if (mass > 0L) next[species.ordinal] -= mass
+        }
         return Market(next)
     }
 
