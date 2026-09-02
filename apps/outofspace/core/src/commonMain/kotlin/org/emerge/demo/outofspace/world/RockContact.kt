@@ -241,6 +241,35 @@ class Impact(
  * `rv' = rv + J/μ` and `J = −(1+e)·rv·μ` give `rv' = −e·rv` exactly, for any mass ratio, which is
  * what makes the bounce terminate rather than merely shrink.
  */
+/**
+ * A body an assembly holds: **geometry the sweep must see, whose pose it must not integrate.**
+ *
+ * ⛔ **The third state, and its absence was a bug.** Collision and integration are one pass over one
+ * list, so for most of this file's life a body could be *simulated* or *invisible* and nothing else.
+ * A docked station is neither: it does not drift — its pose is its root's plus a frozen offset, and
+ * letting the sweep integrate it too would give two answers for where it is — but it is emphatically
+ * still there. Removing it from the list to stop it drifting also removed it from the collision set,
+ * so an asteroid flew straight through the station a berthed ship was bolted to, and lodged in it
+ * the moment the clamps opened and the geometry came back.
+ *
+ * ⛔ **Its contacts are booked against the assembly, as [Contact.HULL].** That is not a shortcut: a
+ * rigid assembly *is* one body, so a rock bouncing off a docked terminal must push the whole thing,
+ * about the whole thing's centre of mass, with the whole thing's inertia resisting. The caller
+ * passes the assembly's mass and distribution as the ship operand, and then the solver cannot tell a
+ * station's hull from the ship's — which is exactly the property step 5 of `PLAN_rigid_bodies.md`
+ * bought and the reason nothing in [solveContacts] needed changing for this.
+ *
+ * Held members are not tested against **each other**: two members of one assembly cannot move
+ * relative to each other, so there is no contact to find. Two *different* assemblies touching is a
+ * question that arises the first time there are two, and it is the same question as body-vs-body.
+ */
+class Held(
+    /** The body itself, for its cells, its shapes and what they are made of. */
+    val body: RigidBody,
+    /** Where it is, given where the assembly's root has got to — see [Assembly.poseOf]. */
+    val poseIn: (Pose) -> Pose,
+)
+
 fun sweepBodies(
     grid: Grid,
     structure: StructureMap,
@@ -253,6 +282,8 @@ fun sweepBodies(
     restingSpeedY: LongArray,
     /** The deck, for [frictionBetween]. `null` is bare hull throughout. */
     deck: DeckArray? = null,
+    /** What the assembly is carrying: solid, and pose-driven — see [Held]. */
+    held: List<Held> = emptyList(),
 ): SweptBodies {
     val n = bodies.size
     if (n == 0) return SweptBodies(bodies, 0L, 0L, 0L)
@@ -376,12 +407,22 @@ fun sweepBodies(
     // settling and far too slow to jump a wall.
     val startPose = poseAt(0)
     val startWorld = Array(n) { Pose(px[it], py[it], Coord(ang[it].toInt()), bodies[it].about) }
+    // A held member's pose at the start of the tick, for the wedged test below — one per member
+    // rather than one per member per body, because it does not depend on which body is asking.
+    val heldStart = Array(held.size) { held[it].poseIn(startPose) }
     val depenetration = LongArray(n) { i ->
         var stuck = overlapsHull(grid, structure, bodies[i], startWorld[i], startPose)
         if (!stuck) {
             for (j in 0 until n) {
                 if (j == i) continue
                 if (bodiesOverlap(bodies[i], startWorld[i], bodies[j], startWorld[j])) { stuck = true; break }
+            }
+        }
+        // ⚠️ And against what the assembly is carrying, on the same terms as the hull: a rock that
+        // begins the tick inside a docked terminal is a placement to be eased out of, not a bounce.
+        if (!stuck) {
+            for (h in held.indices) {
+                if (bodiesOverlap(bodies[i], startWorld[i], held[h].body, heldStart[h])) { stuck = true; break }
             }
         }
         if (stuck) RockContact.MAX_DEPENETRATION else Long.MAX_VALUE
@@ -434,6 +475,28 @@ fun sweepBodies(
                 grid, structure, bodies[i], i, turned[i]!!, next,
                 restingSpeedX[i], restingSpeedY[i], contacts, deck,
             )
+        }
+        // ── What the assembly is carrying, on the hull's terms ───────────────────
+        //
+        // ⚠️ **`Contact.HULL` as the other operand, and that is the whole of it.** A held member's
+        // touch is the assembly's touch, so it books against the assembly's mass, centre and inertia
+        // — the ship operand — exactly as a touch on the plating does. Emitted after the hull's and
+        // before the pairs', keeping §6's stable order: a broad phase cannot perturb it.
+        //
+        // The **free** body supplies the resting threshold, as it does against the hull, because a
+        // held member is not falling and has no closing speed of its own to fall asleep at.
+        if (held.isNotEmpty()) {
+            for (i in 0 until n) {
+                if (mass[i] <= 0L) continue
+                for (h in held.indices) {
+                    collectBodyContacts(
+                        bodies[i], i, turned[i]!!,
+                        held[h].body, Contact.HULL, held[h].poseIn(next),
+                        restingSpeedX[i], restingSpeedY[i],
+                        contacts,
+                    )
+                }
+            }
         }
         for (i in 0 until n) {
             if (mass[i] <= 0L) continue

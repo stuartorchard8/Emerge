@@ -606,6 +606,13 @@ fun driftBodies(
     about: MassDistribution = MassDistribution.EMPTY,
     /** The deck, carried this far for one reason: [frictionBetween]. */
     deck: DeckArray? = null,
+    /**
+     * What the assembly is carrying — solid, pose-driven, and not integrated here. See [Held].
+     *
+     * ⚠️ [shipMass] and [about] must be the **assembly's** whenever this is non-empty, because a
+     * held member's contacts book against the ship operand and the assembly is what they push.
+     */
+    held: List<Held> = emptyList(),
 ): BodyStep {
     if (bodies.isEmpty()) return BodyStep(bodies, 0L, 0L)
     /**
@@ -688,7 +695,7 @@ fun driftBodies(
         grid, structure, bodies,
         ship, shipMass, about,
         restingX, restingY,
-        deck,
+        deck, held,
     )
 
     // The contact half of the ledger comes back from the sweep already booked at the points the

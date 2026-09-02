@@ -71,6 +71,7 @@ import org.emerge.demo.outofspace.world.Station
 import org.emerge.demo.outofspace.world.Assembly
 import org.emerge.demo.outofspace.world.Member
 import org.emerge.demo.outofspace.world.Docking
+import org.emerge.demo.outofspace.world.Held
 import org.emerge.demo.outofspace.world.Welding
 import org.emerge.demo.outofspace.world.Composite
 import org.emerge.demo.outofspace.world.worked
@@ -851,9 +852,31 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         //
         val _g0 = _prof0; val _g = if (_g0) TimeSource.Monotonic.markNow() else null
         val mass = vesselMass(w.grid, w.rail, conduits, w.deck, w.buffers)
-        // The vessel as it was when the tick began, which is what the pose is advanced by and what a
-        // body is told the ship is doing. One walk: see [VesselState.velocityXAt].
-        val startMass = state.mass
+        // ── The assembly ─────────────────────────────────────────────────────────
+        //
+        // The vessel and everything welded to it, as one rigid body — see [Assembly]. Folded here,
+        // above everything that reads a mass or a velocity, because *all* of them want the
+        // assembly's numbers and not the hull's: the pose is advanced by them, the bodies are told
+        // the assembly is what they are about to hit, and the contact solver charges its inertia.
+        //
+        // ⛔ Folded from `w` and not from `state`: an edit this tick may have docked or undocked, and
+        // the tick must run under the assembly it actually has.
+        val heldWelds = w.assembly.descendants(Member.VESSEL)
+        fun heldBody(id: Int): RigidBody? = w.bodies.firstOrNull { it.station?.id == id }
+        fun heldAbout(id: Int): MassDistribution =
+            if (id == Member.VESSEL) w.about else heldBody(id)?.about ?: MassDistribution.EMPTY
+        val moveAbout =
+            if (heldWelds.isEmpty()) w.about
+            else w.assembly.distribution(Member.VESSEL, state.pose, w.about) { id -> heldAbout(id) }
+
+        // The assembly as it was when the tick began, which is what the pose is advanced by and what
+        // a body is told it is closing on. One walk: see [VesselState.velocityXAt].
+        //
+        // ⚠️ **`moveAbout.mass`, not `state.mass`.** [VesselState.vesselImpulseX] is the assembly's
+        // momentum whenever anything is welded on, so dividing it by the hull alone told the sweep
+        // that a berthed ship was travelling at several times its actual speed — which is a closing
+        // speed, and therefore a bounce, and therefore wrong in the loudest possible way.
+        val startMass = moveAbout.mass
         val startVelocityX = state.velocityXAt(startMass)
         val startVelocityY = state.velocityYAt(startMass)
 
@@ -890,16 +913,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // because a rigid assembly turning about its joint centre is exactly what this line already
         // computes for one body about its own. See [Welding], which explains why the assembly's
         // numbers live on its root and not anywhere else.
-        // The assembly's three numbers, folded over however many members are welded on — one, today.
-        // ⛔ Folded from `w.bodies` rather than from `state`, because an edit this tick may have
-        // docked or undocked and the pose must advance under the assembly the tick actually has.
-        val heldWelds = w.assembly.descendants(Member.VESSEL)
-        fun heldBody(id: Int): RigidBody? = w.bodies.firstOrNull { it.station?.id == id }
-        fun heldAbout(id: Int): MassDistribution =
-            if (id == Member.VESSEL) w.about else heldBody(id)?.about ?: MassDistribution.EMPTY
-        val moveAbout =
-            if (heldWelds.isEmpty()) w.about
-            else w.assembly.distribution(Member.VESSEL, state.pose, w.about) { id -> heldAbout(id) }
         val spin = angularVelocity(state.angImpulse, moveAbout)
         // ⛔ **A frozen tick does not fly.** The ship keeps the pose it had — which is the whole of
         // "no time passes" as far as the world outside the hull is concerned, since the pose is what
@@ -984,6 +997,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val heldBodies = w.assembly.descendants(Member.VESSEL).mapNotNull { weld ->
             bodiesAtWork.firstOrNull { it.station?.id == weld.childId }
         }
+        // ⛔ **Frozen here, before `w.bodies` is emptied three lines down.** Every held member's pose
+        // is `Assembly.poseOf` against a lookup of who weighs what, and that lookup is asked *during*
+        // the sweep — by which time a lambda closing over `w.bodies` finds an empty list, answers
+        // `MassDistribution.EMPTY`, and hands back a pose anchored on the member's corner instead of
+        // its centre. That put the station's collision geometry ten tiles from the station and a rock
+        // eight tiles clear of it bounced off nothing at all.
+        val heldAboutById = heldBodies.associate { it.station!!.id to it.about }
+        fun memberAbout(id: Int): MassDistribution =
+            if (id == Member.VESSEL) w.about else heldAboutById[id] ?: MassDistribution.EMPTY
         // Replace w.bodies contents (driftBodies mutates by reference via the list).
         w.bodies.clear()
         w.bodies.addAll(if (heldBodies.isEmpty()) bodiesAtWork else bodiesAtWork.filter { body -> heldBodies.none { it === body } })
@@ -1004,15 +1026,26 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // still resolve standing contacts and still report them, so a rock resting on the plating
         // would clang once per frozen tick for as long as the game was stopped. [BodyStep.still]
         // is the bodies exactly as they are, no exchange and no impacts.
+        //
+        // ⛔ **The assembly's mass and distribution, not the hull's** — see [Held]. A rock that
+        // bounces off a docked terminal pushes the whole assembly, about the whole assembly's centre,
+        // against the whole assembly's inertia, and the reaction lands in [VesselState.vesselImpulseX]
+        // which is already the assembly's momentum. Passing the hull's numbers here would have made a
+        // ship with a station bolted to it as easy to shove as a ship on its own.
+        val heldGeometry = heldBodies.map { body ->
+            val id = body.station!!.id
+            Held(body) { rootPose -> w.assembly.poseOf(id, rootPose) { m -> memberAbout(m) } }
+        }
         val bodiesDrifted = if (frozen) BodyStep.still(w.bodies.toList()) else driftBodies(
             state.grid,
             structure,
             w.bodies,
             state.gravity,
             ShipMotion(state.pose, startVelocityX, startVelocityY, spin),
-            mass,
-            w.about,
+            if (heldWelds.isEmpty()) mass else moveAbout.mass,
+            moveAbout,
             w.deck,
+            heldGeometry,
         )
 
         // Vessel pays for body momentum here: `−J` for the `+J` the body got (conserved by construction).
@@ -1135,7 +1168,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // rotation and one translation, both already applied to the vessel above — a rigid pair
             // needs nothing else, which is the whole reason the weld is cheap.
             bodies = if (heldBodies.isEmpty()) bodiesDrifted.bodies else bodiesDrifted.bodies + heldBodies.map {
-                val at = w.assembly.poseOf(it.station!!.id, newPose) { id -> heldAbout(id) }
+                val at = w.assembly.poseOf(it.station!!.id, newPose) { id -> memberAbout(id) }
                 it.copy(positionX = at.x, positionY = at.y, ang = at.ang)
             },
             bodyImpulseX = state.bodyImpulseX + handedX,
