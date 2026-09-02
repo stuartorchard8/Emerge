@@ -6,15 +6,31 @@ import org.emerge.demo.outofspace.chem.compositionOf
 import org.emerge.demo.outofspace.num.Budget
 
 /**
- * A station's own business, one tick of it — `PLAN_economy.md` §6.1.
+ * A station's own business, one batch of it — `PLAN_economy.md` §6.1.
  *
- * Two processes, independent, each capped at [RATE] and each **go/no-go at the full kilogram**: no
- * partial action taken to squeeze out a better margin. A station is a slow industrial concern and it
- * is meant to read as one.
+ * Two processes, independent, each **go/no-go at the full batch**: no partial action taken to
+ * squeeze out a better margin. A station is a slow industrial concern and it is meant to read as
+ * one. The schedule that makes it slow is [org.emerge.demo.outofspace.OutofspaceReducer.STATION_PERIOD]
+ * — once a minute — and it is stated there rather than here because it is a fact about the clock.
  */
 
-/** What a station moves per tick, in either process. A kilogram — Stu's number. */
-val RATE: Long = Budget.KILOGRAM
+/**
+ * How much ore a station lifts out of its reserve in one batch: **a tonne**.
+ *
+ * ⛔ **This is a go/no-go threshold and not only a rate**, and that is the whole of what stops a
+ * station being an oracle. A reserve whose dominant species is under a tonne is not worked *at all*
+ * — so a station cannot pull trace metals out of ore for you until somebody has delivered it several
+ * hundred tonnes of the rock they are in, and even then it does it a tonne a minute. It still does
+ * it automatically, which is a genuine service; the mark-up on buying the result back is what makes
+ * doing it yourself the better deal.
+ *
+ * ⚠️ Was a kilogram a *tick*, which is 3.8 tonnes a minute and let a station out-refine the player
+ * without being asked.
+ */
+val CONCENTRATION_BATCH: Long = 1_000L * Budget.KILOGRAM
+
+/** How much of one compound a station takes apart in a batch. The same tonne, for now. */
+val CRACKING_BATCH: Long = 1_000L * Budget.KILOGRAM
 
 /** Prices are quoted per hundred kilograms; a share is per mille. */
 private const val PARTS_PER_THOUSAND = 1_000L
@@ -38,17 +54,18 @@ fun Station.worked(): Station = purified().brokenDown()
  */
 private fun Station.purified(): Station {
     val dominant = ore.dominant ?: return this
-    // Go/no-go: a reserve holding less than a kilogram of its own dominant species does nothing at
-    // all rather than dribbling out what is left.
-    if (ore[dominant] < RATE) return this
+    // Go/no-go: a reserve holding less than a full batch of its own dominant species does nothing
+    // at all rather than dribbling out what is left. See [CONCENTRATION_BATCH] — the threshold is
+    // the balance, not the rate.
+    if (ore[dominant] < CONCENTRATION_BATCH) return this
     // ⚠️ **`id` and `docks` carried explicitly.** `Station`'s constructor defaults them, so rebuilding
     // one from two fields quietly hands back a station with **no identity and no berths** — and it
     // does it a tick after the world starts, in a value nothing else reads until the player tries to
     // dock. Caught by a screenshot reading "STATION 0"; the same shape as `RigidBody.copy`'s warning
     // one file over, which is why that one is written down there in capitals.
     return Station(
-        ore = ore - Mixture.of(dominant to RATE, energy = 0L),
-        market = market.absorbing(dominant, RATE),
+        ore = ore - Mixture.of(dominant to CONCENTRATION_BATCH, energy = 0L),
+        market = market.absorbing(dominant, CONCENTRATION_BATCH),
         id = id,
         docks = docks,
     )
@@ -81,7 +98,7 @@ private fun Station.brokenDown(): Station {
     // which is the same answer sorting would give and does not allocate a list every tick.
     for (species in Species.ALL) {
         val held = market.stockOf(species)
-        if (held < RATE || held <= bestHeld) continue
+        if (held < CRACKING_BATCH || held <= bestHeld) continue
         val parts = compositionOf(species)
         if (parts.isEmpty()) continue
         val whole = market.price(species)
@@ -96,14 +113,16 @@ private fun Station.brokenDown(): Station {
     val species = best ?: return this
     val parts = bestParts ?: return this
 
-    var moved = market.releasing(species, RATE)
+    var moved = market.releasing(species, CRACKING_BATCH)
     // ⚠️ The shares are integers per mille and need not sum to exactly a thousand, so the remainder
     // goes to the richest element rather than evaporating. A station is outside every ledger in the
     // game, so nothing would have caught the drift — which is the reason to be exact here rather than
     // an excuse not to be.
     var handedOut = 0L
     for (i in parts.indices.reversed()) {
-        val share = if (i == 0) RATE - handedOut else RATE * parts[i].partsPerThousand / PARTS_PER_THOUSAND
+        val share =
+            if (i == 0) CRACKING_BATCH - handedOut
+            else CRACKING_BATCH * parts[i].partsPerThousand / PARTS_PER_THOUSAND
         if (share <= 0L) continue
         moved = moved.absorbing(parts[i].element, share)
         handedOut += share

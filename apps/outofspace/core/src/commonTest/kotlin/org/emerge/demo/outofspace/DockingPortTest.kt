@@ -1,6 +1,12 @@
 package org.emerge.demo.outofspace
 
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
+import org.emerge.demo.outofspace.OutofspaceReducer.STATION_OFFSET
+import org.emerge.demo.outofspace.OutofspaceReducer.STATION_PERIOD
+import org.emerge.demo.outofspace.world.CONCENTRATION_BATCH
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
@@ -9,23 +15,24 @@ import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.DockLink
+import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Market
-import org.emerge.demo.outofspace.world.Temperature
-import org.emerge.demo.outofspace.world.heatCapacityOf
 import org.emerge.demo.outofspace.world.RailLayer
+import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.SpeciesFilter
+import org.emerge.demo.outofspace.world.Station
+import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.heatCapacityOf
 import org.emerge.demo.outofspace.world.machine.BuyOrder
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DockingPort
 import org.emerge.sim.core.PlayerId
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 /**
  * The ship's mouth onto somebody else's economy — `PLAN_economy.md` §5.
@@ -46,7 +53,42 @@ class DockingPortTest {
         return s
     }
 
+    private val tonne = Budget.TONNE
+
     private fun ore(mass: Long) = Mixture.of(Species.Iron to mass, energy = 0L).atAmbient()
+
+    /** Iron with a fifth of it forsterite: a lump no shelf may take, and no rounding either. */
+    private fun dirtyOre(mass: Long) =
+        Mixture.of(Species.Iron to mass * 4L / 5L, Species.Forsterite to mass / 5L, energy = 0L).atAmbient()
+
+    /**
+     * The same world with a station berthed to it, so the far side of the sale is a real [Station]
+     * and not just a loose [Market].
+     *
+     * ⚠️ **The bare [world] fixture has a `dockedMarket` and no station body**, which is enough for
+     * every question about credits and is not enough for any question about *where the matter goes*
+     * — the reserve lives on the body. Placed far enough out that nothing contacts the hull; these
+     * tests are about the counter, not the physics of the berth.
+     */
+    private fun VesselState.berthedTo(station: Station): VesselState {
+        val body = RigidBody.stationShell(
+            width = 8, height = 8,
+            positionX = 400L * Flight.PER_TILE, positionY = 0L,
+            composition = Mixture.of(Species.Steel to Budget.KILOGRAM, energy = 0L),
+            station = station,
+        )
+        return copy(
+            bodies = bodies + body,
+            docked = DockLink(
+                stationId = station.id, portTile = port, nodeIndex = 0,
+                stationLocalX = body.positionX, stationLocalY = body.positionY, stationRelativeAng = 0,
+            ),
+        )
+    }
+
+    /** The berthed station as it stands now, by the id it was given. */
+    private fun VesselState.station(id: Int): Station =
+        bodies.first { it.station?.id == id }.station!!
 
     /** A full tank at (2,3) pouring right into a docking port at (10,3). */
     private fun world(
@@ -163,6 +205,83 @@ class DockingPortTest {
         assertTrue(
             pure.credits > blended.credits * 3,
             "pure paid ${pure.credits} against a blend's ${blended.credits}",
+        )
+    }
+
+    // ── Where a sale lands ───────────────────────────────────────────────────
+
+    @Test
+    fun `a pure lump goes straight onto the shelf`() {
+        val post = Station(Mixture.EMPTY, Market.empty(), id = 3)
+        val s = run(world(stock = ore(4L * Capacity.PACKET_MASS)).berthedTo(post), 60 * RAIL_PERIOD)
+        val after = s.station(3)
+
+        assertEquals(s.exportedMass, after.market.stockOf(Species.Iron), "pure iron did not reach the shelf")
+        assertTrue(after.ore.isEmpty, "pure iron was sent to the reserve to be separated from itself")
+    }
+
+    @Test
+    fun `a mixed lump goes to the reserve, not onto the shelves`() {
+        // ⛔ **The bug this exists for.** Every sale used to be `market.absorbing(lump)`, so a dirty
+        // lump was scattered across a shelf per species — already separated, for nothing — and
+        // [Station.ore] was never written by anything at all. A live station ended up quoting well
+        // over a hundred species in sub-gram quantities, and its separator, having eaten the seeded
+        // reserve, had nothing to do for the rest of the game.
+        val post = Station(Mixture.EMPTY, Market.empty(), id = 3)
+        val s = run(world(
+            sell = listOf(SpeciesFilter(Species.Iron, null), SpeciesFilter(Species.Forsterite, null)),
+            stock = dirtyOre(4L * Capacity.PACKET_MASS),
+        ).berthedTo(post), 60 * RAIL_PERIOD)
+        val after = s.station(3)
+
+        assertTrue(s.exportedMass > 0L, "nothing was sold at all")
+        assertEquals(s.exportedMass, after.ore.total, "the dirty lump did not land in the reserve")
+        assertEquals(0L, after.market.holdings().total, "a dirty lump reached the shelves")
+        // And it is still a mixture in there, not thirteen tidy piles.
+        assertTrue(after.ore[Species.Iron] > 0L && after.ore[Species.Forsterite] > 0L, "the reserve was separated")
+    }
+
+    @Test
+    fun `a trace of a second species is enough to send the whole lump to the reserve`() {
+        // ⚠️ **Purity is exact and there is no tolerance.** The same standard `BUILD_PURITY_PERCENT`
+        // holds the player to, and the reason is the one the construction path already learned: a
+        // tolerance is a crumb-swallowing rule, and a crumb-swallowing rule loses matter somewhere
+        // nobody is looking. A gram in a tonne is 1 part per million and it still goes to the heap.
+        val post = Station(Mixture.EMPTY, Market.empty(), id = 3)
+        val mass = 4L * Capacity.PACKET_MASS
+        val s = run(world(
+            sell = listOf(SpeciesFilter(Species.Iron, null), SpeciesFilter(Species.Forsterite, null)),
+            stock = Mixture.of(
+                Species.Iron to mass - Budget.GRAM, Species.Forsterite to Budget.GRAM, energy = 0L,
+            ).atAmbient(),
+        ).berthedTo(post), 60 * RAIL_PERIOD)
+        val after = s.station(3)
+
+        assertEquals(0L, after.market.holdings().total, "a lump one gram short of pure reached the shelves")
+        assertEquals(s.exportedMass, after.ore.total, "the near-pure lump went nowhere")
+    }
+
+    @Test
+    fun `a station works its reserve once a minute and not before`() {
+        // ⛔ **The schedule is the balance** — see [OutofspaceReducer.STATION_PERIOD]. A station used
+        // to separate a kilogram every tick, which is nearly four tonnes a minute of free, perfect
+        // refining. Here it is handed a reserve it *will* work, and asked to sit on it: nothing at
+        // all until its turn comes round, then exactly one batch.
+        val ore = Mixture.of(Species.Iron to 4L * tonne, Species.Forsterite to tonne, energy = 0L)
+        val post = Station(ore, Market.empty(), id = 3)
+        val start = world(sell = emptyList()).berthedTo(post)
+
+        // ⚠️ **Counted in batches per window, not against the first firing.** [STATION_OFFSET]
+        // decides only which tick of the period is the station's turn, so *when* the first batch
+        // lands is arbitrary; what the schedule promises is one batch per window and no more.
+        assertEquals(ore.total, run(start, STATION_OFFSET).station(3).ore.total, "a station worked every tick")
+        assertEquals(
+            ore.total - CONCENTRATION_BATCH, run(start, STATION_PERIOD).station(3).ore.total,
+            "a minute did not buy exactly one batch",
+        )
+        assertEquals(
+            ore.total - 2L * CONCENTRATION_BATCH, run(start, 2 * STATION_PERIOD).station(3).ore.total,
+            "two minutes did not buy exactly two batches",
         )
     }
 

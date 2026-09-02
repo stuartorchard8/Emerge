@@ -173,6 +173,23 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     const val RAIL_PERIOD       = 32
 
     /**
+     * A station's own plants — **once a minute**, at [OutofspaceConfig.ticksPerSecond] of 64.
+     *
+     * ⚠️ **A multiple of the tick rate rather than a divisor of it**, which is the other way round
+     * from every period above and is why this one is stated in minutes. The rule those obey is that
+     * a subsystem fires a whole number of times a second; this one fires once a *minute*, and the
+     * property that matters is the same — the schedule lands on the same phase of the clock every
+     * time, so what a station does is not a function of when the player happened to arrive.
+     *
+     * ⛔ **The schedule is the balance.** A station used to work a kilogram every tick, which is
+     * 3.8 tonnes a minute of free, perfect separation — faster than the player can haul, and enough
+     * to halve the starter station's own price for its dominant ore inside three minutes of
+     * nobody doing anything. A minute between batches is what makes a trading post read as a slow
+     * industrial concern rather than a machine that outruns you.
+     */
+    const val STATION_PERIOD    = 3840
+
+    /**
      * Ambient chemistry. Alongside heat rather than alongside the machines, because what gates a
      * reaction is a temperature — running it more often than the heat that drives it would only ask
      * the same question of the same numbers again.
@@ -209,6 +226,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     const val FLUID_OFFSET      = 4
     const val MACHINE_OFFSET    = 0
     const val RAIL_OFFSET       = 6
+
+    /** Clear of every offset above mod 8, which is all [STATION_PERIOD] has to miss. */
+    const val STATION_OFFSET    = 5
 
     /**
      * Whether a subsystem of [period] whose turn is tick [offset] fires on [tick].
@@ -899,13 +919,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         )
         // ── Stations mind their own business ────────────────────────────────
         //
-        // Separating a kilogram of ore and cracking a kilogram of a compound, per station, per tick
-        // — `PLAN_economy.md` §6.1. Not gated on a period: the rate IS per tick, and a period would
-        // make it a rate about the schedule instead. Frozen ticks do nothing, like everything else.
+        // A batch of separation and a batch of chemistry, per station, once every
+        // [STATION_PERIOD] — `PLAN_economy.md` §6.1. Frozen ticks do nothing, like everything else.
+        //
+        // ⚠️ **The schedule gates the plants, not the counter.** A sale can land on any tick, so
+        // [Work.market] and [Work.consigned] are installed below whether or not this is a working
+        // tick; what the period decides is only whether the station then *does* anything with what
+        // it is holding. Gating the install too would drop a sale made on any of the 3,839 ticks in
+        // between, which is nearly all of them.
         //
         // ⚠️ **Outside every ledger in the game.** A station's stockpile is not the vessel's matter
         // and never was; the only place the two meet is the docking port, where `exportedMass` and
         // `importedMass` book the crossing.
+        val stationTick = shouldRun(state.tick, STATION_PERIOD, STATION_OFFSET, frozen)
         val bodiesAtWork =
             if (frozen || bodiesToDrift.none { it.kind == BodyKind.STATION }) bodiesToDrift
             else bodiesToDrift.map { body ->
@@ -914,11 +940,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // machine loop above and left its result in `w.market`; installing it here before
                 // [Station.worked] is what makes a tick read "the ship sold me this, now I separate
                 // it" rather than the two overwriting each other.
+                // ⚠️ **Both halves of the sale, or neither.** The shelves and the reserve are filled
+                // by the same statement in [Work.trade], so installing one without the other would
+                // book a sale that half happened.
                 val traded =
                     if (w.docked?.stationId == station.id && w.market != null) {
-                        Station(station.ore, w.market!!, station.id, station.docks)
+                        Station(station.ore + w.consigned, w.market!!, station.id, station.docks)
                     } else station
-                body.copy(station = traded.worked())
+                body.copy(station = if (stationTick) traded.worked() else traded)
             }
         // ⛔ **The docked station does not drift.** It is not free any more — its pose is the
         // vessel's pose plus a frozen offset, and letting the sweep integrate it as well would have
@@ -1237,9 +1266,24 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             credits += here.sellValue(forSale)
             exportedMass += forSale.total
             exportedEnergy += forSale.energy
-            // ⛔ **The counterparty takes ALL of it, including the species it paid nothing for.**
-            // The forfeit tail is not destroyed, it is the station's fee — see [Market.sellValue].
-            here = here.absorbing(forSale)
+            // ⛔ **The counterparty takes ALL of it, including the species it paid nothing for** —
+            // but *where* it puts it depends on what arrived. The forfeit tail is not destroyed, it
+            // is the station's fee; see [Market.sellValue].
+            //
+            // ⛔ **A shelf holds one species and only a pure lump may go straight onto one.**
+            // Absorbing every sale onto the shelves was the bug that made a station quote a hundred
+            // and forty species in sub-gram quantities: a 41%-iron lump was scattered across a
+            // dozen shelves *already separated*, which handed the player the station's own
+            // separation for nothing and left [Station.ore] — the mixed reserve the whole industry
+            // is written against — permanently empty. Nothing else ever wrote it, so the separator
+            // ran through the seeded reserve in a quarter of an hour and was dead machinery after.
+            //
+            // ⚠️ **Purity is exact and there is no tolerance**, deliberately. Two micrograms of
+            // forsterite in a tonne of iron sends the lot to the reserve. That is the same standard
+            // `BUILD_PURITY_PERCENT` already holds the player to, and a tolerance here is the
+            // crumb-swallowing rule that was tried and reverted in the construction path — see
+            // [org.emerge.demo.outofspace.chem.Mixture.impurities], which is exactly this question.
+            if (forSale.impurities == 0L) here = here.absorbing(forSale) else consigned += forSale
             putStore(m, tile, BufferRole.Input, null)
         }
 
@@ -1665,6 +1709,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         var credits: Long = state.credits
         /** The counterparty on the far side of every docking port, or null when the ship is alone. */
         var market: Market? = state.dockedMarket
+        /**
+         * Mixed matter sold this tick, bound for the station's **unworked reserve** rather than its
+         * shelves — see [Work.trade].
+         *
+         * Separate from [market] because the two halves of a sale land in two different places, and
+         * only the shelves are a `Market`. Installed into the [Station] beside [market] in the body
+         * sweep, which is the one place that can see both.
+         */
+        var consigned: Mixture = Mixture.EMPTY
         /** The berth the vessel is bolted to — see [VesselState.docked]. */
         var docked: DockLink? = state.docked
         var dockedThrustAllowed: Boolean = state.dockedThrustAllowed

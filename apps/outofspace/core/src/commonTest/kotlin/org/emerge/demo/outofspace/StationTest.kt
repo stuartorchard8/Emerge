@@ -10,7 +10,8 @@ import org.emerge.demo.outofspace.world.DockNode
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Market
 import org.emerge.demo.outofspace.world.Pose
-import org.emerge.demo.outofspace.world.RATE
+import org.emerge.demo.outofspace.world.CONCENTRATION_BATCH
+import org.emerge.demo.outofspace.world.CRACKING_BATCH
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.Station
@@ -152,24 +153,24 @@ class StationTest {
     // ── Industry ─────────────────────────────────────────────────────────────
 
     @Test
-    fun `a glutted station works its ore down a kilogram at a time`() {
+    fun `a glutted station works its ore down a batch at a time`() {
         // ⚠️ **The dominant species is IRON on purpose — an element, which cannot be cracked.** With
         // a compound dominant, the shelf figure is separation minus whatever the cracker took back
         // off it in the same ticks, and this test would be measuring both plants at once. It caught
         // exactly that: 100 kg separated read as 32 kg on the shelf.
-        val ore = Mixture.of(Species.Iron to 10L * tonne, Species.Nickel to tonne, energy = 0L)
+        val ore = Mixture.of(Species.Iron to 100L * tonne, Species.Nickel to tonne, energy = 0L)
         var s = Station(ore, Market.empty())
         val before = s.ore.total
 
-        repeat(100) { s = s.worked() }
+        repeat(10) { s = s.worked() }
 
-        assertEquals(before - 100L * RATE, s.ore.total, "the reserve did not fall by a kilogram a tick")
-        assertEquals(100L * RATE, s.market.stockOf(Species.Iron), "iron never reached the shelves")
+        assertEquals(before - 10L * CONCENTRATION_BATCH, s.ore.total, "the reserve did not fall by a batch a batch")
+        assertEquals(10L * CONCENTRATION_BATCH, s.market.stockOf(Species.Iron), "iron never reached the shelves")
         assertEquals(0L, s.market.stockOf(Species.Nickel), "the minority species was separated first")
     }
 
     @Test
-    fun `a station keeps its identity and its berths through a tick of work`() {
+    fun `a station keeps its identity and its berths through a batch of work`() {
         // ⛔ **`Station` is rebuilt from two fields by both of its plants, and its constructor
         // defaults the other two** — so this went wrong the tick after the world started, silently,
         // in a value nothing reads until the player tries to dock. It was found by a screenshot of
@@ -188,10 +189,27 @@ class StationTest {
     }
 
     @Test
-    fun `a reserve holding less than a kilogram does nothing at all`() {
-        // Go/no-go at the full kilogram: no dribbling out what is left.
-        val s = Station(Mixture.of(Species.Iron to RATE - 1L, energy = 0L), Market.empty())
-        assertEquals(s.ore.total, s.worked().ore.total, "a part-kilogram reserve was dribbled out")
+    fun `a reserve holding less than a batch does nothing at all`() {
+        // ⛔ **The threshold is the balance, not a tidiness rule.** A station one gram short of a
+        // tonne of its own dominant species does *nothing*, for ever — which is what stops it
+        // quietly extracting trace metals from whatever dribble of ore has been left with it. See
+        // [CONCENTRATION_BATCH].
+        val s = Station(Mixture.of(Species.Iron to CONCENTRATION_BATCH - 1L, energy = 0L), Market.empty())
+        assertEquals(s.ore.total, s.worked().ore.total, "a part-batch reserve was dribbled out")
+        assertEquals(0L, s.worked().market.holdings().total, "a part-batch reserve reached the shelves")
+    }
+
+    @Test
+    fun `a reserve rich in trace metals is not worked for them`() {
+        // The same threshold read the way a player meets it: nine hundred kilograms of ore with gold
+        // in it is not an ore body, and a station will not pick it over. ⚠️ Gold is the dominant
+        // species here only because there is nothing else — the point is the *quantity*, not which
+        // species happens to be on top.
+        val dribble = Mixture.of(
+            Species.Gold to 400L * Budget.KILOGRAM, Species.Iron to 500L * Budget.KILOGRAM, energy = 0L,
+        )
+        val s = Station(dribble, Market.empty()).worked()
+        assertEquals(dribble.total, s.ore.total, "a sub-batch reserve was picked over for its gold")
     }
 
     @Test
@@ -215,7 +233,7 @@ class StationTest {
             ),
         )
         val before = s.market.stockOf(Species.Forsterite)
-        repeat(50) { s = s.worked() }
+        repeat(5) { s = s.worked() }
         assertEquals(before, s.market.stockOf(Species.Forsterite), "a station cracked into shelves already full")
     }
 
@@ -227,11 +245,11 @@ class StationTest {
         // it stops on its own as the element shelves fill. So a station is a good place to buy
         // *elements* from — which is exactly what a player building a ship wants — and that is
         // emergent rather than authored.
-        var s = Station(Mixture.EMPTY, Market.of(Species.Quartz to 40L * tonne))
-        repeat(400) { s = s.worked() }
-        val cracked = 40L * tonne - s.market.stockOf(Species.Quartz)
+        var s = Station(Mixture.EMPTY, Market.of(Species.Quartz to 400L * tonne))
+        repeat(40) { s = s.worked() }
+        val cracked = 400L * tonne - s.market.stockOf(Species.Quartz)
         assertTrue(cracked > 0L, "nothing cracked at all")
-        assertTrue(cracked <= 400L * RATE, "more than a kilogram a tick was cracked")
+        assertTrue(cracked <= 40L * CRACKING_BATCH, "more than a batch a batch was cracked")
         assertEquals(
             cracked,
             s.market.stockOf(Species.Silicon) + s.market.stockOf(Species.Oxygen),
@@ -245,7 +263,7 @@ class StationTest {
         // magnesium, silicon and oxygen shelves are near list — so cracking pays *because* it is
         // over-supplied, and it self-limits as the element shelves fill.
         var s = Station(Mixture.EMPTY, Market.of(Species.Forsterite to 500L * tonne))
-        repeat(200) { s = s.worked() }
+        repeat(20) { s = s.worked() }
 
         assertTrue(s.market.stockOf(Species.Magnesium) > 0L, "a glutted station never cracked anything")
         assertTrue(s.market.stockOf(Species.Silicon) > 0L)
@@ -262,7 +280,7 @@ class StationTest {
             Mixture.EMPTY,
             Market.of(Species.Forsterite to 500L * tonne, Species.Quartz to 100L * tonne),
         )
-        repeat(20) { s = s.worked() }
+        repeat(2) { s = s.worked() }
         assertTrue(
             s.market.stockOf(Species.Forsterite) < 500L * tonne,
             "the richer shelf was not the one cracked",
@@ -271,13 +289,13 @@ class StationTest {
     }
 
     @Test
-    fun `separating and cracking both happen on the same tick`() {
+    fun `separating and cracking both happen in the same batch`() {
         // Two plants working two stockpiles. Making them take turns would be a rule about the code.
         val s = Station(
             Mixture.of(Species.Iron to 10L * tonne, energy = 0L),
             Market.of(Species.Forsterite to 500L * tonne),
         ).worked()
-        assertEquals(RATE, s.market.stockOf(Species.Iron), "nothing was separated")
+        assertEquals(CONCENTRATION_BATCH, s.market.stockOf(Species.Iron), "nothing was separated")
         assertTrue(s.market.stockOf(Species.Magnesium) > 0L, "nothing was cracked")
     }
 
