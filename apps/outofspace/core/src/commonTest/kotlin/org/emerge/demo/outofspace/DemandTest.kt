@@ -511,6 +511,70 @@ class DemandTest {
      *   ^ marked wire        wants 14.9kg            site on it: blocked, and not in the division
      * ```
      */
+    // ── 6. A road that is about to vanish is not a road ───────────────────────
+
+    /**
+     * ⛔ **Nothing may leave the map while the step is reading it.** The flow graph and the whitelist
+     * are built once a step and everything afterwards reads them, so a segment that ceases to be
+     * *during* that step leaves both describing a road that is no longer there — and the sources
+     * still being told about it commit material to it.
+     *
+     * Stu's save, 2026-09-03: the marked rail at `(11,8)`, already empty, was dropped as the Rail
+     * sweep passed over it; the marked wire at `(11,10)`, further along the *same pass*, then shed
+     * 14.9kg of copper up a column whose only way out had ceased to exist two conduits earlier. It
+     * stood there for good.
+     *
+     * What is finished coming apart now goes at the **top** of the step, before anything looks —
+     * see `sweepFinishedDeconstruction` — so the corridor below is already a dead end when the
+     * marked rail on it is asked whether its metal has anywhere to go.
+     *
+     * ```
+     *  . - [marked] - . - . - (x) - . - [vent]     (x) is marked, empty, and about to go
+     *      holds a rail's worth        the corridor's only way out
+     * ```
+     */
+    @Test
+    fun `nothing is let go up a road that ceases to exist in the same step`() {
+        val grid = cfg.initialGrid
+        val deck = DeckArray(grid)
+        deck += Vent(grid.tile(8, 3))
+        val rails = arrayOfNulls<Segment>(grid.size)
+        joinRow(grid, rails, 2, 5, 3)
+        joinRow(grid, rails, 7, 8, 3)
+        var s = VesselState(
+            grid, deck,
+            conduits = Conduits.ofRails(rails.toList()),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+        ).copy(creative = false)
+
+        // ⚠️ **A gap in the stated track, closed by a drawn tile** — a stated run is finished track
+        // and would hold its own metal, which is not the tile this is about. Drawn, `(6,3)` holds
+        // nothing, so a mark on it takes it off the map the moment anything sweeps.
+        s = run(s, 1, OutofspaceInput(listOf(
+            fixtureLay(grid.tile(5, 3), grid.tile(6, 3), Conduit.Rail),
+            fixtureLay(grid.tile(6, 3), grid.tile(7, 3), Conduit.Rail),
+        )))
+        s = run(s, 1, OutofspaceInput(listOf(
+            Edit.Remove(grid.tile(6, 3), DeleteLayer.Rail),
+            Edit.Remove(grid.tile(3, 3), DeleteLayer.Rail),
+        )))
+        s = run(s, 20 * RAIL_PERIOD)
+
+        assertTrue(
+            s.conduits[Conduit.Rail][grid.tile(6, 3).index] == null,
+            "fixture: the unpaid tile should have gone, and the corridor with it",
+        )
+        assertEquals(
+            0L, onTrack(s),
+            "the marked rail shed its metal up a corridor whose way out had already been swept away",
+        )
+        assertTrue(
+            s.conduits[Conduit.Rail][grid.tile(3, 3).index] != null,
+            "and it should still be standing, waiting, rather than half gone",
+        )
+    }
+
     // ── 5. Sources let go once, not all at once ──────────────────────────────
 
     /**

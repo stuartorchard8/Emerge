@@ -2860,6 +2860,38 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * Ceasing to be needs *both* halves empty — the structure and the lump standing on it — or a
          * tile would vanish under a packet and take it with it.
          */
+        /**
+         * Takes off the map every marked segment that has already given up everything it had.
+         *
+         * ⛔ **The first thing the rail step does, and that is the whole point of it.** Removing a
+         * segment changes what the network *is*: which tiles are joined, which runs have a consumer
+         * on the end of them, which appetites are reachable from where. All of that is answered once
+         * per step, by [FlowGraph.build] and [Whitelist.of], and everything afterwards reads those
+         * answers. A segment that ceases to be **after** they are built leaves them describing a
+         * road that is no longer there — and the sources still being told about that road commit
+         * material to it.
+         *
+         * So the network is settled before it is surveyed, and nothing removes a tile from it again
+         * until the next step. See the note in [scrapDeconstructing], where the removal used to be.
+         *
+         * ⚠️ **Both halves empty, exactly as before** — the structure and whatever stands on it — or
+         * a tile would vanish under a packet and take it with it. What has changed is only *when*
+         * the question is asked, so a segment that empties during a step stands, inert and holding
+         * nothing, until the step after it.
+         */
+        fun sweepFinishedDeconstruction() {
+            for (conduit in Conduit.entries) {
+                val line = layer(conduit)
+                val stuff = tracks[conduit]
+                for (i in line.indices) {
+                    val segment = line[i] ?: continue
+                    if (!segment.deconstructing) continue
+                    val tile = TileIndex(i)
+                    if (stuff.massAt(tile) == 0L && rail.isEmpty(tile)) dropConduit(tile, conduit)
+                }
+            }
+        }
+
         fun scrapDeconstructing(whitelist: Whitelist) {
             for (conduit in Conduit.entries) scrapDeconstructing(whitelist, conduit)
         }
@@ -2978,7 +3010,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         }
                     }
                 }
-                if (stuff.massAt(tile) == 0L && rail.isEmpty(tile)) dropConduit(tile, conduit)
+                // ⛔ **A segment that has just given its last gram is NOT taken off the map here.**
+                // It goes at the top of the next rail step — see [sweepFinishedDeconstruction] —
+                // because the flow graph and the whitelist this pass is reading were built with it
+                // standing, and every tile after this one in the loop is about to read them. A rail
+                // deleted from under its own step is a road that the sources behind it are still
+                // being told about: Stu's save, 2026-09-03, marked rail `(11,8)` emptied and dropped
+                // on the Rail sweep, and the marked wire at `(11,10)` then shed 14.9kg of copper up
+                // a column whose only way out had ceased to exist two conduits earlier in the same
+                // pass. It stood there for good.
             }
         }
 
@@ -3684,8 +3724,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             private set
 
         /** How many tiles carry track, so the flow can be rebuilt only when something ceased to be. */
-        private fun railCount(): Int = rails.count { it != null }
-
         /** Advance all conduits one step (flow derived from input ports). */
         /**
          * Purchases, **minted onto the track at the moment the network draws them**.
@@ -3776,6 +3814,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         fun advanceRails(ports: Map<TileIndex, List<Port>>) {
+            // ⛔ **What is finished coming apart goes before anything looks at the network.** Every
+            // answer below — the flow graph, the whitelist, what each source is told it may let go
+            // of — is computed once and read by the whole step, so the tile set has to stop moving
+            // first. See [sweepFinishedDeconstruction].
+            sweepFinishedDeconstruction()
+
             // Bridges drain first (three real slots, not one).
             for ((tile, at) in ports) for (port in at) {
                 if (port.kind == PortKind.Output && port.fromBridge) depositFromBridge(tile, port)
@@ -3957,7 +4001,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 deck::materialOf,
             ) { rail.resourceAt(it) }
 
-            var flow = FlowGraph.build(
+            val flow = FlowGraph.build(
                 tilesWithTrack,
                 sources,
                 sinks,
@@ -3998,30 +4042,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             //
             // The tile set only changes when something actually ceases to be, which is rare, so the
             // graph is rebuilt on that edge rather than built twice every step.
-            var whitelist = Whitelist.of(flow, rails.size, { accepts[it] }, loadOn)
-            val before = railCount()
+            val whitelist = Whitelist.of(flow, rails.size, { accepts[it] }, loadOn)
             scrapDeconstructing(whitelist)
             scrapMachines(whitelist)
-            if (railCount() != before) {
-                val liveTiles = rails.mapIndexedNotNullTo(mutableSetOf()) { i, seg -> if (seg != null) TileIndex(i) else null }
-                flow = FlowGraph.build(
-                    liveTiles,
-                    sources.filterTo(mutableSetOf()) { rails[it.index] != null },
-                    sinks.filterTo(mutableSetOf()) { rails[it.index] != null },
-                    { tile, dir -> rails[tile.index]?.linkedTo(dir) == true },
-                    grid,
-                    { tile -> !rail.isEmpty(tile) },
-                    appetites,
-                    walls = ghosts,
-                )
-                whitelist = Whitelist.of(flow, rails.size, { accepts[it] }, loadOn).also {
-                    // ⚠️ **The rebuild is a new picture of the network, not a new step.** What the
-                    // passes above have already let go of is still on its way, and a fresh
-                    // whitelist that had forgotten it would let the ports below ship for the same
-                    // appetite a second time.
-                    it.carryPromisesFrom(whitelist)
-                }
-            }
+            // ⛔ **Nothing is rebuilt here, because nothing above can have changed the tile set.**
+            // The two scrap passes hand material back; the one thing that used to *remove* a tile
+            // now happens at the top of the step, in [sweepFinishedDeconstruction], precisely so
+            // that this survey holds for the whole of it. A graph rebuilt in the middle was only
+            // ever half a fix anyway: it came after both passes, so the sources that had already
+            // been told about the vanished road had already acted on it.
             this.whitelist = whitelist
 
             // A construction site at [to] that stands **in the road** — unpaid track and nothing
