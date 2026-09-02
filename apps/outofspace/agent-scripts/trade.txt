@@ -34,12 +34,14 @@ place 38 9
 berth 38 9
 shot berthed
 
-# Put the ship's iron up for sale. The row goes green: from here the network routes iron to the mouth.
-tap IRON
+# The counter is one row per species now: name, what you hold, the bid, the four controls, the ask,
+# what they hold. `>` and `<` add a packet to an order; `>>` and `<<` are the standing ones.
+# ⚠️ `tap` matches a label, and every row carries the same four. So these hit the FIRST row's
+# controls -- iron -- which is what is wanted here: one row switched on, next to rows that are not.
+tap >>
 shot listed
 
-# And order some titanium off the shelf.
-tap TITANIUM
+tap <
 shot ordered
 
 # Close it. A counter has to be closable or a berth is a modal prison.

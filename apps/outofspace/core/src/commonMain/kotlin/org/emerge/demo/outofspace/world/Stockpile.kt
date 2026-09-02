@@ -50,6 +50,16 @@ class Stockpile private constructor(
      * first** — tanks, buffers, belts, and anything already marked to come apart.
      */
     private val loose: LongArray,
+    /**
+     * Everything loose aboard that is **not** a single species — what the ore order would deliver.
+     *
+     * ⛔ **The complement of [loose], drawn by the same question.** A tile holding one species is
+     * deliverable as that species and a tile holding two is deliverable only as ore, which is
+     * exactly the partition the mouth's orders draw. Deriving the counter's ore figure any other way
+     * — total held less the sum of the pure columns, say — would offer a number the network will not
+     * honour, because `held` is storages only and `loose` counts belts too.
+     */
+    val blended: Mixture,
     /** Per [Species.ordinal]: pure mass built into the vessel, needing a deconstruction order first. */
     private val fabric: LongArray,
 ) {
@@ -146,7 +156,7 @@ class Stockpile private constructor(
             listOf(Species.Steel, Species.Copper, Species.Forsterite)
 
         val EMPTY: Stockpile =
-            Stockpile(Mixture.EMPTY, LongArray(Species.COUNT), LongArray(Species.COUNT))
+            Stockpile(Mixture.EMPTY, LongArray(Species.COUNT), Mixture.EMPTY, LongArray(Species.COUNT))
 
         /**
          * Everything aboard, sorted into what the network can move and what is built into the ship.
@@ -172,6 +182,7 @@ class Stockpile private constructor(
             var any = false
             var stored = Mixture.EMPTY
             val loose = LongArray(Species.COUNT)
+            val blended = LongArray(Species.COUNT)
             val fabric = LongArray(Species.COUNT)
 
             // ── What is in storage, for [held] ──
@@ -192,7 +203,15 @@ class Stockpile private constructor(
             // ── Loose: every machine store aboard, tanks included, and everything on a belt ──
             for (layer in listOf(buffers.stuff, rail.stuff)) {
                 layer.forEachOccupiedTile { tile ->
-                    layer.pureSpeciesAt(tile)?.let { loose[it.ordinal] += layer.massAt(tile) }
+                    val pure = layer.pureSpeciesAt(tile)
+                    // ⛔ **The two are exclusive and together they are everything loose.** A tile
+                    // holding one species is deliverable *as* that species; a tile holding two is
+                    // deliverable only as ore. That is the same partition the mouth's orders draw —
+                    // see [org.emerge.demo.outofspace.world.machine.SellOrder] — and it has to be
+                    // drawn by the same question, or the counter would offer a number the network
+                    // will not honour.
+                    if (pure != null) loose[pure.ordinal] += layer.massAt(tile)
+                    else layer.forEachSpecies(tile) { s, mass -> blended[s.ordinal] += mass }
                 }
             }
 
@@ -229,7 +248,7 @@ class Stockpile private constructor(
             }
 
             val anything = any || loose.any { it > 0L } || fabric.any { it > 0L }
-            return if (anything) Stockpile(stored, loose, fabric) else EMPTY
+            return if (anything) Stockpile(stored, loose, Mixture.of(blended, 0L), fabric) else EMPTY
         }
     }
 }

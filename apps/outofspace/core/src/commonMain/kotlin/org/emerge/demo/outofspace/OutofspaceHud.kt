@@ -53,6 +53,10 @@ import org.emerge.render.torus.ui.UiBuilder
 import org.emerge.demo.outofspace.world.Stockpile
 import org.emerge.render.torus.ui.ActionButton
 import kotlin.math.absoluteValue
+import org.emerge.demo.outofspace.world.Market
+import org.emerge.demo.outofspace.world.Station
+import org.emerge.demo.outofspace.world.machine.SellOrder
+import org.emerge.demo.outofspace.num.scaledRatio
 
 /** A full-screen overlay: the game's own controls, or the sim's readouts. One at a time. */
 enum class Sheet { None, Menu, Readouts, SaveLoad, Trade }
@@ -709,6 +713,220 @@ class OutofspaceHud {
      * the **bid** on the left and the **ask** on the right — the two differ, and a single "price"
      * column would be lying about one of them.
      */
+    // ── The counter, one row per species ─────────────────────────────────────
+    //
+    // ⛔ **Columns are made of padding, not of layout.** Panels render in a **monospace** face, so a
+    // string padded to a width is a column that lines up with the one above it — and the toolkit has
+    // no column container, only rows that size to their contents. The buttons are pinned with
+    // `widthEm` for the same reason: an arrow that grew a character would shove every row's centre
+    // sideways by a different amount.
+
+    private val TRADE_NAME_W = 10
+
+    /**
+     * ⚠️ **Every width has to EXCEED its longest value, not merely fit it.** Padding is the only
+     * separator between these columns, so a value that fills its cell exactly touches the one
+     * beside it: a screenshot read `192892000.0KG` where the truth was an ask of 19,289 next to
+     * 2,000.0 kg of stock. `mass` runs to eight characters (`4311.1KG`) and a price to five, so
+     * these are those plus a clear space.
+     */
+    private val TRADE_MASS_W = 10
+    private val TRADE_PRICE_W = 8
+    private val TRADE_PENDING_W = 9
+
+    /** How wide the counter wants to be: ten columns, four of them controls. */
+    private val TRADE_WIDTH_DP = 780f
+
+    /** How wide the four controls are pinned, so that every row's centre sits at the same place. */
+    private val TRADE_FAR_EM = 1.7f
+    private val TRADE_NEAR_EM = 1.2f
+
+    /** [text] right-aligned in this many characters — one cell of the grid. */
+    private fun Int.cell(text: String): String = text.padStart(this)
+
+    /**
+     * The heading, laid out by the **same row builder the rows use**.
+     *
+     * ⛔ **Not a padded string.** Four buttons sit between the outer columns, and their widths are
+     * in `em` rather than in characters — so no amount of padding puts "ASK" over the ask column.
+     * The screenshot that found this had the whole right-hand heading a column and a half adrift.
+     * Disabled buttons carry the headings across the control slots instead: same widths, same gaps,
+     * and non-interactive, which is what a heading is.
+     */
+    private fun org.emerge.render.torus.ui.PanelBuilder.tradeHeading() {
+        row(gapPx = 2f) {
+            text(TRADE_NAME_W.named(""), 0x7A7A7AFFL)
+            text(TRADE_MASS_W.cell("YOURS"), 0x7A7A7AFFL)
+            text(TRADE_PRICE_W.cell("BID"), 0x7A7A7AFFL)
+            button("", 0x00000000L, enabled = false, widthEm = TRADE_FAR_EM) {}
+            button("", 0x00000000L, enabled = false, widthEm = TRADE_NEAR_EM) {}
+            text(TRADE_PENDING_W.cell("ORDER"), 0x7A7A7AFFL)
+            button("", 0x00000000L, enabled = false, widthEm = TRADE_NEAR_EM) {}
+            button("", 0x00000000L, enabled = false, widthEm = TRADE_FAR_EM) {}
+            text(TRADE_PRICE_W.cell("ASK"), 0x7A7A7AFFL)
+            text(TRADE_MASS_W.cell("THEIRS"), 0x7A7A7AFFL)
+        }
+    }
+
+    /** A name cell — **left**-aligned, unlike every number in the row. */
+    private fun Int.named(text: String): String = text.padEnd(this)
+
+    private val TRADE_ON = 0x2E6B4AFFL
+    private val TRADE_OFF = 0x2A3550FFL
+    private val TRADE_DEAR = 0x3A3038FFL
+
+    /**
+     * Which species get a row: what you can sell, what they have, **and anything with a standing
+     * order on it**.
+     *
+     * ⛔ **The third one is not a nicety.** A `>>` left on for a species neither side is holding any
+     * more would otherwise vanish off the list — taking the only control that could turn it off with
+     * it, and leaving a standing order running that the player cannot see or reach.
+     */
+    private fun tradedSpecies(stock: Stockpile, market: Market, port: DockingPort): List<Species> =
+        Species.ALL.filter { species ->
+            stock.buildable(species) > 0L || market.stockOf(species) > 0L ||
+                port.selling(species) != null || port.buy.any { it.species == species }
+        }
+
+    /**
+     * One species: what you have and what it fetches, the four controls, and what they have.
+     *
+     * The middle column is the **pending** figure, and it says a different thing under each mode
+     * because a standing order has no quantity of its own to report: under `>>` it is what the
+     * network will deliver to the mouth, under `<<` it is what the ship is short of, and otherwise
+     * it is simply how much is on order.
+     */
+    private fun org.emerge.render.torus.ui.PanelBuilder.tradeRow(
+        controller: OutofspaceController,
+        port: DockingPort,
+        market: Market,
+        stock: Stockpile,
+        species: Species,
+    ) {
+        val sell = port.selling(species)
+        val buy = port.buy.firstOrNull { it.species == species }
+        val mine = stock.buildable(species)
+        val theirs = market.stockOf(species)
+        val cost = market.buyCost(species, Capacity.PACKET_MASS)
+
+        row(gapPx = 2f) {
+            button(TRADE_NAME_W.named(species.name.uppercase()), 0x00000000L) { controller.openWiki(species) }
+            text(TRADE_MASS_W.cell(mass(mine)), speciesColor(species) or 0xFFL)
+            text(TRADE_PRICE_W.cell(market.bidFor(species, Capacity.PACKET_MASS).toString()))
+            button(">>", if (sell?.isEndless == true) TRADE_ON else TRADE_OFF, widthEm = TRADE_FAR_EM) {
+                controller.toggleSellForever(port, species)
+            }
+            button(">", TRADE_OFF, widthEm = TRADE_NEAR_EM) {
+                controller.sellMore(port, species, Capacity.PACKET_MASS)
+            }
+            text(TRADE_PENDING_W.cell(pending(stock, species, sell, buy)), 0xE0C060FFL)
+            button("<", if (cost > controller.state.credits) TRADE_DEAR else TRADE_OFF, widthEm = TRADE_NEAR_EM) {
+                controller.buyMore(port, species, Capacity.PACKET_MASS)
+            }
+            button("<<", if (buy?.isEndless == true) TRADE_ON else TRADE_OFF, widthEm = TRADE_FAR_EM) {
+                controller.toggleBuyForever(port, species)
+            }
+            text(TRADE_PRICE_W.cell(market.askFor(species, Capacity.PACKET_MASS).toString()))
+            text(TRADE_MASS_W.cell(mass(theirs)))
+        }
+    }
+
+    /**
+     * The middle cell for [species] — see [tradeRow] for why it means three different things.
+     *
+     * ⚠️ **A finite sell order wins over a finite buy order** when somehow both exist. They are a
+     * pointless round trip rather than an illegal state, so this picks the left-hand one rather than
+     * inventing a second cell for a case nobody means to be in.
+     */
+    private fun pending(
+        stock: Stockpile,
+        species: Species,
+        sell: SellOrder?,
+        buy: org.emerge.demo.outofspace.world.machine.BuyOrder?,
+    ): String = when {
+        sell?.isEndless == true -> mass(stock.buildable(species))
+        buy?.isEndless == true -> ENDLESS_MARK
+        sell != null -> mass(sell.remaining)
+        buy != null -> mass(buy.remaining)
+        else -> ""
+    }
+
+    /**
+     * What a `<<` row shows where a quantity would go.
+     *
+     * ⚠️ **Not the unmet demand, and the reason is worth stating.** The number the mechanism uses is
+     * `Whitelist.room` at the port's output, and a `Whitelist` is built inside the rail step and
+     * lives on `Work`, which the draw thread cannot see — publishing it would mean carrying a
+     * per-tile structure on `VesselState` for a readout. And it would usually read the same thing
+     * anyway: a locked warehouse or any ordinary machine is an *unlimited* sink, so the moment one
+     * of those can reach the mouth the honest answer to "how much is wanted" is "all of it".
+     *
+     * ⚠️ **The bitmap font has no infinity sign** — see the inspector's note about the em dash. Three
+     * dots is the available way to say "and it keeps going".
+     */
+    private val ENDLESS_MARK = "..."
+
+    /**
+     * The ore row: **sell only**, and it is the one row whose price is an estimate.
+     *
+     * ⛔ **You cannot buy a station's unworked heap**, so there are no `<` or `<<` controls here at
+     * all — the shelves are where a station sells from, and the heap is what it has not got round to
+     * separating. Their column shows it anyway, because how backed up a station is tells the player
+     * how fast its prices are about to move.
+     *
+     * ⚠️ **The bid is what the ship's *whole* blended stock would fetch per hundred kilograms, and
+     * the real sale will beat it.** A lump is priced on the square of each species' share
+     * ([Market.sellValue]), and this weighs every mixed tile aboard as though it were one lump —
+     * more species in the pile means smaller shares means a lower quote. Selling happens packet by
+     * packet, and a packet is a sample of *one* store, so each one is purer than the aggregate and
+     * fetches more. It errs low on purpose: a number that flattered the pile would read as the game
+     * cheating the player at the till.
+     */
+    private fun org.emerge.render.torus.ui.PanelBuilder.oreRow(
+        controller: OutofspaceController,
+        port: DockingPort,
+        market: Market,
+        stock: Stockpile,
+        station: Station?,
+    ) {
+        val order = port.sellingOre()
+        val blended = stock.blended
+        if (blended.isEmpty && order == null && station == null) return
+        val quote =
+            if (blended.isEmpty) 0L
+            else scaledRatio(market.sellValue(blended), blended.total, Prices.PRICE_UNIT_MASS)
+
+        gap()
+        row(gapPx = 2f) {
+            button(TRADE_NAME_W.named("ORE"), 0x00000000L) { }
+            text(TRADE_MASS_W.cell(mass(blended.total)), 0xC8A44AFFL)
+            text(TRADE_PRICE_W.cell(if (blended.isEmpty) "-" else quote.toString()))
+            button(">>", if (order?.isEndless == true) TRADE_ON else TRADE_OFF, widthEm = TRADE_FAR_EM) {
+                controller.toggleSellOreForever(port)
+            }
+            button(">", TRADE_OFF, widthEm = TRADE_NEAR_EM) {
+                controller.sellMoreOre(port, Capacity.PACKET_MASS)
+            }
+            text(
+                TRADE_PENDING_W.cell(
+                    when {
+                        order == null -> ""
+                        order.isEndless -> mass(blended.total)
+                        else -> mass(order.remaining)
+                    },
+                ),
+                0xE0C060FFL,
+            )
+            // No buy side: the heap is not for sale. Spacers keep the row's columns under the ones
+            // above rather than letting it collapse leftward.
+            text(TRADE_PENDING_W.cell(""))
+            text(TRADE_PRICE_W.cell(""))
+            text(TRADE_MASS_W.cell(mass(station?.ore?.total ?: 0L)), 0x7A7A7AFFL)
+        }
+        text("  priced on what it is made of \u00b7 concentrate first", 0x5A5A5AFFL)
+    }
+
     private fun UiBuilder.tradeSheet(controller: OutofspaceController) {
         val s = controller.state
         val station = controller.dockedStation
@@ -723,60 +941,24 @@ class OutofspaceHud {
                 keyValue("BALANCE", "${s.credits} cr", 0x9A9A9AFFL, 0xE0C060FFL)
                 keyValue("BERTH", "STATION ${station?.station?.id ?: 0}")
                 gap()
+                tradeHeading()
 
-                title("SELL  ·  what is loose aboard")
-                // Only what the network could actually deliver: a species locked inside a machine or
-                // riding as an impurity is not something the mouth will ever see.
-                val offerable = Species.ALL.filter { stock.buildable(it) > 0L }
-                if (offerable.isEmpty()) {
-                    text("nothing loose to sell", 0x5A5A5AFFL)
-                } else {
-                    for (species in offerable) {
-                        val listed = port.selling(species) != null
-                        val bid = market.bidFor(species, Capacity.PACKET_MASS)
-                        button(
-                            listOf(
-                                (if (listed) "· " else "  ") to null,
-                                species.name.uppercase() to speciesColor(species),
-                                "  ${mass(stock.buildable(species))}  ·  $bid cr/100kg" to null,
-                            ),
-                            if (listed) 0x2E6B4AFFL else 0x2A3550FFL,
-                        ) { controller.toggleSellForever(port, species) }
-                    }
+                for (species in tradedSpecies(stock, market, port)) {
+                    tradeRow(controller, port, market, stock, species)
                 }
-
-                gap()
-                title("BUY  ·  what this berth has")
-                val onSale = Species.ALL.filter { market.stockOf(it) > 0L }
-                if (onSale.isEmpty()) {
-                    text("the shelves are empty", 0x5A5A5AFFL)
-                } else {
-                    for (species in onSale) {
-                        val ordered = port.buy.any { it.species == species }
-                        val ask = market.askFor(species, Capacity.PACKET_MASS)
-                        val cost = market.buyCost(species, Capacity.PACKET_MASS)
-                        button(
-                            listOf(
-                                (if (ordered) "· " else "  ") to null,
-                                species.name.uppercase() to speciesColor(species),
-                                "  ${mass(market.stockOf(species))}  ·  $ask cr/100kg" to null,
-                            ),
-                            when {
-                                ordered -> 0x2E6B4AFFL
-                                cost > s.credits -> 0x3A3038FFL
-                                else -> 0x2A3550FFL
-                            },
-                        ) { controller.buyMore(port, species, Capacity.PACKET_MASS) }
-                    }
-                }
+                oreRow(controller, port, market, stock, station?.station)
             }
         }
         val dismiss = { openSheet = Sheet.None }
-        // Tall and scrolling, like the readouts: this is two lists whose length is the world's, not
-        // a handful of buttons. ⚠️ The way back in is the docking port's own panel — see
+        // Tall and scrolling, like the readouts: this is a list whose length is the world's, not a
+        // handful of buttons. ⚠️ The way back in is the docking port's own panel — see
         // [dockControls], which is why closing this is safe.
+        //
+        // ⚠️ **Wider than the readouts, and it has to be.** A row here is ten columns, four of them
+        // controls; at the readouts' width the ask and the station's holdings fell off the right
+        // edge entirely, which a screenshot found and no test could have.
         if (screenW > NARROW_MAX_DP * density) {
-            val w = minOf(READOUTS_WIDTH_DP * density, screenW * 0.6f)
+            val w = minOf(TRADE_WIDTH_DP * density, screenW * 0.92f)
             val h = screenH * 0.85f
             sheet(
                 "oos-trade", "TRADE", onDismiss = dismiss,
