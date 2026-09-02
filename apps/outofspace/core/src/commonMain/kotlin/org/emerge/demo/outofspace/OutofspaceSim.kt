@@ -936,6 +936,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (frozen || bodiesToDrift.none { it.kind == BodyKind.STATION }) bodiesToDrift
             else bodiesToDrift.map { body ->
                 val station = body.station ?: return@map body
+                val atTheCounter = w.docked?.stationId == station.id && w.market != null
                 // ⚠️ **Trade first, then the station's own plants.** The docking port ran in the
                 // machine loop above and left its result in `w.market`; installing it here before
                 // [Station.worked] is what makes a tick read "the ship sold me this, now I separate
@@ -944,10 +945,23 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // by the same statement in [Work.trade], so installing one without the other would
                 // book a sale that half happened.
                 val traded =
-                    if (w.docked?.stationId == station.id && w.market != null) {
-                        Station(station.ore + w.consigned, w.market!!, station.id, station.docks)
-                    } else station
-                body.copy(station = if (stationTick) traded.worked() else traded)
+                    if (atTheCounter) Station(station.ore + w.consigned, w.market!!, station.id, station.docks)
+                    else station
+                val after = if (stationTick) traded.worked() else traded
+                // ⛔ **The counter has to hear what the plants did, or the plants never happened.**
+                // While berthed there are two copies of one market: the shelves on the body, and
+                // [VesselState.dockedMarket], which is what the trade sheet reads and what the next
+                // tick installs back over the body. Working the station and not putting the result
+                // here meant every batch was overwritten by the stale copy one tick later — the
+                // reserve fell, the shelves never rose, and the matter simply vanished. Silent for
+                // as long as a station was only ever *watched* undocked, which is never: a station
+                // is only interesting from a berth.
+                //
+                // ⚠️ **Found by a screenshot, again.** No test saw it because the schedule test
+                // asserted on the reserve, which is the half that is stored on the body and did
+                // move. `PLAN_economy.md` §6.1 has the same finding about `Station`'s constructor.
+                if (atTheCounter) w.market = after.market
+                body.copy(station = after)
             }
         // ⛔ **The docked station does not drift.** It is not free any more — its pose is the
         // vessel's pose plus a frozen offset, and letting the sweep integrate it as well would have

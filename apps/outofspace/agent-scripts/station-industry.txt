@@ -1,0 +1,30 @@
+# What a station does with what it is holding, and where a sale lands on its shelves.
+#
+# Two things this is here to photograph, both of which were wrong until 2026-09-02:
+#
+#   `arrived`  -- the counter as it opens. The BUY column is the station's shelves, and it is a SHORT
+#                 READABLE LIST. It used to be every species the player had ever sold, in sub-gram
+#                 quantities, because every sale was tipped straight onto the shelves species by
+#                 species instead of into the unworked heap.
+#   `worked`   -- the same counter a few station-minutes later. The separator has lifted whole tonnes
+#                 of the reserve's dominant species onto a shelf of its own, a tonne a minute, and
+#                 nothing else has moved: the shelves are still a short list.
+#
+# ⚠️ A station works on `OutofspaceReducer.STATION_PERIOD` -- once a minute at 64 tps, so 3,840 ticks
+# buys exactly one batch. Anything less than that and the panel is photographing a station that has
+# not had a turn yet, which is the shot that would look like nothing works.
+
+new
+creative 1
+tool build
+camera centre 44 9 14
+
+brush DockingPort Right
+material STEEL
+place 38 9
+berth 38 9
+shot arrived
+
+# Five batches: five tonnes of the heap's dominant species onto a shelf of its own.
+run 19200
+shot worked

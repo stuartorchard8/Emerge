@@ -285,6 +285,35 @@ class DockingPortTest {
         )
     }
 
+    @Test
+    fun `what a berthed station's plants do reaches the counter`() {
+        // ⛔ **Two copies of one market while berthed**, and the stale one used to win. The shelves
+        // live on the body; `dockedMarket` is what the trade sheet reads and what the next tick
+        // installs back *over* the body. So every batch a berthed station worked was overwritten one
+        // tick later: the reserve fell, the shelves never rose, and the matter vanished.
+        //
+        // ⚠️ **The schedule test above did not see this** — it asserts on the reserve, which is the
+        // half stored on the body and which moved correctly the whole time. A screenshot of the
+        // counter found it: the separated forsterite was not on the shelf it had been lifted onto.
+        val ore = Mixture.of(Species.Iron to 4L * tonne, energy = 0L)
+        val post = Station(ore, Market.empty(), id = 3)
+        val s = run(world(sell = emptyList()).berthedTo(post), STATION_PERIOD)
+
+        assertEquals(
+            CONCENTRATION_BATCH, s.station(3).market.stockOf(Species.Iron),
+            "the batch never reached the station's own shelves",
+        )
+        assertEquals(
+            CONCENTRATION_BATCH, s.dockedMarket?.stockOf(Species.Iron),
+            "the batch never reached the counter the player reads",
+        )
+        // And nothing was destroyed on the way: what left the heap is on a shelf.
+        assertEquals(
+            ore.total, s.station(3).ore.total + s.station(3).market.holdings().total,
+            "a berthed station lost the matter its separator moved",
+        )
+    }
+
     // ── Buying ───────────────────────────────────────────────────────────────
 
     @Test

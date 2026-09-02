@@ -769,6 +769,24 @@ The carbothermic reductions of the silicates are the expensive end, which is tru
 process too. ⚠️ **Rutile → Titanium is only 0.8%** and that is fine: the cost of titanium is the
 **magnesium**, which occurs nowhere naturally and is itself a 38% row off periclase.
 
+### ⛔ A SCREENSHOT FOUND ANOTHER ONE — a berthed station's work was thrown away every tick
+
+⛔ **While berthed there are two copies of one market**: the shelves on the body, and
+`VesselState.dockedMarket`, which is what the trade sheet reads and what the *next* tick installs
+back over the body. The sweep worked the station and never put the result in the second copy — so
+every batch was overwritten one tick later. The reserve fell, the shelves never rose, and the matter
+simply vanished.
+
+⚠️ **Pre-existing, and it means a berthed station's industry has never once had an effect.** Silent
+for as long as a station was only watched *undocked*, which is never: a station is only interesting
+from a berth.
+
+⚠️ **The schedule test did not see it** — it asserts on the reserve, which is the half stored on the
+body and which moved correctly the whole time. What found it was photographing the counter and
+noticing the separated forsterite was not on the shelf it had been lifted onto. Third time on this
+increment (`STATION 0`, the sub-gram shelves, this): **a panel is not done until it is
+screenshotted**, and `agent-scripts/station-industry.txt` is now the shot that would catch it again.
+
 ### ⏸ Still open after this revision
 
 - ⛔ **A station has no sink.** Nothing consumes, exports or decays stock, so holdings are monotone up
