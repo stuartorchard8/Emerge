@@ -34,18 +34,31 @@ class UiRectRenderer(private val maxRects: Int = DEFAULT_MAX_RECTS) {
         initFloatBuffer(mat4Vbo, INSTANCE_MAT4_ATTR, 4, 4)
     }
 
+    /**
+     * ⛔ **More than [maxRects] draws in batches; it does not draw the first [maxRects] and drop the
+     * rest.** It used to `coerceIn(0, maxRects)`, which is silent, total, and invisible until
+     * something downstream of the loss is looked for: a nav dial built from a few hundred rects took
+     * the panel's whole contents with it — needle, ship and all — because those were *later* rects in
+     * the same coalesced run, and the symptom was a map with nothing on it rather than a partial
+     * circle. A cap belongs on the buffer, which is what [maxRects] still sizes; it does not belong
+     * on the drawing.
+     */
     fun drawInstanced(
         count: Int,
         matrices: FloatArray,
         colors: FloatArray,
     ) {
-        val n = count.coerceIn(0, maxRects)
-        if (n <= 0) return
+        if (count <= 0) return
         GPU.bindVertexArray(vao)
         GPU.useProgram(program)
-        bind(colorVbo, colorBuffer, colors, n * 4)
-        bind(mat4Vbo, mat4Buffer, matrices, n * Mat4.FLOATS)
-        GPU.drawTrianglesInstanced(0, QUAD_VERTEX_COUNT, n)
+        var done = 0
+        while (done < count) {
+            val n = minOf(maxRects, count - done)
+            bind(colorVbo, colorBuffer, colors, done * 4, n * 4)
+            bind(mat4Vbo, mat4Buffer, matrices, done * Mat4.FLOATS, n * Mat4.FLOATS)
+            GPU.drawTrianglesInstanced(0, QUAD_VERTEX_COUNT, n)
+            done += n
+        }
     }
 
     fun deleteProgram() {
@@ -84,8 +97,8 @@ class UiRectRenderer(private val maxRects: Int = DEFAULT_MAX_RECTS) {
         GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
     }
 
-    private fun bind(vbo: Int, buffer: GpuFloatBuffer, array: FloatArray, count: Int) {
-        buffer.clear().put(array, 0, count).flip()
+    private fun bind(vbo: Int, buffer: GpuFloatBuffer, array: FloatArray, offset: Int, count: Int) {
+        buffer.clear().put(array, offset, count).flip()
         GPU.bindBuffer(GPU.ARRAY_BUFFER, vbo)
         GPU.bufferData(GPU.ARRAY_BUFFER, count, buffer, GPU.DYNAMIC_DRAW)
         GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
