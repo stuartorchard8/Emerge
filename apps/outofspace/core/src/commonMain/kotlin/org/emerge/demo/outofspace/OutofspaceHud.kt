@@ -44,6 +44,8 @@ import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Segment
+import org.emerge.sim.core.physics.primitives.Coord
+import org.emerge.sim.core.physics.primitives.Norm
 import org.emerge.render.torus.ui.Anchor
 import org.emerge.render.torus.ui.PanelBuilder
 import org.emerge.render.torus.ui.Ui
@@ -225,7 +227,7 @@ class OutofspaceHud {
         val stock = s.stockpile
         ui.frame {
             // Drawn first (occludes everything).
-            navView(s, controller.wikiSpecies?.takeIf { it.relativeAbundance > 0 })
+            navView(s, controller.wikiSpecies?.takeIf { it.relativeAbundance > 0 }, controller.mode.camera)
             /*
              * ⛔ **The readouts panel stood here and is behind MENU > READOUTS now.**
              *
@@ -893,7 +895,11 @@ class OutofspaceHud {
      *   whatever the reference is open on, so reading about a mineral is itself the act of going
      *   looking for it — the map answers the question the article raised.
      */
-    private fun org.emerge.render.torus.ui.UiBuilder.navView(s: VesselState, prospecting: Species?) = canvas {
+    private fun org.emerge.render.torus.ui.UiBuilder.navView(
+        s: VesselState,
+        prospecting: Species?,
+        frame: CameraFrame,
+    ) = canvas {
         RockSpawner.highlight = prospecting
         val size = 190f * density
         val pad = 10f * density
@@ -902,14 +908,33 @@ class OutofspaceHud {
         val cx = x0 + size / 2f
         val cy = y0 + size / 2f
 
-        // Opaque background (hull must not show through).
-        rect(x0, y0, size, size, 0x080D14FFL)
-        border(x0, y0, size, size, 1f * density, 0x3A4A66FFL)
-        // Crosshair (not grid — bearing instrument).
-        rect(x0 + 2f * density, cy, size - 4f * density, 1f * density, 0x1C2740FFL)
-        rect(cx, y0 + 2f * density, 1f * density, size - 4f * density, 0x1C2740FFL)
+        val radius = size / 2f
+        val perPx = (radius - 6f * density) / NAV_RANGE_TILES
 
-        val perPx = (size / 2f - 6f * density) / NAV_RANGE_TILES
+        // ── Which way is up ──────────────────────────────────────────────
+        //
+        // The same question the camera answers, answered the same way: [Mode.camera] is the choice,
+        // because picking Build is saying "I am laying pipe" and picking Flight is saying "I am
+        // flying", and those are exactly the two things an instrument's orientation is for.
+        //
+        // **Flying** it is world-up — a heading is only a heading against something fixed, and the
+        // stars outside are what it is against. **Building** it is ship-up, so the map agrees with
+        // the deck the player is aiming at; the world turns around it instead, which is what the
+        // starscape already does behind the hull in this mode.
+        //
+        // The bearing is the *negative* of the ship's angle: turning the map by −ang is what leaves
+        // the ship drawn upright on it.
+        val bearing = if (frame == CameraFrame.Grid) -s.ang.raw else 0
+        val facing = Norm.fromAngle(Coord(bearing))
+        val bcos = facing.x.raw.toFloat() / Flight.FRAC_ONE
+        val bsin = facing.y.raw.toFloat() / Flight.FRAC_ONE
+        /** A world-frame offset in tiles, in panel pixels — the one place the bearing is applied. */
+        fun panelX(tx: Float, ty: Float) = cx + (tx * bcos - ty * bsin) * perPx
+        fun panelY(tx: Float, ty: Float) = cy + (tx * bsin + ty * bcos) * perPx
+
+        // Crosshair (not grid — bearing instrument), cut to the dial.
+        rect(cx - radius + 2f * density, cy, (radius - 2f * density) * 2f, 1f * density, 0x1C2740FFL)
+        rect(cx, cy - radius + 2f * density, 1f * density, (radius - 2f * density) * 2f, 0x1C2740FFL)
 
         // Rock density field: one textured quad, sampled with hardware bilinear filtering from a
         // texture RockSpawner/RockDensityField keeps in lockstep with the chunk window — so it slides
@@ -919,17 +944,27 @@ class OutofspaceHud {
         val chunksPerAxis = RockSpawner.WINDOW_BUFFER_SIZE.toFloat()
         fun worldTileToU(worldTileX: Float) = (vesselTileX + worldTileX) / RockSpawner.CHUNK_SIZE / chunksPerAxis - RockSpawner.windowBaseChunkX / chunksPerAxis
         fun worldTileToV(worldTileY: Float) = (vesselTileY + worldTileY) / RockSpawner.CHUNK_SIZE / chunksPerAxis - RockSpawner.windowBaseChunkY / chunksPerAxis
+        //
+        // ⛔ **The quad is the opaque background as well as the map**, which is why there is no plate
+        // behind it: the fragment stage writes alpha 1 everywhere it does not discard, so the disc is
+        // black where the field is empty and the hull cannot show through it. A rect behind it would
+        // be a square one, and the corners are the whole point.
         image(
             x0, y0, size, size,
             RockDensityField.textureId(),
             uvMinX = worldTileToU((x0 - cx) / perPx), uvMinY = worldTileToV((y0 - cy) / perPx),
             uvMaxX = worldTileToU((x0 + size - cx) / perPx), uvMaxY = worldTileToV((y0 + size - cy) / perPx),
+            // ⚠️ The UVs turn the opposite way to the picture: sampling further clockwise draws the
+            // world further anticlockwise. The needle and the silhouette take `bearing` directly, so
+            // the sign difference is real and belongs here rather than in one shared variable.
+            uvCos = bcos, uvSin = -bsin,
+            round = true,
         )
 
         // Origin marker (shows motion, not position).
-        val ox = cx - s.positionX.toFloat() / Flight.PER_TILE * perPx
-        val oy = cy - s.positionY.toFloat() / Flight.PER_TILE * perPx
-        if (ox > x0 && ox < x0 + size && oy > y0 && oy < y0 + size) {
+        val ox = panelX(-vesselTileX, -vesselTileY)
+        val oy = panelY(-vesselTileX, -vesselTileY)
+        if ((ox - cx) * (ox - cx) + (oy - cy) * (oy - cy) < (radius - 4f * density) * (radius - 4f * density)) {
             val d = 2.5f * density
             rect(ox - d, oy - d, d * 2f, d * 2f, 0x5A82A8FFL)
             // Label above marker (avoids overlap).
@@ -939,11 +974,13 @@ class OutofspaceHud {
         // Velocity needle (drawn from ship outward; stationary = nothing).
         val vx = s.velocityX.toFloat() / Flight.PER_TILE
         val vy = s.velocityY.toFloat() / Flight.PER_TILE
-        val needle = size / 2f - 8f * density
+        val needle = radius - 8f * density
         val speed = kotlin.math.sqrt(vx * vx + vy * vy)
         if (speed > 0f) {
             val reach = needle * (speed / NAV_FULL_SCALE_SPEED).coerceAtMost(1f)
-            line(cx, cy, cx + vx / speed * reach, cy + vy / speed * reach, 1.5f * density, 0x6ED09AFFL)
+            val tipX = panelX(vx / speed * reach / perPx, vy / speed * reach / perPx)
+            val tipY = panelY(vx / speed * reach / perPx, vy / speed * reach / perPx)
+            line(cx, cy, tipX, tipY, 1.5f * density, 0x6ED09AFFL)
         }
 
         // Ship silhouette: the built extent, turned to the ship's heading, at the map's own scale.
@@ -963,8 +1000,12 @@ class OutofspaceHud {
             val pose = s.pose
             val comTileX = pose.comLocalX.toFloat() / Flight.PER_TILE
             val comTileY = pose.comLocalY.toFloat() / Flight.PER_TILE
-            val cosF = pose.cos.toFloat() / Flight.FRAC_ONE
-            val sinF = pose.sin.toFloat() / Flight.FRAC_ONE
+            // The ship's heading *and* the dial's, composed — so ship-up leaves it square on the
+            // panel and world-up swings it, without either case being written out separately.
+            val shipCos = pose.cos.toFloat() / Flight.FRAC_ONE
+            val shipSin = pose.sin.toFloat() / Flight.FRAC_ONE
+            val cosF = shipCos * bcos - shipSin * bsin
+            val sinF = shipCos * bsin + shipSin * bcos
             // `+ 1` on the far corners because the box names *tiles* and a tile is a square, not a
             // point: the far edge of the last one is a tile past its index.
             val cornerX = FloatArray(4)
@@ -1019,16 +1060,6 @@ class OutofspaceHud {
      */
     private fun org.emerge.render.torus.ui.CanvasBuilder.fillQuad(xs: FloatArray, ys: FloatArray, color: Long) {
         quadSpans(xs, ys) { x, y, w -> rect(x, y, w, 1f, color) }
-    }
-
-    /** A hollow box, which the canvas has no primitive for: four rectangles is the whole of it. */
-    private fun org.emerge.render.torus.ui.CanvasBuilder.border(
-        x: Float, y: Float, w: Float, h: Float, t: Float, color: Long,
-    ) {
-        rect(x, y, w, t, color)
-        rect(x, y + h - t, w, t, color)
-        rect(x, y, t, h, color)
-        rect(x + w - t, y, t, h, color)
     }
 
     /** Line as stepped chain of squares (no axis alignment). */
