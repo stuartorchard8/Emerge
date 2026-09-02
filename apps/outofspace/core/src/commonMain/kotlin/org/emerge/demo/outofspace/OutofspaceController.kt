@@ -131,7 +131,7 @@ class OutofspaceController(
      *
      * ⛔ **Null is a state the player is meant to be in**, not an absence to be defaulted away. It is
      * the build tool with its palette open and nothing picked out of it yet, which is where ESC
-     * leaves them on the way out of a placement and where B leaves them when there was nothing under
+     * leaves them on the way out of a placement and where C leaves them when there was nothing under
      * the inspector to copy. A click in that state reads a tile exactly as the inspector would —
      * see [apply] — so the palette is somewhere you can stand and look around rather than a mode you
      * have to leave to ask a question.
@@ -302,7 +302,14 @@ class OutofspaceController(
         if (brush !is Brush.Building) return null
         val standing = state.machineCovering(tile) ?: return null
         if (standing.kind != settings.kind) return null
-        return Edit.ReplaceDeckMachine(tile, standing.withSettings(settings.aimed(brushFacing)))
+        // ⚠️ **The machine's own anchor, not the tile the pointer is over.** The reducer resolves
+        // either through `originAt`, so this changes nothing about what happens — but it is also
+        // what the *cursor* is drawn from, and there it changes everything: a hand-over is aimed at
+        // an object rather than at a square, so the preview belongs over the whole of the machine it
+        // is about to re-tune. Drawn off the pointer instead, a click on a warehouse's top-left
+        // corner previewed a warehouse hanging off the corner of the one already there, which reads
+        // as an overlapping placement — the one thing this click is not.
+        return Edit.ReplaceDeckMachine(standing.center, standing.withSettings(settings.aimed(brushFacing)))
     }
 
     /**
@@ -325,7 +332,9 @@ class OutofspaceController(
         // over a machine of its own kind would fail `canStand` — something is standing there, which
         // is the point — and drawing that as a refusal would tell the player the exact opposite of
         // what the click is about to do.
-        if (stampOnto(tile, brush) != null) return BuildPlan(tile, brush, brushFacing, allowed = true, settingsOnly = true)
+        // ⛔ **`it.tile`, not `tile`** — the edit has already resolved the pointer onto the machine's
+        // anchor, and the preview snaps there with it. See [stampOnto].
+        stampOnto(tile, brush)?.let { return BuildPlan(it.tile, brush, brushFacing, allowed = true, settingsOnly = true) }
         val allowed = buildMaterial != null && when (brush) {
             // Track goes anywhere there is grid: the layers no longer exclude each other, and a run
             // drawn over a run it already has is a no-op rather than a mistake — see `layConduit`.
@@ -473,7 +482,7 @@ class OutofspaceController(
             // ⛔ **With nothing picked out of the palette, a click *reads* the tile.** The palette
             // stays open — this is not a slip back into the inspector, it is the build tool with
             // its hands empty — and the two things a player does at that moment are the same thing:
-            // "what is this?" and "give me one of those" (B, see [grab]) both start with a click on
+            // "what is this?" and "give me one of those" (C, see [grab]) both start with a click on
             // the machine. A click that did nothing at all would make the palette a room with the
             // lights off.
             Tool.Build -> if (brush == null) inspect(tile) else {
@@ -623,21 +632,22 @@ class OutofspaceController(
 
     /**
      * Takes the build tool out, holding a copy of **whatever layer of whatever tile the inspector is
-     * reading** — material, settings, facing and all. What **B** does.
+     * reading** — material, settings, facing and all. What **C** does.
      *
      * ### The one gesture
      *
      * This replaced a clipboard: **C** captured a machine's settings and **V** stamped them onto
      * another one, which is two keys, an invisible holding pen, and a rule ("only onto the same kind
-     * of machine") that could only be discovered by breaking it. Every automation game the player
-     * has already played spells the same idea as one key that hands you the thing you are pointing
-     * at, so that is what this is: point at a furnace, press B, and you are holding a furnace —
+     * of machine") that could only be discovered by breaking it. C keeps the key it had and does the
+     * whole job with it. Every automation game the player has already played spells the same idea as
+     * one key that hands you the thing you are pointing at, so that is what this is: point at a
+     * furnace, press C, and you are holding a furnace —
      * tuned the way that one is, made of what that one is made of, aimed the way that one is aimed.
      * Putting it down somewhere empty builds one. Putting it down on another furnace tunes *that*
      * one — see [place]. There is nothing else to learn.
      *
      * ⚠️ **It reads the inspector's layer, not the tile.** A tile is not one thing, and the inspector
-     * has already made the player say which of its things they mean — see [InspectLayer]. So B on
+     * has already made the player say which of its things they mean — see [InspectLayer]. So C on
      * the DECK layer hands over the building and B on the RAIL layer hands over a length of track in
      * the metal that track is made of, and neither has to guess.
      *
@@ -666,7 +676,7 @@ class OutofspaceController(
             InspectLayer.Wire -> Conduit.Signal
             InspectLayer.Power -> Conduit.Power
             // There is no brush for a room. The air is the one layer the inspector always offers,
-            // so this is the case a player reaches by pressing B on bare deck, and the honest answer
+            // so this is the case a player reaches by pressing C on bare deck, and the honest answer
             // is the empty palette they are now holding.
             InspectLayer.Atmosphere -> return false
         }

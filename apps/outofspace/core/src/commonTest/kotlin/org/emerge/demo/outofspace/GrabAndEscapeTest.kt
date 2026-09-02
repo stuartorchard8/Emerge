@@ -24,11 +24,11 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * **B**, and **ESC** — the two keys the build tools are reached through.
+ * **C**, and **ESC** — the two keys the build tools are reached through.
  *
  * These are one file because they are one idea: there is a hierarchy of things the player can be
- * holding, B is how you get further into it with something in your hand, and ESC is how you get back
- * out. Tested through the controller and the reducer together, because half of what B does is only
+ * holding, C is how you get further into it with something in your hand, and ESC is how you get back
+ * out. Tested through the controller and the reducer together, because half of what C does is only
  * true once the world has actually taken the edit — "the second furnace is the same as the first" is
  * a claim about a furnace on the deck, not about a field on a cursor.
  */
@@ -81,10 +81,10 @@ class GrabAndEscapeTest {
     private fun furnaceAt(c: OutofspaceController, tile: TileIndex): Furnace =
         assertNotNull(c.state.machineCovering(tile) as? Furnace, "no furnace at $tile")
 
-    // ── B: taking a copy ─────────────────────────────────────────────────────
+    // ── C: taking a copy ─────────────────────────────────────────────────────
 
     /**
-     * The headline: point at a tuned furnace, press B, put one down, and the new one is tuned the
+     * The headline: point at a tuned furnace, press C, put one down, and the new one is tuned the
      * same way.
      *
      * ⛔ **Through the reducer, not off the cursor.** That the controller is *holding* a setpoint
@@ -93,11 +93,11 @@ class GrabAndEscapeTest {
      * is the machine that ends up on the deck.
      */
     @Test
-    fun b_then_a_click_builds_the_same_machine_again() {
+    fun c_then_a_click_builds_the_same_machine_again() {
         val c = controller()
         c.inspect(OVEN, InspectLayer.Deck)
         assertTrue(c.grab(), "there is a furnace under the inspector")
-        assertEquals(Tool.Build, c.tool, "B takes the build tool out")
+        assertEquals(Tool.Build, c.tool, "C takes the build tool out")
 
         c.click(EMPTY_FLOOR)
         c.stepOnce()
@@ -109,7 +109,7 @@ class GrabAndEscapeTest {
 
     /** And it is made of what the original is made of, without the player picking anything. */
     @Test
-    fun b_takes_the_material_too() {
+    fun c_takes_the_material_too() {
         val c = controller()
         // A player who has been building in something else entirely, which is the case that matters:
         // grabbing has to *overwrite* the standing choice, not merely fill it in when it is empty.
@@ -121,14 +121,14 @@ class GrabAndEscapeTest {
     }
 
     /**
-     * B on the RAIL layer hands over track, in the metal that track is made of — not the deck's.
+     * C on the RAIL layer hands over track, in the metal that track is made of — not the deck's.
      *
      * ⚠️ **This is the layer doing the work.** The inspector has already made the player say which
-     * of a tile's several things they mean, so B never has to guess; a version that looked at the
+     * of a tile's several things they mean, so C never has to guess; a version that looked at the
      * tile instead would answer "furnace" for every tile of track threaded under one.
      */
     @Test
-    fun b_on_a_conduit_layer_takes_the_conduit_and_its_metal() {
+    fun c_on_a_conduit_layer_takes_the_conduit_and_its_metal() {
         val c = controller()
         c.inspect(TRACK, InspectLayer.Rail)
         assertTrue(c.grab())
@@ -139,14 +139,14 @@ class GrabAndEscapeTest {
     }
 
     /**
-     * On bare air there is nothing to copy — and B still takes the build tool out, with the palette
+     * On bare air there is nothing to copy — and C still takes the build tool out, with the palette
      * empty.
      *
-     * A key that did nothing at all would read as broken, and "build something" is what B means even
+     * A key that did nothing at all would read as broken, and "build something" is what C means even
      * when the thing under the cursor is a room.
      */
     @Test
-    fun b_on_nothing_opens_an_empty_palette() {
+    fun c_on_nothing_opens_an_empty_palette() {
         val c = controller()
         c.inspect(EMPTY_FLOOR, InspectLayer.Atmosphere)
         assertFalse(c.grab(), "nothing was picked up")
@@ -253,6 +253,40 @@ class GrabAndEscapeTest {
         assertFalse(empty.settingsOnly, "on bare deck the same click builds")
     }
 
+    /**
+     * The preview **snaps to the machine it would re-tune**, wherever on it the pointer is.
+     *
+     * ⛔ A furnace is three tiles across, so a click on its corner is a click on the furnace. Drawn
+     * off the pointer, the preview was a second furnace hanging off the corner of the first — which
+     * reads as an overlapping placement, the one thing this click is not.
+     */
+    @Test
+    fun the_preview_snaps_to_the_machine_it_would_re_tune() {
+        val c = controller()
+        c.inspect(OVEN, InspectLayer.Deck)
+        c.grab()
+
+        val corner = grid.tile(grid.xOf(PLAIN_OVEN) - 1, grid.yOf(PLAIN_OVEN) - 1)
+        assertNotEquals(PLAIN_OVEN, corner, "the fixture must point somewhere off the anchor")
+        val plan = assertNotNull(c.planAt(corner))
+
+        assertTrue(plan.settingsOnly)
+        assertEquals(PLAIN_OVEN, plan.tile, "the preview aligned with the machine, not the pointer")
+    }
+
+    /** And the click still lands, aimed from that same off-centre tile. */
+    @Test
+    fun a_hand_over_works_from_any_tile_of_the_machine() {
+        val c = controller()
+        c.inspect(OVEN, InspectLayer.Deck)
+        c.grab()
+
+        c.click(grid.tile(grid.xOf(PLAIN_OVEN) - 1, grid.yOf(PLAIN_OVEN) - 1))
+        c.stepOnce()
+
+        assertEquals(TUNED_KELVIN, furnaceAt(c, PLAIN_OVEN).setTemperature)
+    }
+
     /** A brush with no stamp on it is an ordinary build, and an occupied tile refuses it as before. */
     @Test
     fun an_unstamped_brush_is_still_refused_by_an_occupied_tile() {
@@ -333,8 +367,8 @@ class GrabAndEscapeTest {
     /**
      * With nothing picked, a click **reads the tile** — and the palette stays open.
      *
-     * This is what makes B reachable from inside the build tool: click the machine you want another
-     * of, press B, and you are holding it. A click that placed a default, or did nothing, would both
+     * This is what makes C reachable from inside the build tool: click the machine you want another
+     * of, press C, and you are holding it. A click that placed a default, or did nothing, would both
      * break that.
      */
     @Test

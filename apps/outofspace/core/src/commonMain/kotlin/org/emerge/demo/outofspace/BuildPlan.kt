@@ -28,6 +28,13 @@ import org.emerge.demo.outofspace.world.TileIndex
  * reducer refuses, and a promise the game breaks is worse than no promise.
  */
 data class BuildPlan(
+    /**
+     * Where the thing would land — **which is not always the tile under the pointer.**
+     *
+     * ⚠️ For a [settingsOnly] plan it is the anchor of the machine being re-tuned, so the preview
+     * sits squarely over that machine however far off-centre the pointer is. A hand-over is aimed at
+     * an object; only a placement is aimed at a square.
+     */
     val tile: TileIndex,
     val brush: Brush,
     /** Which way it would face — the brush's, not the tile's. Only some kinds read it. */

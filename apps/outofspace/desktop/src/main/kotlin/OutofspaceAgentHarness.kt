@@ -247,7 +247,7 @@ object OutofspaceAgentHarness {
                     println("[agent] brush -> ${controller.brush?.label ?: "nothing picked"} facing ${controller.brushFacing}")
                 }
                 /*
-                 * `grab` — the B key. Takes a copy of whatever the inspector is reading: the
+                 * `grab` — the C key. Takes a copy of whatever the inspector is reading: the
                  * building on the DECK layer or the track on the RAIL one, in its own metal and with
                  * its own settings, and puts the build tool in the player's hand holding it.
                  *

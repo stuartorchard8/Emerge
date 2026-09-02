@@ -338,8 +338,8 @@ fun main() {
             }
             // Take a copy of whatever the inspector is reading and go build it — see
             // [OutofspaceController.grab]. It replaced C-then-V on the hovered tile, which was two
-            // keys for one idea and neither of them the one every other game in the genre uses.
-            GLFW_KEY_B -> controller.grab()
+            // keys for one idea; this is the *copy* half of that pair kept, doing the whole job.
+            GLFW_KEY_C -> controller.grab()
             // Through the controller's own ladder, so the keys and the HUD's buttons cannot reach
             // different speeds — see `OutofspaceController.SPEEDS`.
             GLFW_KEY_LEFT_BRACKET -> controller.nudgeSpeed(faster = false)

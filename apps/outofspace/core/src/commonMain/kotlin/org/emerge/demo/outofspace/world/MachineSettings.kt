@@ -24,7 +24,7 @@ sealed class Setting<out T> {
  * A snapshot of a machine's configurable settings, independent of its runtime state (buffers,
  * energy, progress).
  *
- * Captured by pressing **B** on a machine — see `OutofspaceController.grab`. The snapshot includes
+ * Captured by pressing **C** on a machine — see `OutofspaceController.grab`. The snapshot includes
  * only settings that affect how a machine behaves — wiring, facing, input keys, storage filters, tuning parameters — not transient
  * state like buffer contents, thermal energy, or processing progress.
  *

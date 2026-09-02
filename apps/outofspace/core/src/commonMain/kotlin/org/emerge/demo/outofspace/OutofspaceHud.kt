@@ -382,10 +382,10 @@ class OutofspaceHud {
                     gap()
                     // ⛔ **The empty palette says what it is for, not what is missing.** It is a place
                     // to stand — clicking still reads a tile, which is the half of it a player would
-                    // never guess — and it is where B is pressed, which is the other half.
+                    // never guess — and it is where C is pressed, which is the other half.
                     if (held == null) {
                         text("pick one above · or click a tile to read it", 0x9A9A9AFFL)
-                        text("B copies whatever the inspector is reading", 0xE8B84AFFL)
+                        text("C copies whatever the inspector is reading", 0xE8B84AFFL)
                     } else {
                         text("click or drag to place", 0x9A9A9AFFL)
                         // Track: drag to connect (not by touching).
@@ -467,11 +467,11 @@ class OutofspaceHud {
                     text("click a tile to read it  ·  click again for the next layer", 0x9A9A9AFFL)
                 }
                 text("Q tool · WASD or right-drag pan · wheel zoom", 0x9A9A9AFFL)
-                // ⚠️ **The two keys the whole editor is reached through, said in one line.** B is
+                // ⚠️ **The two keys the whole editor is reached through, said in one line.** C is
                 // the way in — point at a thing, get one of those — and ESC is the way back out of
-                // whatever B left you holding, one rung at a time, all the way to the menu. Neither
+                // whatever C left you holding, one rung at a time, all the way to the menu. Neither
                 // is discoverable from a panel that only names the tool you are already in.
-                text("B copy what you're inspecting · ESC back out", 0x9A9A9AFFL)
+                text("C copy what you're inspecting · ESC back out", 0x9A9A9AFFL)
                 text("space pause", 0x9A9A9AFFL)
                 text("F8 fit grid", 0x9A9A9AFFL)
                 if (canSave) text("F9 save · F10 load", 0x9A9A9AFFL)
