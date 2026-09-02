@@ -304,24 +304,34 @@ fun main() {
             GLFW_KEY_T -> controller.toggleSas()
             GLFW_KEY_R -> controller.rotateBrush()
             GLFW_KEY_H -> controller.overlay = controller.overlay.next
-            // Cycles rather than toggles, since there are four tools now. `W` used to do this and
-            // is WASD's now.
-            GLFW_KEY_Q -> controller.tool = Tool.entries[(controller.tool.ordinal + 1) % Tool.entries.size]
-            // The delete tool's aim: which layer comes off. Does nothing under the other tools.
-            GLFW_KEY_E -> when (controller.tool) {
-                Tool.Delete -> {
-                    val all = DeleteLayer.entries
-                    controller.deleteLayer = all[(controller.deleteLayer.ordinal + 1) % all.size]
-                }
-                Tool.Cut -> {
-                    val all = Tool.CUTTABLE
-                    controller.cutConduit = all[(all.indexOf(controller.cutConduit) + 1) % all.size]
-                }
-                else -> {}
-            }
-            GLFW_KEY_TAB -> controller.cycleBrush(1)
+
+            // ── A key per tool, and the same key aims it ──────────────────────
+            //
+            // ⛔ **This replaced `Q` stepping through every tool and `E` stepping through whichever
+            // sub-target the current one had.** That was one key to learn and a lottery to use:
+            // reaching CUT from BUILD was four presses, and the count moved every time a tool was
+            // added. Each of these opens its tool, and a second press aims it — see
+            // [OutofspaceController.reachFor], which is also where "the opening press does not
+            // advance the aim" is argued.
+            //
+            // ⚠️ **INSPECT deliberately has no key.** ESC reaches it from anywhere, one rung at a
+            // time, and that is the way back the whole editor is built around — a second way in
+            // would be a second thing to learn for a tool you arrive at by putting others down.
+            GLFW_KEY_B -> controller.reachFor(Tool.Build)
+            GLFW_KEY_X -> controller.reachFor(Tool.Delete)
+            GLFW_KEY_Z -> controller.reachFor(Tool.Cancel)
+            GLFW_KEY_Q -> controller.reachFor(Tool.Cut)
+            // The material is not a tool's property — it is a standing choice that outlives every
+            // one of them — so it gets a key of its own rather than a rung in somebody's cycle.
+            GLFW_KEY_E -> controller.cycleMaterial(1)
             // A debug drop, alongside the debug engine, until capture is a thing you fly at in H4.
             GLFW_KEY_F6 -> { val (ix,iy) = renderer.screenToTile(lastX, lastY); controller.dropRock(ix, iy) }
+            // ⚠️ **On an F-key with the other debug bindings, and it had to go somewhere.** The
+            // bellows and the tap used to be reachable only by cycling `Q` past every real tool;
+            // that cycle is gone, and a debug tool nobody can reach from the keyboard is a debug
+            // tool that stops being used. Same open-then-cycle rule as the rest: F7 takes the
+            // bellows out, F7 again swaps it for the tap.
+            GLFW_KEY_F7 -> controller.reachFor(if (controller.tool == Tool.Inject) Tool.InjectWater else Tool.Inject)
             GLFW_KEY_F5 -> { controller.reset(); renderer.centreOn(controller.state) }
             GLFW_KEY_F8 -> controller.fit()
             GLFW_KEY_F9 -> hud.onSave()
@@ -348,8 +358,21 @@ fun main() {
             // [OutofspaceHud.escape]. Through the HUD rather than the controller because the top of
             // the ladder is a sheet, and sheets are the HUD's.
             GLFW_KEY_ESCAPE -> hud.escape(controller)
-            in GLFW_KEY_1..GLFW_KEY_9 -> Brush.ALL.getOrNull(key - GLFW_KEY_1)?.let { controller.brush = it }
-            GLFW_KEY_0 -> Brush.ALL.getOrNull(9)?.let { controller.brush = it }
+            // ⚠️ **Through `reachFor` first, so the number row takes the build tool out.** These
+            // used to set the brush and leave the tool alone, so pressing `3` while holding DELETE
+            // silently changed what you would build if you were building — a decision with no
+            // visible effect until much later.
+            // ⚠️ **`openTool`, not `reachFor`, and the difference matters here.** These name the
+            // brush they want, so the palette step `reachFor` would take on the way in is one the
+            // next line immediately undoes. They used to set the brush and leave the tool alone, so
+            // pressing `3` while holding DELETE silently changed what you would build if you were
+            // building — a decision with no visible effect until much later.
+            in GLFW_KEY_1..GLFW_KEY_9 -> Brush.ALL.getOrNull(key - GLFW_KEY_1)?.let {
+                controller.openTool(Tool.Build); controller.brush = it
+            }
+            GLFW_KEY_0 -> Brush.ALL.getOrNull(9)?.let {
+                controller.openTool(Tool.Build); controller.brush = it
+            }
         }
         // Name entry for save/load dialog.
         if (hud.capturingName) {

@@ -1,0 +1,65 @@
+# A key per tool, and the same key aims it.
+#
+# B build, X delete, Z cancel, Q cut, E material -- and C is the copy key, which has its own tour in
+# `grab.txt`. It replaced `Q` stepping through every tool and `E` stepping through whichever
+# sub-target the current one happened to have: one key to learn and a lottery to use, where reaching
+# CUT from BUILD was four presses and the count moved every time a tool was added.
+#
+# ⛔ **The rule this exists to photograph is OPEN, THEN AIM.** The first press takes a tool out and
+# leaves its aim where it was; the second advances it. Advance on the way in and there is no keyboard
+# path to DELETE·TOP, to CUT·RAIL, or to the empty palette -- the state ESC leaves the player in and
+# the one a click reads a tile from.
+#
+# What to read in the shots:
+#   `delete-top`    -- DELETE, arrived at, still on TOP. The first press did not aim it.
+#   `delete-aimed`  -- the same key again: TOP -> BRIDGE. And again -> RAIL.
+#   `cut-rail`      -- CUT, arrived at, still on RAIL.
+#   `cut-aimed`     -- Q again: RAIL -> PIPE.
+#   `build-auto`    -- BUILD, arrived at with the palette EMPTY and a material filled in by itself:
+#                      the most of anything the network can deliver. The starter vessel's hold is
+#                      iron, so it is iron, and no click was needed to say so.
+#   `build-picked`  -- B again: the palette's first entry.
+#   `material-kept` -- a material the player chose by hand survives leaving BUILD and coming back,
+#                      even though there is none of it aboard. A chosen material is never retracted.
+#
+# ⚠️ `reach` is the harness's name for a tool's own key. `tool` still exists and opens without
+# aiming, which is the same thing the panel's buttons do.
+
+new
+camera centre 20 12 40
+
+# ── X: delete, then aim it ───────────────────────────────────────────────────
+reach DELETE
+shot delete-top
+reach DELETE
+reach DELETE
+shot delete-aimed
+
+# ── Q: cut, then aim it ──────────────────────────────────────────────────────
+reach CUT
+shot cut-rail
+reach CUT
+shot cut-aimed
+
+# ── Z: cancel, which has nothing to aim ──────────────────────────────────────
+reach CANCEL
+reach CANCEL
+
+# ── B: build, and the material that arrives with it ──────────────────────────
+# ⛔ Nothing has been picked and no material named. Opening the tool fills the material in and
+# leaves the palette alone -- both halves matter.
+reach BUILD
+shot build-auto
+reach BUILD
+shot build-picked
+
+# ── E: the material, on a key of its own ─────────────────────────────────────
+# A standing choice that outlives every tool, so it is not a rung in anybody's cycle.
+cycle-material 1
+
+# ⛔ A material chosen by hand is respected even when there is none of it aboard, and reopening the
+# tool does not quietly retract it.
+material Titanium
+reach DELETE
+reach BUILD
+shot material-kept

@@ -482,7 +482,7 @@ class OutofspaceHud {
                         },
                     )
                     gap()
-                    text("click or drag to remove · E cycles layer", 0x9A9A9AFFL)
+                    text("click or drag to remove · X cycles layer", 0x9A9A9AFFL)
                     text("TOP takes one layer at a time", 0x9A9A9AFFL)
                 } else if (controller.tool == Tool.Cut) {
                     title("CUT  ·  ${controller.cutConduit.label}")
@@ -495,7 +495,7 @@ class OutofspaceHud {
                         },
                     )
                     gap()
-                    text("drag ALONG a run to sever · E cycles conduit", 0x9A9A9AFFL)
+                    text("drag ALONG a run to sever · Q cycles conduit", 0x9A9A9AFFL)
                     text("cuts the joins you draw · other joins stay", 0xE8B84AFFL)
                 } else if (controller.tool == Tool.Inject) {
                     title("INJECT  ·  ${Edit.INJECT_MASS}G / TICK")
@@ -512,12 +512,17 @@ class OutofspaceHud {
                     title("INSPECT  ·  ${controller.inspectLayer.label}")
                     text("click a tile to read it  ·  click again for the next layer", 0x9A9A9AFFL)
                 }
-                text("Q tool · WASD or right-drag pan · wheel zoom", 0x9A9A9AFFL)
+                // ⛔ **A key per tool, and the same key aims it** — see
+                // [OutofspaceController.reachFor]. Said here in full because this panel only ever
+                // shows the tool you are already holding, so nothing else on screen names the way
+                // to the other five.
+                text("B build · X delete · Z cancel · Q cut · E material", 0x9A9A9AFFL)
                 // ⚠️ **The two keys the whole editor is reached through, said in one line.** C is
                 // the way in — point at a thing, get one of those — and ESC is the way back out of
                 // whatever C left you holding, one rung at a time, all the way to the menu. Neither
                 // is discoverable from a panel that only names the tool you are already in.
                 text("C copy what you're inspecting · ESC back out", 0x9A9A9AFFL)
+                text("WASD or right-drag pan · wheel zoom", 0x9A9A9AFFL)
                 text("space pause", 0x9A9A9AFFL)
                 text("F8 fit grid", 0x9A9A9AFFL)
                 if (canSave) text("F9 save · F10 load", 0x9A9A9AFFL)
@@ -1627,7 +1632,10 @@ class OutofspaceHud {
             // ⚠️ A section of its own, below the hold and never merged into it — the allowance is a
             // property of the mode rather than something aboard. See [Stockpile.CREATIVE_MATERIALS].
             if (creative) {
-                val free = Stockpile.CREATIVE_MATERIALS.filter { it !in offer }
+                // ⛔ **Asked of the controller, so the `E` key and this column offer the same list
+                // in the same order.** Filtered here independently and a key that could reach a
+                // material the panel does not show would leave the picker highlighting nothing.
+                val free = controller.creativeMaterials(stock)
                 if (free.isNotEmpty()) {
                     gap()
                     title("CREATIVE")
@@ -2241,7 +2249,10 @@ class OutofspaceHud {
                 Triple(
                     if (tool == controller.tool) "> ${tool.label}" else tool.label,
                     if (tool == controller.tool) 0x3A6EA5FFL else 0x232A38FFL,
-                ) { controller.tool = tool }
+                    // ⚠️ **Through `openTool`, so the button and the key are one door.** Set
+                    // `controller.tool` here instead and picking BUILD with the mouse would arrive
+                    // with nothing to build out of while pressing B arrived with iron.
+                ) { controller.openTool(tool) }
             },
         )
     }

@@ -264,6 +264,32 @@ object OutofspaceAgentHarness {
                             (controller.stamped?.let { " settings $it" } ?: " (no settings)"))
                 }
                 /*
+                 * `reach <tool>` — a tool's own key: takes it out, or aims it one notch further if
+                 * it is already out. B, X, Z and Q all land here — see
+                 * `OutofspaceController.reachFor`, which is where "the opening press does not
+                 * advance the aim" is argued. The only way for a script to exercise that rule.
+                 */
+                "reach" -> {
+                    controller.reachFor(
+                        Tool.entries.firstOrNull { it.name.equals(t[1], true) }
+                            ?: error("unknown tool '${t[1]}' (have ${Tool.entries.map { it.label }})"),
+                    )
+                    settle()
+                    println("[agent] reach ${t[1]} -> ${controller.tool.label} " +
+                        "(${controller.brush?.label ?: "-"}, ${controller.deleteLayer.label}, ${controller.cutConduit.label}) " +
+                        "material ${controller.buildMaterial?.name ?: "nothing chosen"}")
+                }
+                /*
+                 * `cycle-material [steps]` — the `E` key. Steps along the picker's own list, which
+                 * is the point of routing it through the controller: a script that set
+                 * `buildMaterial` directly could reach a substance the panel does not offer.
+                 */
+                "cycle-material" -> {
+                    repeat(t.getOrNull(1)?.toInt() ?: 1) { controller.cycleMaterial(1) }
+                    println("[agent] material -> ${controller.buildMaterial?.name ?: "nothing chosen"} " +
+                        "of ${controller.materialsOffered().map { it.name }}")
+                }
+                /*
                  * `escape` — one rung out of the tool hierarchy, exactly as the key does. The sheets
                  * are above this and belong to the HUD, so a script that has run out of rungs is
                  * told so rather than being handed a menu it cannot photograph from here.
@@ -469,8 +495,14 @@ object OutofspaceAgentHarness {
                 // Presentation only — every command here drives the controller directly — but a
                 // screenshot of the delete panel is not reachable any other way.
                 "tool" -> {
-                    controller.tool = Tool.entries.firstOrNull { it.name.equals(t[1], true) }
-                        ?: error("unknown tool '${t[1]}' (have ${Tool.entries.map { it.label }})")
+                    // ⚠️ **Through `openTool`, the same door the key and the button use.** Setting
+                    // `controller.tool` here would let a script reach BUILD with no material while a
+                    // player never can, and every screenshot taken that way would be of a state the
+                    // game does not have.
+                    controller.openTool(
+                        Tool.entries.firstOrNull { it.name.equals(t[1], true) }
+                            ?: error("unknown tool '${t[1]}' (have ${Tool.entries.map { it.label }})"),
+                    )
                     t.getOrNull(2)?.let { name ->
                         if (controller.tool == Tool.Cut) {
                             controller.cutConduit = Tool.CUTTABLE.firstOrNull { it.name.equals(name, true) }

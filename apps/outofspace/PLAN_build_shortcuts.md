@@ -1,7 +1,13 @@
 # Build shortcuts, part two — a key per tool
 
-Scope only. Nothing here is built. Written 2026-09-02 against `d18ddcad`, on top of the C/ESC work
-in `b78e6fcc` + `f38e938f`.
+✅ **BUILT.** Written as a scope on 2026-09-02 against `d18ddcad`, on top of the C/ESC work in
+`b78e6fcc` + `f38e938f`, and implemented the same day. Kept because the *arguments* are the
+durable part — particularly "open, then cycle", which is the one decision here that is not
+obviously right and that every future key is bound by. Tests: `ToolKeysTest`. Tour:
+`agent-scripts/toolkeys.txt`.
+
+Where it landed differently from the scope, the scope has been corrected in place and the change
+noted at the foot of this file.
 
 ## The idea
 
@@ -102,6 +108,20 @@ Small, and mostly in two files.
    on null, and the creative fallback.
 
 Nothing here touches the reducer, the save, or any edit.
+
+## What changed on the way in
+
+- **`openTool` split out of `reachFor`.** The number row names the brush it wants, so the palette
+  step `reachFor` takes on the way in is one the next statement immediately undoes. `openTool` is
+  the opening half alone, and it is also what the HUD's tool buttons and the harness's `tool`
+  command call — so the button, the key and the script are one door and cannot drift on the
+  material auto-pick.
+- **The debug injectors went to `F7`**, open-then-cycle like everything else, rather than being
+  left mouse-only. They were reachable only by cycling `Q` past every real tool; that cycle is
+  gone, and F7 sits with the other debug bindings (`F5`, `F6`).
+- **`TAB` dropped.** `B` does exactly what it did.
+- **`creativeMaterials` moved onto the controller** so `E` and the picker column derive the
+  creative allowance from one expression rather than two.
 
 ## Not in scope
 

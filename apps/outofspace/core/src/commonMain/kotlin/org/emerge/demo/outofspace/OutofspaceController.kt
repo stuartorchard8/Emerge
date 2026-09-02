@@ -10,6 +10,7 @@ import org.emerge.demo.outofspace.world.machine.WireButton
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.Furnace
 import org.emerge.demo.outofspace.world.SpeciesFilter
+import org.emerge.demo.outofspace.world.Stockpile
 import org.emerge.demo.outofspace.world.SignalSource
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
@@ -891,9 +892,133 @@ class OutofspaceController(
     }
 
     /**
+     * What a tool's own key does: **take it out, or aim it one notch further if it is already out.**
+     *
+     * ### A key each, instead of a lottery
+     *
+     * The tools used to be reached by cycling — one key stepped through all seven of them and a
+     * second stepped through whichever sub-target the current one happened to have. That is one key
+     * to learn and a lottery to use: reaching CUT from BUILD was four presses, and the count changed
+     * every time a tool was added. Now each tool has a key, and the same key aims it.
+     *
+     * ⛔ **The opening press does not advance the aim, and that is the whole of the rule.** Advance
+     * on the way in and DELETE could never be left on TOP, CUT could never be left on RAIL, and —
+     * worst — BUILD could never be left holding nothing, which is a state the ESC ladder puts the
+     * player in and a state a click reads a tile from. Open, then cycle, keeps every state reachable
+     * from the keyboard; the cost is one extra press to reach the second rung, which is what the old
+     * scheme cost anyway once the tool was out.
+     *
+     * ⚠️ **[Tool.Cancel] has no aim**, so its key simply takes it out and a second press does
+     * nothing. That is not a gap to be filled: calling off a deconstruction is blind on purpose —
+     * see [Edit.Cancel] — so there is nothing to point it at.
+     */
+    fun reachFor(want: Tool) {
+        if (tool != want) return openTool(want)
+        when (want) {
+            Tool.Build -> cycleBrush(1)
+            Tool.Delete -> cycleDeleteLayer(1)
+            Tool.Cut -> cycleCutConduit(1)
+            // The bellows and the tap are two tools rather than one with a switch, so the debug key
+            // steps between them exactly as a sub-target would. They have no aim of their own.
+            Tool.Inject -> tool = Tool.InjectWater
+            Tool.InjectWater -> tool = Tool.Inject
+            // Nothing to aim: see this method's note.
+            Tool.Cancel, Tool.Inspect -> {}
+        }
+    }
+
+    /**
+     * Takes [want] out **without aiming it** — the opening half of [reachFor], on its own.
+     *
+     * Separate because two callers want the opening and not the cycle: [reachFor] itself when the
+     * tool is not already out, and the number row, which names the brush it wants and would be
+     * undone by a palette step on the way in. Idempotent, so a caller that does not know which tool
+     * is out can say what it wants and get it.
+     */
+    fun openTool(want: Tool) {
+        tool = want
+        // ⚠️ **Only here, and not in [grab].** Arriving at BUILD with nothing to build *out of* is
+        // the one opening that leaves the player unable to act, so the material is filled in for
+        // them — see [pickDefaultMaterial]. A copy brings a material of its own and must keep it.
+        if (want == Tool.Build) pickDefaultMaterial()
+    }
+
+    /**
+     * Fills in what to build out of, **only when nothing is chosen** — the most of anything the
+     * network can actually deliver.
+     *
+     * ⛔ **Null only.** A material the player has picked is respected for as long as they leave it
+     * picked, even when there is none of it aboard: laying a ghost in a metal nobody has yet is a
+     * legitimate thing to do and it simply waits. Overwriting that because a tool was reopened would
+     * quietly retract a decision.
+     *
+     * ⚠️ **Heaviest loose first**, which is what [Stockpile.buildableSpecies] already answers — what
+     * is in tanks, in buffers, on belts, or in something already marked to come apart. Not fabric:
+     * that would name a metal the player has not freed and a site built from it would never finish.
+     *
+     * ⚠️ **Sweeps the world**, so it is called on a keypress and never from a getter or a per-frame
+     * path — see [VesselState.stockpile].
+     */
+    fun pickDefaultMaterial() {
+        if (buildMaterial != null) return
+        buildMaterial = materialsOffered().firstOrNull()
+    }
+
+    /**
+     * What the material picker is offering, in the order it lists them: everything loose aboard
+     * heaviest first, and then, in creative, the allowance that is not aboard already.
+     *
+     * ⛔ **One list, because there are two ways to reach it** — the `E` key and the picker's own
+     * column — and a key that could reach a material the panel does not show would leave the picker
+     * highlighting nothing. Same argument [SPEEDS] is one list by.
+     */
+    fun materialsOffered(stock: Stockpile = state.stockpile): List<Species> =
+        stock.buildableSpecies + creativeMaterials(stock)
+
+    /**
+     * The creative allowance that is not aboard already — the picker's second section.
+     *
+     * Empty outside creative. Held here rather than in the HUD so that the panel's second section
+     * and [materialsOffered]'s tail cannot come to disagree about what is in it.
+     */
+    fun creativeMaterials(stock: Stockpile = state.stockpile): List<Species> =
+        if (!state.creative) emptyList()
+        else Stockpile.CREATIVE_MATERIALS.filter { it !in stock.buildableSpecies }
+
+    /**
+     * Steps the material along the picker's own list — what `E` does.
+     *
+     * ⚠️ **A key of its own rather than a rung in some tool's cycle**, because a material is not a
+     * property of a tool: it is a standing choice about a batch of building that survives changing
+     * brush, changing facing and changing tool entirely. See [buildMaterial].
+     *
+     * A material the player has chosen but has none of is not in the list, so cycling from it starts
+     * at the top rather than nowhere — the same answer [cycleBrush] gives from an empty palette.
+     */
+    fun cycleMaterial(delta: Int) {
+        val all = materialsOffered()
+        if (all.isEmpty()) return
+        val at = buildMaterial?.let { all.indexOf(it) } ?: -1
+        buildMaterial = if (at < 0) all[if (delta >= 0) 0 else all.lastIndex]
+        else all[((at + delta) % all.size + all.size) % all.size]
+    }
+
+    /** Steps which layer the delete tool takes off — what `X` does once DELETE is out. */
+    fun cycleDeleteLayer(delta: Int) {
+        val all = DeleteLayer.entries
+        deleteLayer = all[wrap(all.indexOf(deleteLayer) + delta, all.size)]
+    }
+
+    /** Steps which network the cut tool severs — what `Q` does once CUT is out. */
+    fun cycleCutConduit(delta: Int) {
+        val all = Tool.CUTTABLE
+        cutConduit = all[wrap(all.indexOf(cutConduit) + delta, all.size)]
+    }
+
+    /**
      * Steps along the palette, and **picks the first entry when nothing is held** — an empty palette
      * is where the key is most likely to be pressed, and wrapping from "nothing" to the far end
-     * would make TAB's first press the one that behaves differently from all the rest.
+     * would make the first press the one that behaves differently from all the rest.
      */
     fun cycleBrush(delta: Int) {
         val all = Brush.ALL
