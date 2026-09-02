@@ -792,7 +792,13 @@ screenshotted**, and `agent-scripts/station-industry.txt` is now the shot that w
 - ⛔ **A station has no sink.** Nothing consumes, exports or decays stock, so holdings are monotone up
   apart from player purchases and every shelf drifts toward `FLOOR_PRICE` over a long game. There is
   no equilibrium the economy returns to. Not addressed here.
-- ⚠️ **An existing save still carries the sub-gram shelf dust** the sell bug left. Nothing sweeps it.
+- ✅ **DONE — the sub-gram shelf dust is migrated away.** Save **v24**, `WORKED_SHELVES_VERSION`: a
+  station off a file below it has its **whole shelf tipped back into the heap**, seeded metal and all.
+  A shelf below v24 cannot say which of its species got there honestly, and keeping the ones that
+  *look* legitimate would be guessing about the player's history — the same reason `purifyFabric` is
+  gated on the version and not on what a tile looks like. ⚠️ The cost is that a migrated station has
+  nothing to sell until it has separated something, which at a tonne a minute is a while. That is a
+  fair description of a business that has just tipped its stockroom into the hopper.
 - ⚠️ **A station will run photosynthesis** if it is glutted with algae — `REACTIONS` does not gate that
   row on light, so this is the game's own chemistry rather than a station-specific oddity.
 

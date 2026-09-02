@@ -92,7 +92,19 @@ fun materialBefore(conduit: Conduit): Species = when (conduit) {
 object Save {
 
     /** Bump when a field's meaning changes. An old save is migrated, or refused rather than misread. */
-    const val VERSION = 23
+    const val VERSION = 24
+
+    /**
+     * The first version whose station shelves hold only what a station **put** there — see
+     * [worked].
+     *
+     * Below this, every sale was absorbed onto the shelves species by species, so a shelf is not a
+     * record of the station's own separation at all: it is every lump anybody ever sold, taken apart
+     * for free. A file written by that build describes a station quoting a hundred and forty species
+     * in sub-gram quantities, and no amount of playing it forward tidies that up, because nothing
+     * takes matter *off* a shelf except a purchase.
+     */
+    const val WORKED_SHELVES_VERSION = 24
 
     /**
      * The first version that can carry a [org.emerge.demo.outofspace.world.BodyKind.STATION].
@@ -1085,12 +1097,14 @@ object Save {
                             ang = Coord(tokens.getOrNull(10)?.toIntOrNull() ?: 0),
                             angImpulse = if (tokens.size > 11) scaled(11) else 0L,
                             fillPermille = tokens.getOrNull(12)?.toIntOrNull() ?: 1_000,
-                            station = Station(
-                                // ⚠️ These two ARE scaled: they are masses, not proportions.
-                                ore = readMixture(tokens.getOrNull(13) ?: "-", scale, ::fail),
-                                market = Market.holding(
-                                    readMixture(tokens.getOrNull(14) ?: "-", scale, ::fail),
-                                ),
+                            // ⚠️ These two ARE scaled: they are masses, not proportions.
+                            // ⚠️ One decision, not two — an old file's shelves go to the heap and
+                            // the shelves go empty, and writing the version test twice would let
+                            // half a migration exist. See [worked].
+                            station = worked(
+                                version,
+                                heap = readMixture(tokens.getOrNull(13) ?: "-", scale, ::fail),
+                                shelves = readMixture(tokens.getOrNull(14) ?: "-", scale, ::fail),
                                 id = tokens.getOrNull(15)?.toIntOrNull() ?: 0,
                                 docks = tokens.getOrNull(16)
                                     ?.takeIf { it != "-" }
@@ -1579,6 +1593,39 @@ object Save {
      * altered — and a rule that purified whatever looked wrong would keep quietly rewriting worlds
      * that were right.
      */
+    /**
+     * A station off the file — with a pre-[WORKED_SHELVES_VERSION] one's whole stock tipped back
+     * into the heap to be worked properly.
+     *
+     * ⛔ **The shelves in an old file are not shelves.** Every sale was absorbed onto them species by
+     * species, so what is recorded is every lump anybody ever sold, taken apart for free — a hundred
+     * and forty species in sub-gram quantities, quoted at prices nobody would pay. Nothing in the
+     * game takes matter *off* a shelf except a purchase, so playing forward never tidies it; the
+     * only way back to a shelf that means something is to tip the lot into the heap and let the
+     * separator earn it, a tonne at a time.
+     *
+     * ✅ **All of it, including the pure metal a station was seeded with.** A shelf below this
+     * version cannot say which of its species got there honestly, and picking the ones that *look*
+     * legitimate would be guessing about the player's history — the same reason [purifyFabric] is
+     * gated on the version rather than on what a tile looks like. The mass is all still there and
+     * the station will work it back out; what it costs is that a migrated station has nothing to
+     * sell until it has separated something, which is a fair description of a business that has
+     * just tipped its stockroom into the hopper.
+     *
+     * ⚠️ **Not a write-off.** The heap and the shelves both count toward nothing the vessel's
+     * ledgers watch — a station is outside every one of them — so this moves matter between two
+     * piles that are each other's whole world, and the total is unchanged by construction.
+     */
+    private fun worked(
+        version: Int,
+        heap: Mixture,
+        shelves: Mixture,
+        id: Int,
+        docks: List<DockNode>,
+    ): Station =
+        if (version < WORKED_SHELVES_VERSION) Station(heap + shelves, Market.empty(), id, docks)
+        else Station(heap, Market.holding(shelves), id, docks)
+
     private fun purifyFabric(state: VesselState) {
         fun purify(layer: StuffLayer, tile: TileIndex, species: Species) {
             val mass = layer.massAt(tile)

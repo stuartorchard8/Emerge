@@ -15,6 +15,7 @@ import org.emerge.demo.outofspace.world.REACTION_BATCH
 import org.emerge.demo.outofspace.world.batchMass
 import org.emerge.demo.outofspace.world.heatFee
 import org.emerge.demo.outofspace.world.RigidBody
+import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.Station
 import org.emerge.demo.outofspace.world.starterVessel
@@ -376,5 +377,56 @@ class StationTest {
         assertEquals(Budget.KILOGRAM, economy.ore[Species.Gold])
         assertEquals(7L * tonne, economy.market.stockOf(Species.Iron))
         assertEquals(Budget.KILOGRAM, economy.market.stockOf(Species.Titanium))
+    }
+
+    @Test
+    fun `an old save's shelves are tipped back into the heap`() {
+        // ⛔ **The shelves in a pre-v24 file are not shelves.** Every sale was absorbed onto them
+        // species by species, so what is recorded is every lump anybody ever sold, taken apart for
+        // free — a live station reached a hundred and forty species in sub-gram quantities. Nothing
+        // takes matter off a shelf except a purchase, so playing forward never tidies it.
+        val post = station(
+            ore = Mixture.of(Species.Forsterite to 3L * tonne, energy = 0L),
+            market = Market.of(
+                Species.Iron to 7L * tonne,
+                Species.Titanium to Budget.KILOGRAM,
+                Species.Gold to Budget.GRAM,
+            ),
+            width = 20, height = 20,
+        )
+        val start = starterVessel(OutofspaceConfig().initialGrid).copy(bodies = listOf(post))
+        val aged = Save.write(start).replaceFirst(
+            "outofspace ${Save.VERSION}",
+            "outofspace ${Save.WORKED_SHELVES_VERSION - 1}",
+        )
+        val economy = assertNotNull(Save.read(aged).bodies.single().station)
+
+        assertEquals(0L, economy.market.holdings().total, "an old file kept its shelves")
+        assertEquals(
+            post.station!!.ore.total + post.station!!.market.holdings().total, economy.ore.total,
+            "the shelves did not all reach the heap",
+        )
+        // ✅ **All of it, the pure metal included.** A shelf below this version cannot say which of
+        // its species got there honestly, and keeping the ones that look legitimate would be
+        // guessing about the player's history.
+        assertEquals(7L * tonne, economy.ore[Species.Iron], "the iron was judged legitimate and kept")
+        assertEquals(Budget.GRAM, economy.ore[Species.Gold], "the dust was dropped rather than reworked")
+    }
+
+    @Test
+    fun `a current save keeps its shelves where they are`() {
+        // The other half of the gate: the migration is keyed on the version, not on what a shelf
+        // looks like, so a station that has legitimately separated a gram of something keeps it.
+        val post = station(
+            ore = Mixture.of(Species.Forsterite to 3L * tonne, energy = 0L),
+            market = Market.of(Species.Iron to 7L * tonne, Species.Gold to Budget.GRAM),
+            width = 20, height = 20,
+        )
+        val start = starterVessel(OutofspaceConfig().initialGrid).copy(bodies = listOf(post))
+        val economy = assertNotNull(Save.read(Save.write(start)).bodies.single().station)
+
+        assertEquals(7L * tonne, economy.market.stockOf(Species.Iron), "a current save lost its shelves")
+        assertEquals(Budget.GRAM, economy.market.stockOf(Species.Gold))
+        assertEquals(3L * tonne, economy.ore.total, "the heap grew on a save that needed no migration")
     }
 }
