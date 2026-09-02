@@ -36,11 +36,18 @@ shot berthed
 
 # The counter is one row per species now: name, what you hold, the bid, the four controls, the ask,
 # what they hold. `>` and `<` add a packet to an order; `>>` and `<<` are the standing ones.
-# ⚠️ `tap` matches a label, and every row carries the same four. So these hit the FIRST row's
-# controls -- iron -- which is what is wanted here: one row switched on, next to rows that are not.
+# ⚠️ `tap` matches a label, and every row carries the same four. So these all hit the FIRST row --
+# iron -- which is what is wanted: one row moving along the axis while the others sit at nothing.
+#
+# The four controls set ONE signed number, so the middle column is a quantity with no direction in
+# it and the lit button is what says which way it points.
 tap >>
 shot listed
 
+# Any press against an unbounded permission stands it down to nothing -- not to a packet the other
+# way. So this is a stop, and the second press is what actually starts buying.
+tap <
+tap <
 tap <
 shot ordered
 

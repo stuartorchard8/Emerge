@@ -27,8 +27,6 @@ import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.DockingPort
-import org.emerge.demo.outofspace.world.machine.SellOrder
-import org.emerge.demo.outofspace.world.machine.BuyOrder
 import org.emerge.demo.outofspace.world.machine.Furnace
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.ThrusterControl
@@ -543,21 +541,19 @@ object Save {
                 val autoUnlock = if (m.autoUnlock) 0b10 else 0
                 put("auto", (autoLock+autoUnlock).toString())
             }
-            // Two lists, each written as one field so a port with nothing set adds nothing to the
-            // line. A sell order is `species:percent` (percent absent means any purity); a buy order
-            // is `species:mass`. ⚠️ Masses go through the scale like every other mass in the file.
             is DockingPort -> {
-                // A sell order is `species:percent:remaining`. ⚠️ The remaining mass goes through
-                // the scale like every other mass in the file; [SellOrder.ENDLESS] does not, and is
-                // written as an empty field so it cannot be rescaled into a merely very large number.
-                if (m.sell.isNotEmpty()) put("sell", m.sell.joinToString(",") {
-                    (it.filter.species?.name ?: "ANY") + ":" +
-                        (it.filter.minPercent?.toString() ?: "") + ":" +
-                        (if (it.isEndless) "" else it.remaining.toString()) + ":" +
-                        (it.filter.belowPercent?.toString() ?: "")
-                })
-                if (m.buy.isNotEmpty()) put("buy", m.buy.joinToString(",") {
-                    it.species.name + ":" + it.remaining
+                // ⚠️ **One signed field, because the port holds one signed number per species.**
+                // `SPECIES:mass`, negative selling and positive buying; an unbounded permission is
+                // written `+` or `-` with no number, so it cannot be rescaled into a merely very
+                // large one. The ore figure rides the same list under `ORE`.
+                val book = m.orders.entries.map { it.key.name to it.value } +
+                    (if (m.ore != 0L) listOf("ORE" to m.ore) else emptyList())
+                if (book.isNotEmpty()) put("orders", book.joinToString(",") { (name, value) ->
+                    name + ":" + when (value) {
+                        DockingPort.ENDLESS -> "+"
+                        -DockingPort.ENDLESS -> "-"
+                        else -> value.toString()
+                    }
                 })
             }
             is Sensor -> {
@@ -1626,6 +1622,21 @@ object Save {
      * ledgers watch — a station is outside every one of them — so this moves matter between two
      * piles that are each other's whole world, and the total is unchanged by construction.
      */
+    /**
+     * One signed permission off the file: a mass through the scale, or `+`/`-` for an unbounded one.
+     *
+     * ⚠️ **The unbounded pair carry no number on purpose.** [DockingPort.ENDLESS] is `Long.MAX_VALUE`
+     * and every mass in the file goes through the mass scale, so writing it as a number would come
+     * back multiplied — or overflowed — into something that is merely very large, which behaves like
+     * a bound and is not one.
+     */
+    private fun readPermission(field: String?, scale: Rescale): Long? = when (field) {
+        null, "" -> null
+        "+" -> DockingPort.ENDLESS
+        "-" -> -DockingPort.ENDLESS
+        else -> field.toLongOrNull()?.let { scale.of(it) }
+    }
+
     private fun worked(
         version: Int,
         heap: Mixture,
@@ -1742,29 +1753,16 @@ object Save {
             DeckMachineKind.DockingPort -> DockingPort(
                 tile,
                 facing(),
-                sell = f["sell"]?.split(",")?.mapNotNull { entry ->
-                    val parts = entry.split(":")
-                    val species = Species.ALL.firstOrNull { it.name == parts[0] }
-                    if (parts[0] != "ANY" && species == null) return@mapNotNull null
-                    val filter = SpeciesFilter(
-                        species,
-                        parts.getOrNull(1)?.takeIf { it.isNotEmpty() }?.toIntOrNull(),
-                        parts.getOrNull(3)?.takeIf { it.isNotEmpty() }?.toIntOrNull(),
-                    )
-                    // ⛔ **An absent remaining is ENDLESS, not zero.** Below the version that wrote
-                    // the field there was no such thing as a finite sell order — every entry on the
-                    // list meant "sell this for as long as I keep making it" — so a file with no
-                    // third field describes exactly that, and reading it as zero would silently
-                    // cancel every standing order in the save.
-                    val left = parts.getOrNull(2)?.takeIf { it.isNotEmpty() }?.toLongOrNull()
-                    SellOrder(filter, if (left == null) SellOrder.ENDLESS else scale.of(left))
-                } ?: emptyList(),
-                buy = f["buy"]?.split(",")?.mapNotNull { entry ->
-                    val parts = entry.split(":")
-                    val species = Species.ALL.firstOrNull { it.name == parts[0] } ?: return@mapNotNull null
-                    val mass = parts.getOrNull(1)?.toLongOrNull() ?: return@mapNotNull null
-                    BuyOrder(species, scale.of(mass))
-                } ?: emptyList(),
+                orders = buildMap {
+                    for (entry in f["orders"]?.split(",").orEmpty()) {
+                        val parts = entry.split(":")
+                        val species = Species.ALL.firstOrNull { it.name == parts[0] } ?: continue
+                        put(species, readPermission(parts.getOrNull(1), scale) ?: continue)
+                    }
+                },
+                ore = f["orders"]?.split(",").orEmpty()
+                    .firstOrNull { it.startsWith("ORE:") }
+                    ?.let { readPermission(it.removePrefix("ORE:"), scale) } ?: 0L,
             )
             DeckMachineKind.Storage -> Storage(
                 tile,

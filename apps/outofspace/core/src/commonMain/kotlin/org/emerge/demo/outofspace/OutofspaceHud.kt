@@ -55,7 +55,6 @@ import org.emerge.render.torus.ui.ActionButton
 import kotlin.math.absoluteValue
 import org.emerge.demo.outofspace.world.Market
 import org.emerge.demo.outofspace.world.Station
-import org.emerge.demo.outofspace.world.machine.SellOrder
 import org.emerge.demo.outofspace.num.scaledRatio
 
 /** A full-screen overlay: the game's own controls, or the sim's readouts. One at a time. */
@@ -760,26 +759,30 @@ class OutofspaceHud {
     private val TRADE_DEAR = 0x3A3038FFL
 
     /**
-     * Which species get a row: what you can sell, what they have, **and anything with a standing
-     * order on it**.
+     * Which species get a row: what you can sell, what they have, **and anything with a permission
+     * on it**.
      *
-     * ⛔ **The third one is not a nicety.** A `>>` left on for a species neither side is holding any
+     * ⛔ **The third one is not a nicety.** A permission left on for a species neither side holds any
      * more would otherwise vanish off the list — taking the only control that could turn it off with
-     * it, and leaving a standing order running that the player cannot see or reach.
+     * it, and leaving a standing permission the player can neither see nor reach.
      */
     private fun tradedSpecies(stock: Stockpile, market: Market, port: DockingPort): List<Species> =
         Species.ALL.filter { species ->
-            stock.buildable(species) > 0L || market.stockOf(species) > 0L ||
-                port.selling(species) != null || port.buy.any { it.species == species }
+            stock.buildable(species) > 0L || market.stockOf(species) > 0L || port.permitted(species) != 0L
         }
 
     /**
      * One species: what you have and what it fetches, the four controls, and what they have.
      *
-     * The middle column is the **pending** figure, and it says a different thing under each mode
-     * because a standing order has no quantity of its own to report: under `>>` it is what the
-     * network will deliver to the mouth, under `<<` it is what the ship is short of, and otherwise
-     * it is simply how much is on order.
+     * ⛔ **The four controls set ONE signed number**, so they read as a choice rather than as four
+     * switches that have to be kept from disagreeing — `>>` sell without bound, `>` a packet further
+     * toward selling, `<` a packet further toward buying, `<<` buy without bound. Pressing sell
+     * against a buy permission of five hundred kilograms leaves four hundred; it does not open a
+     * second order pointing the other way, because there is only one number to point.
+     *
+     * ⚠️ **The middle column is a quantity and says nothing about direction**, so the *button* says
+     * it: whichever of the four the figure is currently expressed in is lit. Without that, "400.0KG"
+     * is the same on the screen whether the ship is about to buy it or sell it.
      */
     private fun org.emerge.render.torus.ui.PanelBuilder.tradeRow(
         controller: OutofspaceController,
@@ -788,67 +791,53 @@ class OutofspaceHud {
         stock: Stockpile,
         species: Species,
     ) {
-        val sell = port.selling(species)
-        val buy = port.buy.firstOrNull { it.species == species }
+        val permitted = port.permitted(species)
         val mine = stock.buildable(species)
-        val theirs = market.stockOf(species)
-        val cost = market.buyCost(species, Capacity.PACKET_MASS)
+        val packet = Capacity.PACKET_MASS
 
         row(gapPx = 2f) {
             button(TRADE_NAME_W.named(species.name.uppercase()), 0x00000000L) { controller.openWiki(species) }
             text(TRADE_MASS_W.cell(mass(mine)), speciesColor(species) or 0xFFL)
-            text(TRADE_PRICE_W.cell(market.bidFor(species, Capacity.PACKET_MASS).toString()))
-            button(">>", if (sell?.isEndless == true) TRADE_ON else TRADE_OFF, widthEm = TRADE_FAR_EM) {
+            text(TRADE_PRICE_W.cell(market.bidFor(species, packet).toString()))
+            button(">>", lit(permitted == -DockingPort.ENDLESS), widthEm = TRADE_FAR_EM) {
                 controller.toggleSellForever(port, species)
             }
-            button(">", TRADE_OFF, widthEm = TRADE_NEAR_EM) {
-                controller.sellMore(port, species, Capacity.PACKET_MASS)
+            button(">", lit(permitted < 0L && permitted != -DockingPort.ENDLESS), widthEm = TRADE_NEAR_EM) {
+                controller.nudge(port, species, -packet)
             }
-            text(TRADE_PENDING_W.cell(pending(stock, species, sell, buy)), 0xE0C060FFL)
-            button("<", if (cost > controller.state.credits) TRADE_DEAR else TRADE_OFF, widthEm = TRADE_NEAR_EM) {
-                controller.buyMore(port, species, Capacity.PACKET_MASS)
+            text(TRADE_PENDING_W.cell(expected(stock, species, permitted)), 0xE0C060FFL)
+            button("<", lit(permitted > 0L && permitted != DockingPort.ENDLESS), widthEm = TRADE_NEAR_EM) {
+                controller.nudge(port, species, packet)
             }
-            button("<<", if (buy?.isEndless == true) TRADE_ON else TRADE_OFF, widthEm = TRADE_FAR_EM) {
+            button("<<", lit(permitted == DockingPort.ENDLESS), widthEm = TRADE_FAR_EM) {
                 controller.toggleBuyForever(port, species)
             }
-            text(TRADE_PRICE_W.cell(market.askFor(species, Capacity.PACKET_MASS).toString()))
-            text(TRADE_MASS_W.cell(mass(theirs)))
+            text(TRADE_PRICE_W.cell(market.askFor(species, packet).toString()))
+            text(TRADE_MASS_W.cell(mass(market.stockOf(species))))
         }
     }
 
-    /**
-     * The middle cell for [species] — see [tradeRow] for why it means three different things.
-     *
-     * ⚠️ **A finite sell order wins over a finite buy order** when somehow both exist. They are a
-     * pointless round trip rather than an illegal state, so this picks the left-hand one rather than
-     * inventing a second cell for a case nobody means to be in.
-     */
-    private fun pending(
-        stock: Stockpile,
-        species: Species,
-        sell: SellOrder?,
-        buy: org.emerge.demo.outofspace.world.machine.BuyOrder?,
-    ): String = when {
-        sell?.isEndless == true -> mass(stock.buildable(species))
-        buy?.isEndless == true -> ENDLESS_MARK
-        sell != null -> mass(sell.remaining)
-        buy != null -> mass(buy.remaining)
-        else -> ""
-    }
+    /** A control carrying the direction the figure is currently expressed in. */
+    private fun lit(on: Boolean): Long = if (on) TRADE_ON else TRADE_OFF
 
     /**
-     * What a `<<` row shows where a quantity would go.
+     * The middle cell: **what to expect**, which is not always what was asked for.
      *
-     * ⚠️ **Not the unmet demand, and the reason is worth stating.** The number the mechanism uses is
-     * `Whitelist.room` at the port's output, and a `Whitelist` is built inside the rail step and
-     * lives on `Work`, which the draw thread cannot see — publishing it would mean carrying a
-     * per-tile structure on `VesselState` for a readout. And it would usually read the same thing
-     * anyway: a locked warehouse or any ordinary machine is an *unlimited* sink, so the moment one
-     * of those can reach the mouth the honest answer to "how much is wanted" is "all of it".
+     * A bounded permission reports itself — that much will move, and then it stops. An unbounded
+     * *sell* reports what the network can actually deliver to the mouth, which is the honest answer
+     * to "how much am I about to part with". An unbounded *buy* has no number at all: what it will
+     * fetch is whatever the ship turns out to want, and any figure put here would be a guess
+     * presented as a promise.
      *
-     * ⚠️ **The bitmap font has no infinity sign** — see the inspector's note about the em dash. Three
-     * dots is the available way to say "and it keeps going".
+     * ⚠️ **The bitmap font has no infinity sign** — see the inspector's note about the em dash.
      */
+    private fun expected(stock: Stockpile, species: Species, permitted: Long): String = when (permitted) {
+        0L -> ""
+        -DockingPort.ENDLESS -> mass(stock.buildable(species))
+        DockingPort.ENDLESS -> ENDLESS_MARK
+        else -> mass(if (permitted < 0L) -permitted else permitted)
+    }
+
     private val ENDLESS_MARK = "..."
 
     /**
@@ -863,7 +852,7 @@ class OutofspaceHud {
      * the real sale will beat it.** A lump is priced on the square of each species' share
      * ([Market.sellValue]), and this weighs every mixed tile aboard as though it were one lump —
      * more species in the pile means smaller shares means a lower quote. Selling happens packet by
-     * packet, and a packet is a sample of *one* store, so each one is purer than the aggregate and
+     * packet, and a packet is a sample of *one* store, so each is purer than the aggregate and
      * fetches more. It errs low on purpose: a number that flattered the pile would read as the game
      * cheating the player at the till.
      */
@@ -874,9 +863,8 @@ class OutofspaceHud {
         stock: Stockpile,
         station: Station?,
     ) {
-        val order = port.sellingOre()
         val blended = stock.blended
-        if (blended.isEmpty && order == null && station == null) return
+        if (blended.isEmpty && port.ore == 0L && station == null) return
         val quote =
             if (blended.isEmpty) 0L
             else scaledRatio(market.sellValue(blended), blended.total, Prices.PRICE_UNIT_MASS)
@@ -886,29 +874,29 @@ class OutofspaceHud {
             button(TRADE_NAME_W.named("ORE"), 0x00000000L) { }
             text(TRADE_MASS_W.cell(mass(blended.total)), 0xC8A44AFFL)
             text(TRADE_PRICE_W.cell(if (blended.isEmpty) "-" else quote.toString()))
-            button(">>", if (order?.isEndless == true) TRADE_ON else TRADE_OFF, widthEm = TRADE_FAR_EM) {
+            button(">>", lit(port.ore == -DockingPort.ENDLESS), widthEm = TRADE_FAR_EM) {
                 controller.toggleSellOreForever(port)
             }
-            button(">", TRADE_OFF, widthEm = TRADE_NEAR_EM) {
-                controller.sellMoreOre(port, Capacity.PACKET_MASS)
+            button(">", lit(port.ore < 0L && port.ore != -DockingPort.ENDLESS), widthEm = TRADE_NEAR_EM) {
+                controller.nudgeOre(port, -Capacity.PACKET_MASS)
             }
             text(
                 TRADE_PENDING_W.cell(
-                    when {
-                        order == null -> ""
-                        order.isEndless -> mass(blended.total)
-                        else -> mass(order.remaining)
+                    when (port.ore) {
+                        0L -> ""
+                        -DockingPort.ENDLESS -> mass(blended.total)
+                        else -> mass(-port.ore)
                     },
                 ),
                 0xE0C060FFL,
             )
-            // No buy side: the heap is not for sale. Spacers keep the row's columns under the ones
-            // above rather than letting it collapse leftward.
+            // No buy side: the heap is not for sale. The empty cells keep this row's columns under
+            // the ones above rather than letting it collapse leftward.
             text(TRADE_PENDING_W.cell(""))
             text(TRADE_PRICE_W.cell(""))
             text(TRADE_MASS_W.cell(mass(station?.ore?.total ?: 0L)), 0x7A7A7AFFL)
         }
-        text("  priced on what it is made of \u00b7 concentrate first", 0x5A5A5AFFL)
+        text("  priced on what it is made of · concentrate first", 0x5A5A5AFFL)
     }
 
     private fun UiBuilder.tradeSheet(controller: OutofspaceController) {
@@ -2124,8 +2112,11 @@ class OutofspaceHud {
             text("line the port up with a station's berth", 0x5A5A5AFFL)
         }
         gap()
-        keyValue("SELLING", if (port.sell.isEmpty()) "nothing" else "${port.sell.size} species")
-        keyValue("ON ORDER", if (port.buy.isEmpty()) "nothing" else "${port.buy.size} species")
+        // One number per species, so counting the two directions is counting the signs.
+        val selling = port.orders.count { it.value < 0L } + (if (port.ore < 0L) 1 else 0)
+        val buying = port.orders.count { it.value > 0L }
+        keyValue("SELLING", if (selling == 0) "nothing" else "$selling species")
+        keyValue("PERMITTED", if (buying == 0) "nothing" else "$buying species")
     }
 
     private fun PanelBuilder.storageControls(controller: OutofspaceController, storage: Storage) {

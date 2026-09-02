@@ -22,9 +22,7 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.canStand
 import org.emerge.demo.outofspace.world.Docking
 import org.emerge.demo.outofspace.world.RigidBody
-import org.emerge.demo.outofspace.world.machine.BuyOrder
 import org.emerge.demo.outofspace.world.machine.DockingPort
-import org.emerge.demo.outofspace.world.machine.SellOrder
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
@@ -581,96 +579,32 @@ class OutofspaceController(
     fun setDockedThrust(allowed: Boolean) = pending.add(Edit.SetDockedThrust(allowed))
 
     /**
-     * Add [mass] more of [species] to the sell order, or start one.
+     * One press of `>` or `<` on [species] — see [DockingPort.nudged], where the rule lives.
      *
-     * ⚠️ **Cumulative** — one click is one packet, and five clicks is five. An order that replaced
-     * itself would make the button mean "sell exactly a packet", which is not a thing anybody wants
-     * to press five times to say.
+     * ⚠️ **The transitions are on the machine, not here.** They are a fact about what the book can
+     * say rather than about how the player says it, and putting them here would have meant the
+     * counter and any other caller could disagree about what `<<` then `>` means.
      */
-    fun sellMore(port: DockingPort, species: Species, mass: Long) =
-        retuned(port, sell = port.sell.adding(SellOrder.of(species, mass)))
+    fun nudge(port: DockingPort, species: Species, by: Long) = retune(port.nudged(species, by))
 
-    /** Add [mass] more mixed ore to the sell order, or start one. */
-    fun sellMoreOre(port: DockingPort, mass: Long) =
-        retuned(port, sell = port.sell.adding(SellOrder.ore(mass)))
+    /** The same press on the ore row, which has no buy side. */
+    fun nudgeOre(port: DockingPort, by: Long) = retune(port.nudgedOre(by))
 
-    /** Sell pure [species] for as long as the ship keeps making it, or stop. */
+    /** `>>` on [species]: sell it with no bound, or stand down. */
     fun toggleSellForever(port: DockingPort, species: Species) =
-        setEndlessSell(port, SellOrder.of(species, SellOrder.ENDLESS))
+        retune(port.unbounded(species, -DockingPort.ENDLESS))
 
-    /** Sell mixed ore for as long as the ship keeps digging it, or stop. */
-    fun toggleSellOreForever(port: DockingPort) =
-        setEndlessSell(port, SellOrder.ore(SellOrder.ENDLESS))
+    /** `<<` on [species]: keep the ship supplied with it, or stand down. */
+    fun toggleBuyForever(port: DockingPort, species: Species) =
+        retune(port.unbounded(species, DockingPort.ENDLESS))
 
-    /** Take [species] off the sell list altogether, ore row included when [species] is null. */
-    fun cancelSell(port: DockingPort, species: Species?) =
-        retuned(port, sell = port.sell.filterNot { it.filter.species == species })
+    /** `>>` on the ore row. */
+    fun toggleSellOreForever(port: DockingPort) = retune(port.unboundedOre())
 
-    /**
-     * Turn an endless order on, or off if it is already on.
-     *
-     * ⛔ **Cancels an endless buy of the same species** — see [toggleBuyForever] for why the pair is
-     * a loop and why only the endless one counts.
-     */
-    private fun setEndlessSell(port: DockingPort, order: SellOrder) {
-        val already = port.sell.firstOrNull { it.filter == order.filter }?.isEndless == true
-        val without = port.sell.filterNot { it.filter == order.filter }
-        val species = order.filter.species
-        retuned(
-            port,
-            sell = if (already) without else without + order,
-            // The other half of [toggleBuyForever]'s rule, stated at the other switch. Only the
-            // endless buy is cancelled; a finite one is not a loop.
-            buy = if (already || species == null) port.buy
-            else port.buy.filterNot { it.species == species && it.isEndless },
-        )
-    }
+    private fun retune(port: DockingPort) =
+        pending.add(Edit.TuneDockingPort(port.center, orders = port.orders, ore = port.ore))
 
-    /** One list of orders with [order] folded in: cumulative if it is already there, else appended. */
-    private fun List<SellOrder>.adding(order: SellOrder): List<SellOrder> {
-        val existing = firstOrNull { it.filter == order.filter }
-        // An endless order is not added to. It already means "all of it".
-        if (existing != null && existing.isEndless) return this
-        return if (existing == null) this + order
-        else map { if (it.filter == order.filter) it.copy(remaining = it.remaining + order.remaining) else it }
-    }
 
-    private fun retuned(port: DockingPort, sell: List<SellOrder> = port.sell, buy: List<BuyOrder> = port.buy) =
-        pending.add(Edit.TuneDockingPort(port.center, sell = sell, buy = buy))
-
-    /** Add [mass] more of [species] to the buy order, or start one. Cumulative, like [sellMore]. */
-    fun buyMore(port: DockingPort, species: Species, mass: Long) {
-        val existing = port.buy.firstOrNull { it.species == species }
-        if (existing != null && existing.isEndless) return
-        retuned(
-            port,
-            buy = if (existing == null) port.buy + BuyOrder(species, mass)
-            else port.buy.map { if (it.species == species) it.copy(remaining = it.remaining + mass) else it },
-        )
-    }
-
-    /** Take [species] off the buy list altogether. */
-    fun cancelBuy(port: DockingPort, species: Species) =
-        retuned(port, buy = port.buy.filterNot { it.species == species })
-
-    /**
-     * Keep the ship supplied with [species] for as long as it wants any, or stop.
-     *
-     * ⛔ **Turning this on cancels an endless sell of the same species, and only an endless one.**
-     * The pair is a loop with no end and the ship as its pump: bought at the ask, sold at the bid,
-     * for ever, and the spread is the player's money. A *finite* order on the other side is not a
-     * loop and is left alone — buying fifty kilos of iron while standing ready to sell the iron you
-     * refine is a Tuesday, not a mistake.
-     */
-    fun toggleBuyForever(port: DockingPort, species: Species) {
-        val already = port.buy.firstOrNull { it.species == species }?.isEndless == true
-        val without = port.buy.filterNot { it.species == species }
-        retuned(
-            port,
-            sell = if (already) port.sell else port.sell.filterNot { it.filter.species == species && it.isEndless },
-            buy = if (already) without else without + BuyOrder(species, BuyOrder.ENDLESS),
-        )
-    }
 
     /** Whether the port at [tile] is lined up with a berth it could take right now. */
     fun berthInReach(port: DockingPort): Boolean {

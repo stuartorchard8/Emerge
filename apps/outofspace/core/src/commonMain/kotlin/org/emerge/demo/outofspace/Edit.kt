@@ -169,8 +169,9 @@ sealed interface Edit {
      */
     data class TuneDockingPort(
         val tile: TileIndex,
-        val sell: List<org.emerge.demo.outofspace.world.machine.SellOrder>,
-        val buy: List<org.emerge.demo.outofspace.world.machine.BuyOrder>,
+        /** The whole signed book — see [org.emerge.demo.outofspace.world.machine.DockingPort.orders]. */
+        val orders: Map<org.emerge.demo.outofspace.chem.Species, Long>,
+        val ore: Long,
     ) : Edit
 
     /** Wire: rewires action term. slot≥end=append, null trigger=remove. Single edit type (add/change/remove are same list op). */

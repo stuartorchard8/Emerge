@@ -63,9 +63,7 @@ import org.emerge.demo.outofspace.world.BodySlot
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
-import org.emerge.demo.outofspace.world.machine.BuyOrder
 import org.emerge.demo.outofspace.world.machine.DockingPort
-import org.emerge.demo.outofspace.world.machine.SellOrder
 import org.emerge.demo.outofspace.world.Market
 import org.emerge.demo.outofspace.world.Prices
 import org.emerge.demo.outofspace.world.BodyKind
@@ -516,7 +514,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val ports = w.portsByTile(Conduit.Rail)
             w.advanceRails(ports)
             // ⚠️ **After the rails, because [Work.whitelist] does not exist until they have run.**
-            w.supplyEndlessOrders(state.signals)
+            w.drawPurchases(state.signals)
 
             for ((tile, at) in ports) for (port in at) {
                 if (port.kind == PortKind.Output) w.pushOut(tile, port, state.signals)
@@ -1302,110 +1300,39 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // [org.emerge.demo.outofspace.chem.Mixture.impurities], which is exactly this question.
             if (forSale.impurities == 0L) here = here.absorbing(forSale) else consigned += forSale
             putStore(m, tile, BufferRole.Input, null)
-            machine = machine.copy(sell = machine.sell.worked(forSale))
+            machine = machine.sold(forSale)
         }
 
-        // ── Work the standing orders down ────────────────────────────────────
-        //
-        // One order per tick at most, and only into an empty output store: a purchase is a lump, and
-        // two lumps merged inside a buffer is the thing [Packet] refuses to let happen anywhere else.
-        //
-        // ⛔ **Finite orders only. An endless one is not filled here at all** — see
-        // [Work.supplyEndlessOrders], which runs with the rail step because that is where the
-        // network's own demand is worked out. A finite order is a thing the player asked for by
-        // name, so the mouth fills it and parks it; an endless order is filled by the network, so it
-        // is filled where the network is.
+        // ⛔ **The shelves the sale went onto have to leave this function.** `here` is a copy; the
+        // station reads [Work.market], and a sale that never wrote it back is a sale the counter
+        // and the station both forget. The same shape as the berthed-station writeback, which was
+        // also silent and was also found by a screenshot rather than a test.
         market = here
-        if (store(m, tile, BufferRole.Product) == null) {
-            for (order in machine.buy) {
-                if (order.isEndless) continue
-                machine = fill(machine, tile, order) ?: continue
-                break
-            }
-        }
         return machine
     }
 
     /**
-     * One packet of [order] bought onto the port's product store, or null if it cannot be.
+     * This port with [sold] taken off whichever permission let it in.
      *
-     * ⛔ **The one place a purchase happens**, called from two: the mouth fills finite orders every
-     * tick, and the rail step fills endless ones. Two callers and one body, because "what a purchase
-     * costs the balance and the ledgers" must not have two answers.
+     * ⛔ **Exactly one permission can match**, and that is a property rather than an assumption: a
+     * species figure admits only pure metal and the ore figure admits only blends, so the two
+     * partition every lump between them. Were they to overlap, "which permission paid for this
+     * delivery" would be a guess, and the guess would be wrong every time the player had both.
      *
-     * ⚠️ **Bought matter arrives at ambient**, and that is a claim the heat ledger has to hear
-     * about: the station kept it in a warehouse, not in a furnace. Energy is computed from what the
-     * lump is made of rather than assumed, which is the rule `temperatureKelvin` follows.
+     * ⚠️ **Clamped, not asserted.** The network will not route more than was permitted, but a lump
+     * already standing in the mouth when the player cuts the figure down is matter that has arrived
+     * and is going to be sold; refusing to book it would leave a permission that never runs out.
      */
-    private fun Work.fill(m: DockingPort, tile: TileIndex, order: BuyOrder): DockingPort? {
-        val here = market ?: return null
-        val wanted = minOf(order.remaining, Capacity.PACKET_MASS)
-        if (wanted <= 0L) return null
-        if (!here.canSupply(order.species, wanted)) return null
-        val cost = here.buyCost(order.species, wanted)
-        if (cost > credits) return null
-
-        val cold = Mixture.of(order.species to wanted, energy = 0L)
-        val bought = Mixture.of(
-            order.species to wanted,
-            energy = heatCapacityOf(cold) * Temperature.AMBIENT_KELVIN,
-        )
-        credits -= cost
-        importedMass += bought.total
-        importedEnergy += bought.energy
-        market = here.releasing(order.species, wanted)
-        putStore(m, tile, BufferRole.Product, bought)
-
-        // ⚠️ An endless order is never worked down; there is nothing to subtract from.
-        val left = if (order.isEndless) BuyOrder.ENDLESS else order.remaining - wanted
-        return m.copy(
-            buy = m.buy.toMutableList().also { list ->
-                // ⛔ A completed order leaves the list rather than lingering at zero. A *finite*
-                // order that never ended would drain the balance the moment the player docked
-                // somewhere well stocked — see [BuyOrder].
-                val at = list.indexOfFirst { it.species == order.species }
-                if (left > 0L) list[at] = order.copy(remaining = left) else list.removeAt(at)
-            },
-        )
-    }
-
-    /**
-     * Whether anything the port's output can reach is short of [mass] of [species].
-     *
-     * ⚠️ **Asked at the tile the packet would leave from**, which is the port's own output port and
-     * not its centre: [Whitelist] answers about routes *out of* a tile, and the centre of a
-     * three-tile machine is not on the network at all.
-     *
-     * ⚠️ **Last tick's answer**, because the whitelist is published by the rail pass and this runs in
-     * the machine pass. The same staleness `handBack` documents, and harmless for the same reason:
-     * an appetite that appeared this tick is bought for on the next one.
-     */
-    private fun Work.anythingWants(m: DockingPort, species: Species, mass: Long): Boolean {
-        val out = portsOf(grid, m).firstOrNull { it.kind == PortKind.Output } ?: return false
-        if (rails[out.tile.index] == null) return false
-        return whitelist.room(out.tile, Mixture.of(species to mass, energy = 0L)) > 0L
-    }
-
-    /**
-     * The sell list after [sold] has gone out of the mouth: the one order that pulled it in is that
-     * much closer to done, and a finished order leaves the list.
-     *
-     * ⛔ **Exactly one order can match**, and that is a property rather than an assumption — a
-     * per-species order takes only pure metal and the ore order takes only blends, so the two
-     * partition every lump between them ([SellOrder]). Were they to overlap, "which order paid for
-     * this delivery" would be a guess, and the guess would be wrong every time the player had both.
-     *
-     * ⚠️ **Clamped, not asserted.** The network will not route more than an order asked for, but a
-     * lump already standing in the mouth when the player cuts the order down is matter that has
-     * arrived and is going to be sold; refusing to book it against a shrunken order would leave an
-     * order that never completes.
-     */
-    private fun List<SellOrder>.worked(sold: Mixture): List<SellOrder> {
-        val order = firstOrNull { it.filter.admits(sold) } ?: return this
-        if (order.isEndless) return this
-        val left = order.remaining - sold.total
-        return if (left > 0L) map { if (it === order) it.copy(remaining = left) else it }
-        else filterNot { it === order }
+    private fun DockingPort.sold(sold: Mixture): DockingPort {
+        if (sold.impurities > 0L) {
+            val left = sellingOre()
+            return if (left == DockingPort.ENDLESS) this
+            else copy(ore = -(left - sold.total).coerceAtLeast(0L))
+        }
+        val species = sold.dominant ?: return this
+        val left = selling(species)
+        if (left == DockingPort.ENDLESS) return this
+        return withOrder(species, -(left - sold.total).coerceAtLeast(0L))
     }
 
     private fun Work.refine(cfg: OutofspaceConfig, m: Concentrator, on: Boolean, tile: TileIndex): Concentrator {
@@ -2324,7 +2251,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Edit.TuneDockingPort -> {
                     val tile = originAt(edit.tile) ?: return
                     val m = deck[tile]
-                    if (m is DockingPort) deck[tile] = m.copy(sell = edit.sell, buy = edit.buy)
+                    if (m is DockingPort) deck[tile] = m.copy(orders = edit.orders, ore = edit.ore)
                 }
                 is Edit.Undock -> {
                     val link = docked ?: return
@@ -3749,38 +3676,87 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         /** Advance all conduits one step (flow derived from input ports). */
         /**
-         * Endless buy orders, filled against what the ship is actually short of — `<<`.
+         * Purchases, **minted onto the track at the moment the network draws them**.
+         *
+         * ⛔ **A docking port has no output store and never holds bought matter.** A buy figure is
+         * permission, not a purchase: pressing `<` five times does not spend five packets' worth of
+         * money, it allows five, and the ship buys them as it uses them. So nothing is bought until
+         * a lump can go straight onto the rail and straight to something that wants it — and if
+         * nothing wants it, no money moves and no buffer fills.
+         *
+         * That is what makes the whole thing safe to leave switched on. Set `<<` for iron and steel,
+         * draw a hundred metres of track, and the metal arrives because the sites asked for it: the
+         * player builds and the supply follows, bounded by the balance, the shelf, and the
+         * permission itself.
          *
          * ⛔ **Here and not in [trade], because this is where the answer exists.** [whitelist] is
-         * built by the rail step and [Work] is rebuilt every tick, so a question asked in the
+         * built by the rail step and [Work] is rebuilt every tick, so the question asked in the
          * machine pass reads an empty whitelist and answers "nothing wants anything" — always, and
-         * silently. Running with the rail step is also the right *cadence*: an endless order is
-         * filled by the network, and the network moves once every [RAIL_PERIOD] ticks.
+         * silently.
          *
-         * ⛔ **The pull is what stops one order starving the rest.** A port has one output store and
-         * the list is worked in order, so an endless order for something nothing wants would buy a
-         * packet, park it in the only store there is, and block everything behind it for ever.
-         *
-         * ⚠️ **Bounded by the balance and the shelf and nothing else.** It will spend down to broke,
-         * which is the discipline that makes it worth having: leave `<<` on for iron and steel, draw
-         * a hundred metres of track, and the metal arrives because the sites asked for it.
+         * ⚠️ **One species per port per step**, taken in table order. Not a fairness scheme and it
+         * does not need to be: a species the network is no longer short of stops answering, so the
+         * next one gets its turn without anything having to take turns.
          */
-        fun supplyEndlessOrders(signals: SignalField) {
+        fun drawPurchases(signals: SignalField) {
             if (market == null) return
             for (i in 0 until deck.size) {
                 val tile = TileIndex(i)
                 val m = deck[tile] as? DockingPort ?: continue
                 if (m.center != tile) continue
-                // The same gate the mouth runs under: a port switched off buys nothing.
                 if (m.kind.gatesOutput && !m.wiring.isOn(Action.Run, signals.at(tile))) continue
-                if (store(m, tile, BufferRole.Product) != null) continue
-                for (order in m.buy) {
-                    if (!order.isEndless) continue
-                    if (!anythingWants(m, order.species, Capacity.PACKET_MASS)) continue
-                    deck[tile] = fill(m, tile, order) ?: continue
+                val out = portsOf(grid, m).firstOrNull { it.kind == PortKind.Output } ?: continue
+                if (rails[out.tile.index] == null) continue
+
+                for ((species, permitted) in m.orders) {
+                    if (permitted <= 0L) continue
+                    val drawn = draw(m, out.tile, species, permitted) ?: continue
+                    deck[tile] = drawn
                     break
                 }
             }
+        }
+
+        /**
+         * One lump of [species] bought and set down on [onto], or null if none can be.
+         *
+         * Five things bound it and every one is a real limit rather than a guard: what the network
+         * is short of, what will fit on the tile, what the station is holding, what the player has
+         * permitted, and what they can afford.
+         *
+         * ⚠️ **The balance is applied by shrinking the lump, not by refusing it.** A player with
+         * eighty credits and a use for a hundred kilograms of iron should get what eighty credits
+         * buys, not nothing at all — and "nothing at all" is indistinguishable, from outside, from
+         * the network not wanting any.
+         */
+        private fun draw(m: DockingPort, onto: TileIndex, species: Species, permitted: Long): DockingPort? {
+            val here = market ?: return null
+            val one = Mixture.of(species to Capacity.PACKET_MASS, energy = 0L)
+            val wanted = whitelist.room(onto, one)
+            if (wanted <= 0L) return null
+
+            var mass = minOf(Capacity.PACKET_MASS, wanted, rail.headroom(onto), here.stockOf(species))
+            if (permitted != DockingPort.ENDLESS) mass = minOf(mass, permitted)
+            if (mass <= 0L) return null
+
+            // ⛔ **Refused whole, never shrunk to fit the balance.** Buying what the last credit
+            // reaches was tried and is worse than it sounds: it mints grams onto the track, and a
+            // runt lump owns a whole tile exactly as a full one does — the hazard
+            // [DeckMachineKind.shipsWholePackets] exists for. "Spend down to broke" still holds; it
+            // means buying packets until one more is out of reach, not buying dust with the change.
+            val cost = here.buyCost(species, mass)
+            if (cost > credits) return null
+
+            val cold = Mixture.of(species to mass, energy = 0L)
+            val bought = Mixture.of(species to mass, energy = heatCapacityOf(cold) * Temperature.AMBIENT_KELVIN)
+            if (!rail.loadOnto(onto, bought)) return null
+
+            credits -= cost
+            importedMass += bought.total
+            importedEnergy += bought.energy
+            market = here.releasing(species, mass)
+            return if (permitted == DockingPort.ENDLESS) m
+            else m.withOrder(species, (permitted - mass).coerceAtLeast(0L))
         }
 
         fun advanceRails(ports: Map<TileIndex, List<Port>>) {
@@ -3926,11 +3902,23 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // behalf is a demand nothing can satisfy.
                 if (deck.isGhost(input.owner)) continue
                 val list = accepts.getOrPut(tile) { mutableListOf() }
-                // ⚠️ **The order's own remaining mass is the appetite**, so a finite sell order stops
-                // the network delivering more than was asked for — the same way a construction site's
-                // shortfall does. An endless order carries [Acceptance.UNLIMITED] because
-                // [SellOrder.ENDLESS] *is* that number; see the note there.
-                for (order in port.sell) list.add(Acceptance.filtered(order.filter, order.remaining))
+                // ⚠️ **The permission itself is the appetite**, so a bounded one stops the network
+                // delivering more than was allowed — the same way a construction site's shortfall
+                // does. An unbounded one carries [Acceptance.UNLIMITED] because [DockingPort.ENDLESS]
+                // *is* that number; see the note there.
+                //
+                // ⛔ **Only the SELL side is a demand.** A buy permission is not an appetite at the
+                // mouth at all — it is a licence for the network to draw *out* of it, and it is acted
+                // on in [Work.drawPurchases] where the pull actually happens.
+                for ((species, value) in port.orders) {
+                    if (value >= 0L) continue
+                    val wanted = if (value == -DockingPort.ENDLESS) Acceptance.UNLIMITED else -value
+                    list.add(Acceptance.filtered(SpeciesFilter(species, SpeciesFilter.MAX_PERCENT), wanted))
+                }
+                if (port.ore < 0L) {
+                    val wanted = if (port.ore == -DockingPort.ENDLESS) Acceptance.UNLIMITED else -port.ore
+                    list.add(Acceptance.filtered(SpeciesFilter.MIXED, wanted))
+                }
             }
 
             // ── Which consumers can use what is standing on the track ────────

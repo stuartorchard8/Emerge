@@ -14,7 +14,19 @@ import org.emerge.demo.outofspace.world.Wiring
  * behaviour depends on something outside the vessel. What comes in the input port is **sold**; what
  * the player has standing orders for arrives at the output port and is **bought**.
  *
- * ### It is the rail network that decides what gets sold
+ * ### An order is PERMISSION, and the network is what acts on it
+
+⛔ **Nothing is bought because the player asked for it.** A positive figure lets the rail network
+*pull* that species through the mouth, and the purchase happens at the moment a packet is drawn onto
+the track — so a docking port never holds bought matter, has no output store, and cannot spend the
+player's money on something nothing aboard wanted. Pressing `<` five times does not buy five packets;
+it permits five, and the ship buys them as it uses them.
+
+⚠️ **Which makes the buttons a choice rather than an action**, and that is the point: the player says
+what they will allow and in which direction, and the network decides when. What the counter's middle
+column reports is therefore an expectation and not a receipt.
+
+### It is the rail network that decides what gets sold
  *
  * The port does not go looking for cargo. Its [sell] list becomes an
  * [org.emerge.demo.outofspace.world.Acceptance] at its input port tile, so the network only ever
@@ -36,95 +48,112 @@ data class DockingPort(
     override val center: TileIndex,
     override val facing: Direction,
     override val wiring: Wiring = Wiring.RUNNING,
-    /** What the player is willing to sell, and how much of it. */
-    val sell: List<SellOrder> = emptyList(),
-    /** Standing purchase orders, worked through in list order until the money runs out. */
-    val buy: List<BuyOrder> = emptyList(),
+    /**
+     * **One signed number per species**: what the player has permitted, and in which direction.
+     *
+     * Negative sells, positive buys, absent is nothing, and [ENDLESS] at either sign is "no bound".
+     * A species is on one side of the counter or the other and never both — which is not a rule
+     * enforced on top of the representation, it is what having one number *is*. Selling a hundred
+     * kilograms while permitting the purchase of five hundred is not a state anybody means to be in;
+     * pressing sell against a buy permission simply reduces it, which is the same arithmetic and
+     * needs no special case.
+     *
+     * ⛔ **A buy figure is PERMISSION, not a purchase.** Nothing is bought because the player asked
+     * for it — see the class note. It is bought when the network comes for it, and this is the bound
+     * on how much of that the player has agreed to.
+     */
+    val orders: Map<Species, Long> = emptyMap(),
+    /**
+     * The same number for **mixed ore**, which has no species to key on.
+     *
+     * ⚠️ **Never positive.** A station's unworked heap is not for sale — it is what it has not got
+     * round to separating — so the ore counter has a sell side and no buy side, and the controls the
+     * player is offered say so by not existing.
+     */
+    val ore: Long = 0L,
 ) : DirectedDeckMachine {
     override val kind: DeckMachineKind get() = DeckMachineKind.DockingPort
     override fun rotated(): DeckMachine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
     override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
 
-    /** The standing order to sell pure [species], if there is one. */
-    fun selling(species: Species): SellOrder? = sell.firstOrNull { it.filter.species == species }
+    /** What is permitted for [species], signed. Zero when nothing is. */
+    fun permitted(species: Species): Long = orders[species] ?: 0L
 
-    /** The standing order to sell mixed ore, if there is one. */
-    fun sellingOre(): SellOrder? = sell.firstOrNull { it.filter == SpeciesFilter.MIXED }
+    /** How much of [species] may still be **sold**, or [ENDLESS]. Zero when the player is buying it. */
+    fun selling(species: Species): Long = sellingOf(permitted(species))
+
+    /** How much of [species] may still be **bought**, or [ENDLESS]. Zero when the player is selling it. */
+    fun buying(species: Species): Long = if (permitted(species) > 0L) permitted(species) else 0L
+
+    /** How much mixed ore may still be sold, or [ENDLESS]. */
+    fun sellingOre(): Long = sellingOf(ore)
+
+    /**
+     * This port after one press of `>` or `<` on [species].
+     *
+     * [by] is signed the way the book is, so `>` is a step down the one axis and `<` a step up it —
+     * see [stepped] for what a press against an unbounded permission does.
+     */
+    fun nudged(species: Species, by: Long): DockingPort =
+        withOrder(species, stepped(permitted(species), by))
+
+    /** The same press on the ore row, which has no buy side. */
+    fun nudgedOre(by: Long): DockingPort = copy(ore = stepped(ore, by))
+
+    /** This port after `>>` or `<<` on [species]: on, or off if it was already that. */
+    fun unbounded(species: Species, to: Long): DockingPort =
+        withOrder(species, if (isUnbounded(permitted(species))) 0L else to)
+
+    /** `>>` on the ore row. */
+    fun unboundedOre(): DockingPort = copy(ore = if (isUnbounded(ore)) 0L else -ENDLESS)
+
+    /** This port with [species] set to [value] — dropped from the map when it comes to nothing. */
+    fun withOrder(species: Species, value: Long): DockingPort = copy(
+        orders = if (value == 0L) orders - species else orders + (species to value),
+    )
+
+    /**
+     * What a button press does to one signed figure.
+     *
+     * ⛔ **From an unbounded permission, ANY press stands down to nothing.** Not to a packet the
+     * other way, and not to the other unbounded state either. Flipping straight from "buy me all of
+     * this" to "sell me out of it" is a large thing to do by accident, and the player who meant it
+     * is one press from saying so again — so `<<` then `>` is a stop, not a reversal.
+     *
+     * ⚠️ Otherwise it is plain arithmetic on one axis, which is what makes the two directions one
+     * control rather than two that have to be kept from disagreeing.
+     */
+    private fun stepped(now: Long, by: Long): Long = if (isUnbounded(now)) 0L else now + by
+
+    private fun isUnbounded(value: Long): Boolean = value == ENDLESS || value == -ENDLESS
+
+    /** The unsigned sell figure hiding in a signed one. */
+    private fun sellingOf(value: Long): Long = when {
+        value >= 0L -> 0L
+        value == -ENDLESS -> ENDLESS
+        else -> -value
+    }
 
     companion object {
         /**
-         * How much the port's two stores hold — one [org.emerge.demo.outofspace.logistics.Capacity]
-         * packet apiece plus room to accumulate a little.
+         * No bound: sell it for as long as the ship keeps making it, or buy it for as long as the
+         * ship keeps wanting it. Carried as `+ENDLESS` and `-ENDLESS`.
          *
-         * Deliberately **small**. A docking port is a doorway and not a warehouse: cargo waiting to
-         * be sold should be waiting in a tank the player built, where they can see it and change
-         * their mind about it, rather than inside the mouth that is about to give it away.
+         * ⚠️ **The same number [Acceptance.UNLIMITED] is, and deliberately the same one.** A sell
+         * permission becomes an `Acceptance`'s appetite directly, and two constants for one idea is
+         * how they drift apart.
+         */
+        const val ENDLESS: Long = Acceptance.UNLIMITED
+
+        /**
+         * How much the port's **input** store holds — one packet apiece plus room to accumulate.
+         *
+         * ⛔ **There is no output store any more.** A purchase is minted onto the track at the moment
+         * the network draws it, so a docking port never holds bought matter at all; see the class
+         * note. Cargo waiting to be *sold* still waits here, briefly, because the belt hands it over
+         * rather than the mouth reaching for it.
          */
         val CAP: Long = 2L * MACHINE_BUFFER_CAP
-    }
-}
-
-/**
- * A standing order to sell [remaining] mass of whatever [filter] admits, worked down as the network
- * delivers it.
- *
- * ⛔ **Pure, or mixed, and never both** — see [SpeciesFilter.MIXED]. A per-species order is written
- * at [SpeciesFilter.MAX_PERCENT], so it takes that species and nothing blended; the ore order takes
- * everything blended and nothing pure. The two **partition** every lump between them, which is what
- * makes it safe to have both on one mouth: no lump can satisfy two orders, so attributing a delivery
- * to the order that pulled it in is never a guess.
- *
- * ⚠️ **It used to be a bare filter at any purity**, which was the same thing as "sell everything
- * with iron in it" — so a sell order for iron quietly gave away the ship's ore at a quarter rate,
- * which is precisely the trade `Market.sellValue` exists to make the player think about. The
- * `SELL` column shows [org.emerge.demo.outofspace.world.Stockpile.buildable], which counts only
- * stores holding nothing but that species, so the number and the order now agree about what will go.
- */
-data class SellOrder(val filter: SpeciesFilter, val remaining: Long) {
-    /** True while this order has no end — the `>>` button. */
-    val isEndless: Boolean get() = remaining == ENDLESS
-
-    companion object {
-        /**
-         * An order with no end: sell this, for as long as the ship keeps making it.
-         *
-         * ⚠️ **The same number [Acceptance.UNLIMITED] is, and deliberately the same one.** This
-         * becomes that when the acceptance is built, and two constants for one idea is how they
-         * drift apart.
-         */
-        const val ENDLESS: Long = Acceptance.UNLIMITED
-
-        /** Sell pure [species] — [mass], or [ENDLESS]. */
-        fun of(species: Species, mass: Long): SellOrder =
-            SellOrder(SpeciesFilter(species, SpeciesFilter.MAX_PERCENT), mass)
-
-        /** Sell mixed ore — [mass], or [ENDLESS]. */
-        fun ore(mass: Long): SellOrder = SellOrder(SpeciesFilter.MIXED, mass)
-    }
-}
-
-/**
- * A standing order to buy [remaining] mass of [species], worked down as the money allows — or
- * [ENDLESS], which is a different kind of order rather than a big number.
- *
- * ⛔ **A finite order is PUSHED and an endless one is PULLED**, and the difference is not a detail.
- * A finite order is a thing the player asked for, so it buys a packet and parks it in the output
- * store until the network comes for it. An endless order buys only what something aboard is
- * actually short of — because the port has *one* output store, and an endless order for something
- * nobody wants would fill it and starve every other order behind it for ever.
- *
- * ⚠️ **A finite order that never ended would drain the balance** the moment the player docked
- * somewhere well stocked, and the whole of the early game is a balance measured in the tens. What
- * makes the endless one safe is not a smaller appetite, it is that the network's own demand is the
- * appetite.
- */
-data class BuyOrder(val species: Species, val remaining: Long) {
-    /** True while this order has no end — the `<<` button. */
-    val isEndless: Boolean get() = remaining == ENDLESS
-
-    companion object {
-        /** Keep the ship supplied with this, for as long as it wants any. See [SellOrder.ENDLESS]. */
-        const val ENDLESS: Long = Acceptance.UNLIMITED
     }
 }

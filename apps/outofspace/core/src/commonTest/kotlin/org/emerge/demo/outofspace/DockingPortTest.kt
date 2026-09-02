@@ -29,10 +29,8 @@ import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.heatCapacityOf
-import org.emerge.demo.outofspace.world.machine.BuyOrder
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DockingPort
-import org.emerge.demo.outofspace.world.machine.SellOrder
 import org.emerge.sim.core.PlayerId
 
 /**
@@ -93,8 +91,8 @@ class DockingPortTest {
 
     /** A full tank at (2,3) pouring right into a docking port at (10,3). */
     private fun world(
-        sell: List<SellOrder> = listOf(SellOrder.of(Species.Iron, SellOrder.ENDLESS)),
-        buy: List<BuyOrder> = emptyList(),
+        orders: Map<Species, Long> = mapOf(Species.Iron to -DockingPort.ENDLESS),
+        ore: Long = 0L,
         market: Market? = Market.empty(),
         stock: Mixture = ore(6L * Capacity.PACKET_MASS),
         credits: Long = 0L,
@@ -111,7 +109,7 @@ class DockingPortTest {
         val grid = cfg.initialGrid
         val deck = DeckArray(grid)
         deck += fixtureStorage(tank, Direction.Right)
-        deck += DockingPort(port, Direction.Right, sell = sell, buy = buy)
+        deck += DockingPort(port, Direction.Right, orders = orders, ore = ore)
         val rails = arrayOfNulls<Segment>(grid.size)
         // Ten, so there is track under the port itself as well as up to its door.
         joinRow(grid, rails, 3, 10, 3)
@@ -169,7 +167,7 @@ class DockingPortTest {
         // filter applied at the mouth. A port with an empty list is a dead end: refusing at the door
         // alone would let the tank pour and pack the run solid against a mouth that will never take
         // it.
-        val s = run(world(sell = emptyList()), 60 * RAIL_PERIOD)
+        val s = run(world(orders = emptyMap()), 60 * RAIL_PERIOD)
         assertEquals(0L, s.exportedMass, "a port with nothing on its list sold something")
         assertEquals(0L, s.onTrack(), "the run filled up against a port that wants nothing")
     }
@@ -177,7 +175,7 @@ class DockingPortTest {
     @Test
     fun `a port is only sent what is on its list`() {
         // Selling titanium; the tank holds iron. Same shape as a warehouse locked to the wrong thing.
-        val s = run(world(sell = listOf(SellOrder.of(Species.Titanium, SellOrder.ENDLESS))), 60 * RAIL_PERIOD)
+        val s = run(world(orders = mapOf(Species.Titanium to -DockingPort.ENDLESS)), 60 * RAIL_PERIOD)
         assertEquals(0L, s.exportedMass, "iron was sold to a port listing only titanium")
         assertEquals(0L, s.onTrack(), "the run filled up against a list that will never admit it")
     }
@@ -210,7 +208,7 @@ class DockingPortTest {
                 // full purity and takes pure metal only, so a blend can reach the mouth by exactly
                 // one route — see [SellOrder]. Listing iron and forsterite separately routes nothing
                 // at all, which would have made this measure an empty mouth rather than a penalty.
-                sell = listOf(SellOrder.ore(SellOrder.ENDLESS)),
+                ore = -DockingPort.ENDLESS,
                 stock = Mixture.of(
                     Species.Iron to mass / 2, Species.Forsterite to mass / 2, energy = 0L,
                 ).atAmbient(),
@@ -234,11 +232,11 @@ class DockingPortTest {
         // the mouth declining to take: two packets asked for, two packets sold, and the rest of a
         // six-packet tank still in the tank. Were the order merely a filter with a counter beside
         // it, the belts would keep coming and the mouth would sell whatever turned up.
-        val start = world(sell = listOf(SellOrder.of(Species.Iron, 2L * Capacity.PACKET_MASS)))
+        val start = world(orders = mapOf(Species.Iron to -(2L * Capacity.PACKET_MASS)))
         val s = run(start, 120 * RAIL_PERIOD)
 
         assertEquals(2L * Capacity.PACKET_MASS, s.exportedMass, "a two-packet order did not sell two packets")
-        assertTrue((s.deck[port] as DockingPort).sell.isEmpty(), "a filled order stayed on the list")
+        assertEquals(0L, (s.deck[port] as DockingPort).permitted(Species.Iron), "a spent permission stayed on the book")
         assertEquals(0L, s.onTrack(), "the run kept filling after the order was done")
     }
 
@@ -246,14 +244,14 @@ class DockingPortTest {
     fun `an endless sell order does not stop`() {
         // The other side of the same rule, on the same tank: without this the test above passes for
         // the boring reason that nothing ever sells more than two packets.
-        val start = world(sell = listOf(SellOrder.of(Species.Iron, SellOrder.ENDLESS)))
+        val start = world(orders = mapOf(Species.Iron to -DockingPort.ENDLESS))
         val s = run(start, 120 * RAIL_PERIOD)
 
         assertTrue(
             s.exportedMass > 2L * Capacity.PACKET_MASS,
             "an endless order sold only ${s.exportedMass}",
         )
-        assertTrue((s.deck[port] as DockingPort).sell.isNotEmpty(), "an endless order completed")
+        assertEquals(-DockingPort.ENDLESS, (s.deck[port] as DockingPort).permitted(Species.Iron), "an unbounded permission was worked down")
     }
 
     @Test
@@ -261,19 +259,21 @@ class DockingPortTest {
         // The partition, through the whole machine rather than against `SpeciesFilter` directly.
         // This is what makes attributing a delivery to an order a fact rather than a guess.
         val dirty = dirtyOre(4L * Capacity.PACKET_MASS)
-        val bySpecies = run(world(sell = listOf(SellOrder.of(Species.Iron, SellOrder.ENDLESS)), stock = dirty), 60 * RAIL_PERIOD)
+        val bySpecies = run(world(orders = mapOf(Species.Iron to -DockingPort.ENDLESS), stock = dirty), 60 * RAIL_PERIOD)
         assertEquals(0L, bySpecies.exportedMass, "a pure-iron order gave away the ship's ore")
 
         val pure = ore(4L * Capacity.PACKET_MASS)
-        val byOre = run(world(sell = listOf(SellOrder.ore(SellOrder.ENDLESS)), stock = pure), 60 * RAIL_PERIOD)
+        // ⚠️ `orders` cleared explicitly: the fixture's default is an unbounded iron sell, and
+        // leaving it on would have this measure that order rather than the ore one.
+        val byOre = run(world(orders = emptyMap(), ore = -DockingPort.ENDLESS, stock = pure), 60 * RAIL_PERIOD)
         assertEquals(0L, byOre.exportedMass, "the ore order gave away refined metal")
     }
 
-    // ── Buying by pull ───────────────────────────────────────────────────────
+    // ── Buying is permission, drawn on by the network ────────────────────────
 
-    private fun buying(orders: List<BuyOrder>, wants: Species?): VesselState = run(
+    private fun permitting(orders: Map<Species, Long>, wants: Species?): VesselState = run(
         world(
-            sell = emptyList(), buy = orders, consumer = wants,
+            orders = orders, consumer = wants,
             market = Market.of(
                 Species.Titanium to 10L * Budget.TONNE, Species.Gold to 10L * Budget.TONNE,
             ),
@@ -283,48 +283,85 @@ class DockingPortTest {
     )
 
     @Test
-    fun `an endless order buys nothing the ship has no use for`() {
-        // ⛔ **The whole of what `<<` means.** A finite order is a thing the player asked for and is
-        // pushed; an endless one is pulled, and with nothing aboard short of titanium there is
-        // nothing to pull.
-        val s = buying(listOf(BuyOrder(Species.Titanium, BuyOrder.ENDLESS)), wants = null)
-        assertEquals(0L, s.importedMass, "an endless order bought what nothing wanted")
-        assertEquals(100_000_000L, s.credits, "money left the account for it too")
+    fun `a permission buys nothing the ship has no use for`() {
+        // ⛔ **The whole of what a buy figure IS.** It is not an instruction to purchase; it is a
+        // licence for the network to draw through the mouth. With nothing aboard short of titanium
+        // there is nothing to draw, so no money moves — and that holds for a bounded permission just
+        // as much as for an unbounded one, which is the part that changed.
+        for (permitted in listOf(Capacity.PACKET_MASS, DockingPort.ENDLESS)) {
+            val s = permitting(mapOf(Species.Titanium to permitted), wants = null)
+            assertEquals(0L, s.importedMass, "a permission of $permitted bought what nothing wanted")
+            assertEquals(100_000_000L, s.credits, "money left the account for it")
+        }
     }
 
     @Test
-    fun `an endless order buys what the ship is short of`() {
-        // The other side: without this the test above passes on an order that never buys anything.
-        val s = buying(listOf(BuyOrder(Species.Titanium, BuyOrder.ENDLESS)), wants = Species.Titanium)
+    fun `a permission is drawn on when the ship is short`() {
+        // The other side: without this the test above passes on a mouth that never buys at all.
+        val s = permitting(mapOf(Species.Titanium to DockingPort.ENDLESS), wants = Species.Titanium)
         assertTrue(s.importedMass > 0L, "a warehouse asking for titanium was never supplied")
         assertTrue(s.credits < 100_000_000L, "the titanium was free")
     }
 
     @Test
-    fun `a finite order buys even when nothing wants it`() {
-        // ⚠️ **Pushed, deliberately.** The player asked for this by name; it is allowed to sit in
-        // the mouth until they come for it. Only the endless kind waits to be asked.
-        val s = buying(listOf(BuyOrder(Species.Titanium, Capacity.PACKET_MASS)), wants = null)
-        assertTrue(s.importedMass > 0L, "an order the player placed by hand was not filled")
+    fun `a bounded permission stops at its bound`() {
+        // A warehouse that wants titanium for ever, against a licence for one packet of it.
+        val s = permitting(mapOf(Species.Titanium to Capacity.PACKET_MASS), wants = Species.Titanium)
+        assertEquals(Capacity.PACKET_MASS, s.importedMass, "a one-packet permission bought more than a packet")
+        assertEquals(
+            0L, (s.deck[port] as DockingPort).permitted(Species.Titanium),
+            "a spent permission stayed on the book",
+        )
     }
 
     @Test
-    fun `an endless order nobody wants does not starve the one behind it`() {
-        // ⛔ **The failure the pull rule exists to prevent.** A port has ONE output store and the
-        // list is worked in order, so an endless order for something nothing wants would buy a
-        // packet, park it in the only store there is, and block every order behind it for ever.
-        val s = buying(
-            listOf(
-                BuyOrder(Species.Gold, BuyOrder.ENDLESS),      // nothing aboard wants gold
-                BuyOrder(Species.Titanium, BuyOrder.ENDLESS),  // the warehouse wants titanium
+    fun `an unbounded permission does not stop`() {
+        val s = permitting(mapOf(Species.Titanium to DockingPort.ENDLESS), wants = Species.Titanium)
+        assertTrue(s.importedMass > Capacity.PACKET_MASS, "only ${s.importedMass} was ever drawn")
+        assertEquals(
+            DockingPort.ENDLESS, (s.deck[port] as DockingPort).permitted(Species.Titanium),
+            "an unbounded permission was worked down",
+        )
+    }
+
+    @Test
+    fun `the mouth never holds bought matter`() {
+        // ⛔ **A docking port has no output store**, so a purchase is minted onto the track and is
+        // never anywhere else. This is the assertion that would fail if buying ever went back to
+        // filling a buffer and waiting to be collected — which is what let one unwanted species
+        // block every other, and what made the mouth able to spend money on nothing.
+        val s = permitting(mapOf(Species.Titanium to DockingPort.ENDLESS), wants = Species.Titanium)
+        assertEquals(
+            null, s.inStore(port, BufferRole.Product),
+            "the mouth was holding a purchase instead of handing it straight over",
+        )
+        assertTrue(s.importedMass > 0L, "fixture: nothing was bought, so this proves nothing")
+    }
+
+    @Test
+    fun `a permission nobody wants does not starve the one beside it`() {
+        // ⛔ **The failure that made buying a pull in the first place.** While a purchase was pushed
+        // into a single output store, a permission for something nothing wanted would buy a packet,
+        // park it in the only store there is, and block everything behind it for ever.
+        val s = permitting(
+            mapOf(
+                Species.Gold to DockingPort.ENDLESS,      // nothing aboard wants gold
+                Species.Titanium to DockingPort.ENDLESS,  // the warehouse wants titanium
             ),
             wants = Species.Titanium,
         )
-        assertTrue(s.importedMass > 0L, "the order behind the unwanted one never ran")
-        assertEquals(
-            0L, s.inStore(port, BufferRole.Product)?.get(Species.Gold) ?: 0L,
-            "gold nobody wants was bought and left in the mouth",
-        )
+        assertTrue(s.importedMass > 0L, "the permission beside the unwanted one was never drawn on")
+        assertEquals(0L, s.stockOfAboard(Species.Gold), "gold nobody wants was bought anyway")
+    }
+
+    /** Everything of [species] anywhere aboard — belts, buffers and all. */
+    private fun VesselState.stockOfAboard(species: Species): Long {
+        var sum = 0L
+        for (i in 0 until grid.size) {
+            sum += rail.stuff[TileIndex(i), species]
+            sum += buffers.stuff[TileIndex(i), species]
+        }
+        return sum
     }
 
     // ── Where a sale lands ───────────────────────────────────────────────────
@@ -348,7 +385,7 @@ class DockingPortTest {
         // reserve, had nothing to do for the rest of the game.
         val post = Station(Mixture.EMPTY, Market.empty(), id = 3)
         val s = run(world(
-            sell = listOf(SellOrder.ore(SellOrder.ENDLESS)),
+            ore = -DockingPort.ENDLESS,
             stock = dirtyOre(4L * Capacity.PACKET_MASS),
         ).berthedTo(post), 60 * RAIL_PERIOD)
         val after = s.station(3)
@@ -369,7 +406,7 @@ class DockingPortTest {
         val post = Station(Mixture.EMPTY, Market.empty(), id = 3)
         val mass = 4L * Capacity.PACKET_MASS
         val s = run(world(
-            sell = listOf(SellOrder.ore(SellOrder.ENDLESS)),
+            ore = -DockingPort.ENDLESS,
             stock = Mixture.of(
                 Species.Iron to mass - Budget.GRAM, Species.Forsterite to Budget.GRAM, energy = 0L,
             ).atAmbient(),
@@ -388,7 +425,7 @@ class DockingPortTest {
         // all until its turn comes round, then exactly one batch.
         val ore = Mixture.of(Species.Iron to 4L * tonne, Species.Forsterite to tonne, energy = 0L)
         val post = Station(ore, Market.empty(), id = 3)
-        val start = world(sell = emptyList()).berthedTo(post)
+        val start = world(orders = emptyMap()).berthedTo(post)
 
         // ⚠️ **Counted in batches per window, not against the first firing.** [STATION_OFFSET]
         // decides only which tick of the period is the station's turn, so *when* the first batch
@@ -416,7 +453,7 @@ class DockingPortTest {
         // counter found it: the separated forsterite was not on the shelf it had been lifted onto.
         val ore = Mixture.of(Species.Iron to 4L * tonne, energy = 0L)
         val post = Station(ore, Market.empty(), id = 3)
-        val s = run(world(sell = emptyList()).berthedTo(post), STATION_PERIOD)
+        val s = run(world(orders = emptyMap()).berthedTo(post), STATION_PERIOD)
 
         assertEquals(
             CONCENTRATION_BATCH, s.station(3).market.stockOf(Species.Iron),
@@ -433,15 +470,15 @@ class DockingPortTest {
         )
     }
 
-    // ── Buying ───────────────────────────────────────────────────────────────
+    // ── Buying: the limits ───────────────────────────────────────────────────
 
     @Test
-    fun `a standing order arrives at the output port`() {
+    fun `a permission arrives on the track and not in the mouth`() {
         val stocked = Market.of(Species.Titanium to 10L * Budget.TONNE)
         val s = run(
             world(
-                sell = emptyList(),
-                buy = listOf(BuyOrder(Species.Titanium, Capacity.PACKET_MASS)),
+                orders = mapOf(Species.Titanium to Capacity.PACKET_MASS),
+                consumer = Species.Titanium,
                 market = stocked,
                 credits = 100_000_000L,
             ),
@@ -450,20 +487,17 @@ class DockingPortTest {
         assertTrue(s.importedMass > 0L, "nothing was bought")
         assertTrue(s.importedEnergy > 0L, "bought matter arrived at absolute zero")
         assertTrue(s.credits < 100_000_000L, "the purchase was free")
-        // ⛔ It must reach the *network*, not merely the machine — a purchase that cannot leave the
-        // mouth is a purchase the player cannot use.
-        assertTrue(
-            s.onTrack() > 0L || (s.inStore(port, BufferRole.Product)?.total ?: 0L) > 0L,
-            "the purchase never appeared",
-        )
+        // ⛔ **On the network, never in the machine.** A purchase is minted onto the track at the
+        // moment it is drawn; a mouth that held it would be the buffer this design does without.
+        assertEquals(null, s.inStore(port, BufferRole.Product), "the mouth held the purchase")
     }
 
     @Test
-    fun `an order nobody can afford is not filled`() {
+    fun `a permission nobody can afford is not drawn on`() {
         val s = run(
             world(
-                sell = emptyList(),
-                buy = listOf(BuyOrder(Species.Gold, Capacity.PACKET_MASS)),
+                orders = mapOf(Species.Gold to Capacity.PACKET_MASS),
+                consumer = Species.Gold,
                 market = Market.of(Species.Gold to Budget.TONNE),
                 credits = 1L,
             ),
@@ -474,11 +508,11 @@ class DockingPortTest {
     }
 
     @Test
-    fun `an order the counterparty cannot supply is not filled`() {
+    fun `a permission the counterparty cannot supply is not drawn on`() {
         val s = run(
             world(
-                sell = emptyList(),
-                buy = listOf(BuyOrder(Species.Titanium, Capacity.PACKET_MASS)),
+                orders = mapOf(Species.Titanium to Capacity.PACKET_MASS),
+                consumer = Species.Titanium,
                 market = Market.empty(),
                 credits = 1_000_000_000L,
             ),
@@ -488,17 +522,20 @@ class DockingPortTest {
     }
 
     @Test
-    fun `a completed order leaves the list`() {
+    fun `a spent permission leaves the book`() {
         val s = run(
             world(
-                sell = emptyList(),
-                buy = listOf(BuyOrder(Species.Titanium, Capacity.PACKET_MASS)),
+                orders = mapOf(Species.Titanium to Capacity.PACKET_MASS),
+                consumer = Species.Titanium,
                 market = Market.of(Species.Titanium to 10L * Budget.TONNE),
                 credits = 100_000_000L,
             ),
             60 * RAIL_PERIOD,
         )
-        assertEquals(emptyList(), (s.deck[port] as DockingPort).buy, "a filled order stayed on the list")
+        assertEquals(
+            0L, (s.deck[port] as DockingPort).permitted(Species.Titanium),
+            "a spent permission stayed on the book",
+        )
     }
 
     // ── The ledgers ──────────────────────────────────────────────────────────
@@ -509,8 +546,18 @@ class DockingPortTest {
         // directions, with mass AND energy booked — see `VesselState.importedEnergy`. Book the mass
         // and not the heat and `massBalance` reads zero while `heatBalance` reads a leak of exactly
         // the warmth that changed hands, which looks like an unrelated bug in the thermal sim.
+        // ⚠️ **A consumer, because buying is a pull now.** Without something aboard short of
+        // titanium the permission is never drawn on, and the test would assert an empty ledger is
+        // balanced — true, and proof of nothing.
+        // ⚠️ **Both directions on one book.** The fixture's iron sell has to be stated now that it
+        // shares a field with the titanium permission; dropping it left this asserting that an
+        // empty ledger balances, which is true and proves nothing.
         val start = world(
-            buy = listOf(BuyOrder(Species.Titanium, 20L * Capacity.PACKET_MASS)),
+            orders = mapOf(
+                Species.Iron to -DockingPort.ENDLESS,
+                Species.Titanium to 20L * Capacity.PACKET_MASS,
+            ),
+            consumer = Species.Titanium,
             market = Market.of(Species.Titanium to 50L * Budget.TONNE),
             credits = 100_000_000L,
         )
@@ -556,7 +603,7 @@ class DockingPortTest {
         // that changed hands, which reads as a bug in the thermal sim.
         val lump = ore(Capacity.PACKET_MASS)
         val start = bareWorld(
-            DockingPort(this.port, Direction.Right, sell = listOf(SellOrder.of(Species.Iron, SellOrder.ENDLESS))),
+            DockingPort(this.port, Direction.Right, orders = mapOf(Species.Iron to -DockingPort.ENDLESS)),
             Market.empty(),
         ).stocked(this.port, lump).anchored()
 
@@ -568,16 +615,19 @@ class DockingPortTest {
 
     @Test
     fun `buying books exactly the lump's mass and lands it at ambient`() {
-        val start = bareWorld(
-            DockingPort(port, Direction.Right, buy = listOf(BuyOrder(Species.Titanium, Capacity.PACKET_MASS))),
-            Market.of(Species.Titanium to 10L * Budget.TONNE),
+        // ⚠️ **Not `bareWorld`.** A purchase is minted onto the track and there is no track in a
+        // bare world, so nothing could ever be drawn — the old version of this could use a bare port
+        // because a purchase went into a buffer.
+        val start = world(
+            orders = mapOf(Species.Titanium to Capacity.PACKET_MASS),
+            consumer = Species.Titanium,
+            market = Market.of(Species.Titanium to 10L * Budget.TONNE),
             credits = 100_000_000L,
         )
-        val s = run(start, 1)
+        val s = run(start, 4 * RAIL_PERIOD)
 
-        val arrived = s.inStore(port, BufferRole.Product) ?: error("nothing was bought")
-        assertEquals(arrived.total, s.importedMass, "the mass booked is not the mass that arrived")
-        assertEquals(arrived.energy, s.importedEnergy, "the energy booked is not the energy that arrived")
+        assertTrue(s.importedMass > 0L, "nothing was bought")
+        val arrived = Mixture.of(Species.Titanium to s.importedMass, energy = s.importedEnergy)
         // ⚠️ Stated, not assumed: a purchase comes off a warehouse shelf, not out of a furnace.
         assertEquals(
             Temperature.AMBIENT_KELVIN,
@@ -588,39 +638,43 @@ class DockingPortTest {
     // ── The save ─────────────────────────────────────────────────────────────
 
     @Test
-    fun `sell and buy lists survive a round trip`() {
-        // One of each kind the mouth can hold: endless, finite, and the ore order — whose whole
-        // content is a *ceiling*, which is the field a `species:percent` line had nowhere to put.
-        val orders = listOf(
-            SellOrder.of(Species.Iron, SellOrder.ENDLESS),
-            SellOrder.of(Species.Titanium, 3L * Capacity.PACKET_MASS),
-            SellOrder.ore(Budget.TONNE),
+    fun `the signed book survives a round trip`() {
+        // One of each thing the book can say: unbounded both ways, bounded both ways, and the ore
+        // figure, which has no species to key on and rides the same field.
+        val book = mapOf(
+            Species.Iron to -DockingPort.ENDLESS,
+            Species.Titanium to -(3L * Capacity.PACKET_MASS),
+            Species.Gold to 5L * Budget.KILOGRAM,
+            Species.Copper to DockingPort.ENDLESS,
         )
-        val start = world(
-            sell = orders,
-            buy = listOf(BuyOrder(Species.Gold, 5L * Budget.KILOGRAM), BuyOrder(Species.Copper, Budget.TONNE)),
-        )
+        val start = world(orders = book, ore = -Budget.TONNE)
         val back = Save.read(Save.write(start)).deck[port] as DockingPort
 
-        // ⚠️ Compared whole rather than field by field: the filter carries three numbers now, and a
-        // per-field check is exactly how the ceiling would go missing without anything failing.
-        assertEquals(orders, back.sell, "the sell list did not come back as it went in")
-        // ⚠️ A buy order's mass goes through the file's mass scale like every other mass. A count
-        // read through it — or a mass read around it — is off by a factor of a million.
-        assertEquals(
-            listOf(BuyOrder(Species.Gold, 5L * Budget.KILOGRAM), BuyOrder(Species.Copper, Budget.TONNE)),
-            back.buy,
-        )
+        // ⚠️ Compared whole rather than key by key: the sign IS the direction, so a per-field check
+        // that lost one would read as a permission pointing the other way rather than as a failure.
+        assertEquals(book, back.orders, "the book did not come back as it went in")
+        assertEquals(-Budget.TONNE, back.ore, "the ore figure did not come back")
     }
 
     @Test
-    fun `a port with empty lists writes nothing and comes back empty`() {
-        val start = world(sell = emptyList())
-        val line = Save.write(start).lineSequence().first { it.contains("DockingPort") }
-        assertTrue("sell=" !in line && "buy=" !in line, "an untraded port wrote its empty lists: $line")
+    fun `an unbounded permission does not come back merely very large`() {
+        // ⛔ **ENDLESS is `Long.MAX_VALUE` and every mass in the file goes through the mass scale.**
+        // Written as a number it would come back multiplied — or overflowed — into something that
+        // behaves like a bound and is not one, and the player's `<<` would quietly become a very
+        // big `<`. So it is written as a bare sign with no number at all.
+        val start = world(orders = mapOf(Species.Iron to DockingPort.ENDLESS))
         val back = Save.read(Save.write(start)).deck[port] as DockingPort
-        assertEquals(emptyList(), back.sell)
-        assertEquals(emptyList(), back.buy)
+        assertEquals(DockingPort.ENDLESS, back.permitted(Species.Iron), "an unbounded permission came back bounded")
+    }
+
+    @Test
+    fun `a port with an empty book writes nothing and comes back empty`() {
+        val start = world(orders = emptyMap())
+        val line = Save.write(start).lineSequence().first { it.contains("DockingPort") }
+        assertTrue("orders=" !in line, "an untraded port wrote its empty book: $line")
+        val back = Save.read(Save.write(start)).deck[port] as DockingPort
+        assertEquals(emptyMap(), back.orders)
+        assertEquals(0L, back.ore)
     }
 
 }

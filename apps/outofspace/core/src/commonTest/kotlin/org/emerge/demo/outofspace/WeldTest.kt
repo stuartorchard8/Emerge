@@ -13,7 +13,6 @@ import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.SpeciesFilter
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DockingPort
-import org.emerge.demo.outofspace.world.machine.SellOrder
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.Composite
 import org.emerge.demo.outofspace.world.DockNode
@@ -391,7 +390,7 @@ class WeldTest {
         val (world, port) = berthedWorld()
         val listed = world.copy(
             deck = world.deck.also {
-                it[port.center] = port.copy(sell = listOf(SellOrder.of(Species.Titanium, SellOrder.ENDLESS)))
+                it[port.center] = port.copy(orders = mapOf(Species.Titanium to -DockingPort.ENDLESS))
             },
         )
         // ⚠️ The cargo goes in **after** the round trip, so this is the reloaded mouth doing the
@@ -480,7 +479,7 @@ class WeldTest {
         val (world, port) = berthedWorld()
         val selling = world.copy(
             deck = world.deck.also {
-                it[port.center] = port.copy(sell = listOf(SellOrder.of(Species.Titanium, SellOrder.ENDLESS)))
+                it[port.center] = port.copy(orders = mapOf(Species.Titanium to -DockingPort.ENDLESS))
             },
         ).stocked(port.center, Mixture.of(Species.Titanium to 500L * Budget.KILOGRAM, energy = 0L).atAmbient())
 
