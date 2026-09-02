@@ -24,8 +24,8 @@ sealed class Setting<out T> {
  * A snapshot of a machine's configurable settings, independent of its runtime state (buffers,
  * energy, progress).
  *
- * Captured by pressing **C** on a machine. The snapshot includes only settings that affect how a
- * machine behaves — wiring, facing, input keys, storage filters, tuning parameters — not transient
+ * Captured by pressing **B** on a machine — see `OutofspaceController.grab`. The snapshot includes
+ * only settings that affect how a machine behaves — wiring, facing, input keys, storage filters, tuning parameters — not transient
  * state like buffer contents, thermal energy, or processing progress.
  *
  * When pasted into another machine, only settings that both machines share are applied. Settings
@@ -59,6 +59,21 @@ data class MachineSettings(
         append(']')
     }
 }
+
+/**
+ * The same settings, pointed [facing] — or unchanged, for a machine that has no facing to point.
+ *
+ * ⛔ **[Setting.Absent] stays absent.** A hull does not face anywhere, and turning "this kind has no
+ * such setting" into "this kind faces right" would hand a facing to every machine that has none the
+ * moment the build cursor was turned. The three-way [Setting] exists precisely so that overriding a
+ * value and *inventing* one are different operations, and this is the one that overrides.
+ *
+ * What it is for: the build cursor carries a facing of its own, and a stamped click hands that facing
+ * over rather than the one that was captured — which is what makes rotating the brush and clicking a
+ * machine already on the deck a way of turning it. See `OutofspaceController.place`.
+ */
+fun MachineSettings.aimed(facing: Direction): MachineSettings =
+    if (this.facing is Setting.Absent) this else copy(facing = Setting.Present(facing))
 
 /**
  * Build a [MachineSettings] snapshot from a [DeckMachine].
@@ -192,8 +207,8 @@ fun DeckMachine.withSettings(settings: MachineSettings): DeckMachine {
             if (settings.facing is Setting.Present) result = result.copy(facing = settings.facing.value)
             result
         }
-        // Wiring and facing only. The two trade lists are not settings in the clipboard sense —
-        // copying a sell list onto another port would hand it the player's standing orders, which
+        // Wiring and facing only. The two trade lists are not settings in the sense a copy means —
+        // carrying a sell list onto another port would hand it the player's standing orders, which
         // is a different act from copying how a machine is set up.
         DeckMachineKind.DockingPort -> {
             base as DockingPort

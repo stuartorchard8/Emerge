@@ -1,0 +1,75 @@
+# B, and ESC. Copying something already in the world, and backing out of what you copied.
+#
+# The gesture the whole build editor now hangs off: point the inspector at a thing, press B, and you
+# are holding that thing -- its kind, its metal, its settings and the way it faces. Put it down on
+# bare deck and you have built another one exactly like it. Put it down on a machine of the same kind
+# and you have RE-TUNED that one instead: settings and facing hand over, the metal does not.
+#
+# It replaced C-then-V on the hovered tile, which was two keys, an invisible holding pen, and a rule
+# ("same kind of machine only") that could only be found by breaking it.
+#
+# What to read in the shots:
+#   `inspecting`   -- the DECK panel of a tuned furnace. This is what B is pointed at; the setpoint
+#                     and dwell shown here are the ones that have to come out the other end.
+#   `holding`      -- the build panel with FURNACE picked and, in green, "copied from a furnace".
+#                     ⛔ The green line is the whole of what tells a player they are holding a COPY
+#                     rather than a plain brush -- a stamped brush and an ordinary one are the same
+#                     entry in the palette and behave differently, so this line is not decoration.
+#   `cursor-build` -- the copy over bare deck: CYAN, the ordinary "this fits" colour.
+#   `cursor-retune`-- the same copy over the OTHER furnace: GREEN, and allowed. Neither cyan (it is
+#                     not building anything) nor red (it is not refused). Three answers, three
+#                     colours; this is the one that says "the tile being full is the reason it works".
+#   `copy-built`   -- the second furnace on the deck, and its panel: the setpoint came with it.
+#   `palette-open` -- ESC once. Still the build tool, nothing in hand, and the panel says so and
+#                     names B. A click here READS a tile rather than building -- see the line under
+#                     the palette.
+#
+# ⚠️ Every setting shown is read out of the machine's own DECK panel, never off the cursor: that the
+# controller is holding a setpoint proves nothing, which was exactly the old clipboard's failure.
+
+new
+creative 1
+camera centre 25 14 40
+
+# ── Two furnaces, one tuned and one not ──────────────────────────────────────
+material Firebrick
+brush FURNACE Right
+# ⚠️ Clear of the starter vessel's own machinery — `field build` is how those tiles were found.
+place 22 13
+place 30 13
+run 20
+
+# Turn the first one up. The dials are only reachable through the panel, which is the point of
+# driving them here rather than constructing a tuned machine: this is the player's own path.
+inspect 22 13 DECK
+tune 22 13 temp 4
+tune 22 13 dwell 3
+run 10
+shot inspecting
+
+# ── B ────────────────────────────────────────────────────────────────────────
+grab
+shot holding
+
+# The cursor, over nothing and then over the other furnace. Same brush, two different verbs.
+hover 26 18
+shot cursor-build
+hover 30 13
+shot cursor-retune
+
+# ── Putting the copy down on bare deck ───────────────────────────────────────
+place 26 18
+run 40
+inspect 26 18 DECK
+shot copy-built
+
+# ── ESC, one rung at a time ──────────────────────────────────────────────────
+# Out of the brush, into the palette: still building, holding nothing, and the panel says what that
+# state is for.
+escape
+hover off
+shot palette-open
+
+# Out of the palette, back to reading -- and the tile survives the trip.
+escape
+escape

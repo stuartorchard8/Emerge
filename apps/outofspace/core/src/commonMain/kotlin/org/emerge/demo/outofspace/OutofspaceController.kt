@@ -25,6 +25,10 @@ import org.emerge.demo.outofspace.world.machine.BuyOrder
 import org.emerge.demo.outofspace.world.machine.DockingPort
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.machine.Sensor
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
+import org.emerge.demo.outofspace.world.machine.DirectedDeckMachine
+import org.emerge.demo.outofspace.world.MachineSettings
+import org.emerge.demo.outofspace.world.aimed
 import org.emerge.demo.outofspace.world.toMachineSettings
 import org.emerge.demo.outofspace.world.withSettings
 import org.emerge.demo.outofspace.world.starterVessel
@@ -105,8 +109,42 @@ class OutofspaceController(
     /** Optional profiler for per-phase tick analysis. Null unless [enableProfiling] is called. */
     var profiler: PipelineProfiler? = null
 
-    /** What the player is about to place, and which way it will face. */
-    var brush: Brush = Brush.Run(Conduit.Rail)
+    /**
+     * The settings the brush is stamping out, or null when it is stamping out a plain one.
+     *
+     * ⛔ **Picked up off the world, never assembled by hand** — see [grab]. This is what makes a
+     * second furnace *the same* furnace as the first: its setpoint, its dwell, its wiring and the
+     * way it faces, carried on the cursor from the one the player already tuned. It is the whole of
+     * what the old C/V clipboard did, except that it is now the same act as choosing what to build,
+     * so there is nothing to remember to paste afterwards.
+     *
+     * ⚠️ **Always agrees with [brush], and the setter is what makes that true.** A [MachineSettings]
+     * belongs to a [DeckMachineKind] — a furnace's dwell means nothing to a pump — so picking a
+     * different building out of the palette drops it. Changing the *material* does not, and must
+     * not: "the same machine, in titanium" is the exact thing this is for.
+     */
+    var stamped: MachineSettings? = null
+        private set
+
+    /**
+     * What the player is about to place, or **null when they have not chosen** — see [Tool.Build].
+     *
+     * ⛔ **Null is a state the player is meant to be in**, not an absence to be defaulted away. It is
+     * the build tool with its palette open and nothing picked out of it yet, which is where ESC
+     * leaves them on the way out of a placement and where B leaves them when there was nothing under
+     * the inspector to copy. A click in that state reads a tile exactly as the inspector would —
+     * see [apply] — so the palette is somewhere you can stand and look around rather than a mode you
+     * have to leave to ask a question.
+     */
+    var brush: Brush? = null
+        set(value) {
+            // The settings are a *kind's* settings, so they cannot survive a change of kind. Dropped
+            // here rather than at each of the several call sites, because every one of them would
+            // have to remember and the one that forgot would paste a furnace's dwell into a pump.
+            if ((value as? Brush.Building)?.kind != stamped?.kind) stamped = null
+            field = value
+        }
+
     var brushFacing: Direction = Direction.Right
 
     /**
@@ -215,22 +253,56 @@ class OutofspaceController(
     var selected: TileIndex = TileIndex.NONE
         private set
 
-    /** Clipboard status: one-shot message shown in the HUD, cleared after being read. */
-    var clipboardStatus: String = ""
-        private set
-
     val state: VesselState get() = stepper.state
     val tick: Long get() = stepper.state.tick
 
     /**
-     * Puts the current brush on [tile], out of the current material.
+     * Puts the current brush on [tile], out of the current material — **or settles onto whatever is
+     * already standing there, if it is the same kind of thing.**
      *
-     * ⛔ **Does nothing at all when no material is chosen.** See [buildMaterial]: an edit with no
-     * substance is not a placement.
+     * ⛔ **Does nothing at all when no material is chosen, or no brush.** See [buildMaterial]: an
+     * edit with no substance is not a placement, and see [brush]: the palette with nothing picked
+     * out of it is a state the player stands in rather than one that places a default.
+     *
+     * ### Clicking a building you already have
+     *
+     * A stamped brush laid over a building of its own kind does not demolish it and does not refuse:
+     * it **hands over the settings and nothing else**, which is the paste half of the old clipboard
+     * arriving as the natural consequence of the copy half rather than as a second key to remember.
+     * The material is emphatically not part of it — that machine is made of what it is made of, and
+     * a click that quietly recast a titanium furnace in iron because the cursor was carrying iron
+     * would be a demolition wearing a placement's clothes.
+     *
+     * ⚠️ **The facing comes off the cursor, not off the stamp**, and that is what makes this a way of
+     * *turning* things: R turns the brush, the click hands the new facing over, and a machine the
+     * player is standing in front of swings round. Turning by copying is a strange sentence, but the
+     * gesture is exactly the one a player already knows — pick up, aim, click — and it means the
+     * rotate key does the same thing to a thing on the deck as it does to a thing on the cursor.
      */
     fun place(tile: TileIndex) {
         val material = buildMaterial ?: return
-        pending.add(Edit.Place(tile, brush, brushFacing, material))
+        val brush = brush ?: return
+        stampOnto(tile, brush)?.let { pending.add(it); return }
+        // The stamp rides on the placement rather than following it — see [Edit.Place.settings]. It
+        // is passed unaimed: the edit already carries the facing, and the reducer is where the two
+        // are reconciled, so there is exactly one place that can get it wrong.
+        pending.add(Edit.Place(tile, brush, brushFacing, material, stamped))
+    }
+
+    /**
+     * The edit a stamped click on [tile] would raise instead of a placement, or null if this click is
+     * an ordinary placement after all.
+     *
+     * Shared by [place] and [planAt] on purpose: the cursor draws a settings hand-over differently
+     * from a build, and the two must never disagree about which of them is about to happen — the
+     * same argument [BuildPlan.allowed] is held to.
+     */
+    private fun stampOnto(tile: TileIndex, brush: Brush): Edit.ReplaceDeckMachine? {
+        val settings = stamped ?: return null
+        if (brush !is Brush.Building) return null
+        val standing = state.machineCovering(tile) ?: return null
+        if (standing.kind != settings.kind) return null
+        return Edit.ReplaceDeckMachine(tile, standing.withSettings(settings.aimed(brushFacing)))
     }
 
     /**
@@ -248,11 +320,17 @@ class OutofspaceController(
      */
     fun planAt(tile: TileIndex): BuildPlan? {
         if (mode != Mode.Build || tool != Tool.Build || tile == TileIndex.NONE) return null
-        val allowed = buildMaterial != null && when (val b = brush) {
+        val brush = brush ?: return null
+        // ⚠️ **Asked first, because it is a different answer and not a softer one.** A stamped brush
+        // over a machine of its own kind would fail `canStand` — something is standing there, which
+        // is the point — and drawing that as a refusal would tell the player the exact opposite of
+        // what the click is about to do.
+        if (stampOnto(tile, brush) != null) return BuildPlan(tile, brush, brushFacing, allowed = true, settingsOnly = true)
+        val allowed = buildMaterial != null && when (brush) {
             // Track goes anywhere there is grid: the layers no longer exclude each other, and a run
             // drawn over a run it already has is a no-op rather than a mistake — see `layConduit`.
             is Brush.Run -> true
-            is Brush.Building -> state.canStand(b.kind, tile, brushFacing)
+            is Brush.Building -> state.canStand(brush.kind, tile, brushFacing)
         }
         return BuildPlan(tile, brush, brushFacing, allowed)
     }
@@ -392,7 +470,13 @@ class OutofspaceController(
     fun apply(tile: TileIndex) {
         select(tile)
         when (tool) {
-            Tool.Build -> {
+            // ⛔ **With nothing picked out of the palette, a click *reads* the tile.** The palette
+            // stays open — this is not a slip back into the inspector, it is the build tool with
+            // its hands empty — and the two things a player does at that moment are the same thing:
+            // "what is this?" and "give me one of those" (B, see [grab]) both start with a click on
+            // the machine. A click that did nothing at all would make the palette a room with the
+            // lights off.
+            Tool.Build -> if (brush == null) inspect(tile) else {
                 place(tile)
                 if (brush is Brush.Run) dragFrom = tile
             }
@@ -437,11 +521,13 @@ class OutofspaceController(
                 cutAt(at, dir)
             } else {
                 // Same refusal as [place], and it has to be here too: a drag is its own edit and
-                // does not go through the brush.
+                // does not go through the brush. An empty palette is one of them now — a drag with
+                // nothing picked lays nothing, exactly as the click it started with placed nothing.
                 val material = buildMaterial ?: return
+                val held = brush ?: return
                 place(next)
                 pending.add(
-                    Edit.Lay(at, next, (brush as? Brush.Run)?.conduit ?: Conduit.Rail, material),
+                    Edit.Lay(at, next, (held as? Brush.Run)?.conduit ?: Conduit.Rail, material),
                 )
             }
             at = next
@@ -536,45 +622,111 @@ class OutofspaceController(
     ))
 
     /**
-     * Copies the settings from the machine at [tile] to the internal clipboard.
+     * Takes the build tool out, holding a copy of **whatever layer of whatever tile the inspector is
+     * reading** — material, settings, facing and all. What **B** does.
      *
-     * Pressing **C** on a machine calls this. The clipboard holds one machine's settings at a time;
-     * pasting overwrites it. Returns a status message for the HUD.
+     * ### The one gesture
+     *
+     * This replaced a clipboard: **C** captured a machine's settings and **V** stamped them onto
+     * another one, which is two keys, an invisible holding pen, and a rule ("only onto the same kind
+     * of machine") that could only be discovered by breaking it. Every automation game the player
+     * has already played spells the same idea as one key that hands you the thing you are pointing
+     * at, so that is what this is: point at a furnace, press B, and you are holding a furnace —
+     * tuned the way that one is, made of what that one is made of, aimed the way that one is aimed.
+     * Putting it down somewhere empty builds one. Putting it down on another furnace tunes *that*
+     * one — see [place]. There is nothing else to learn.
+     *
+     * ⚠️ **It reads the inspector's layer, not the tile.** A tile is not one thing, and the inspector
+     * has already made the player say which of its things they mean — see [InspectLayer]. So B on
+     * the DECK layer hands over the building and B on the RAIL layer hands over a length of track in
+     * the metal that track is made of, and neither has to guess.
+     *
+     * With nothing under the inspector it still takes the build tool out, with the palette empty:
+     * "build something" is what the key means even when there is nothing to copy, and a key that did
+     * nothing at all would read as broken. Returns whether anything was actually picked up.
      */
-    fun copySettings(tile: TileIndex): String {
-        val machine = state.machineCovering(tile) ?: run {
-            clipboardStatus = "no machine there"
-            return clipboardStatus
+    fun grab(): Boolean {
+        tool = Tool.Build
+        val tile = inspectTile
+        if (tile == TileIndex.NONE) return false
+        val conduit = when (inspectLayer) {
+            InspectLayer.Deck -> {
+                val machine = state.machineCovering(tile) ?: return false
+                // ⚠️ **Through the setter, and before the settings are written.** Assigning the brush
+                // is what clears a stamp left over from the last thing grabbed; doing it afterwards
+                // would drop the settings this call just took.
+                brush = Brush.Building(machine.kind)
+                stamped = machine.toMachineSettings()
+                buildMaterial = state.deck.materialOf(machine)
+                (machine as? DirectedDeckMachine)?.let { brushFacing = it.facing }
+                return true
+            }
+            InspectLayer.Rail -> Conduit.Rail
+            InspectLayer.Pipe -> Conduit.Pipe
+            InspectLayer.Wire -> Conduit.Signal
+            InspectLayer.Power -> Conduit.Power
+            // There is no brush for a room. The air is the one layer the inspector always offers,
+            // so this is the case a player reaches by pressing B on bare deck, and the honest answer
+            // is the empty palette they are now holding.
+            InspectLayer.Atmosphere -> return false
         }
-        SettingsClipboard.copy(machine.toMachineSettings())
-        clipboardStatus = "copied ${machine.kind.label}"
-        return clipboardStatus
+        val material = state.conduits.materialAt(conduit, tile) ?: return false
+        brush = Brush.Run(conduit)
+        buildMaterial = material
+        return true
     }
 
     /**
-     * Pastes the clipboard settings onto the machine at [tile].
+     * Steps one rung out of wherever the player is standing, or reports that they are already at the
+     * top — see [Tool] and [brush] for what the rungs are.
      *
-     * Pressing **V** on a machine calls this. Only settings that both machines share are applied.
-     * Returns a status message for the HUD.
+     * ### One key, one ladder
+     *
+     * ESC used to mean "clear the selection", which is one useful thing out of the five or six a
+     * player wants when they press it. What they actually mean is *back*: out of the thing I am
+     * holding, out of the tile I was reading, out of the game. Those are nested, so they are a
+     * ladder and not a list, and the whole of this method is saying which rung is below which:
+     *
+     * 1. holding a brush (or a destructive tool) — put it down
+     * 2. the build palette, open and empty — close it, back to reading
+     * 3. a tile under the inspector — stop reading it
+     * 4. nothing — *this returns false*, and the caller opens the menu
+     *
+     * ⚠️ **Rung 1 lands on rung 3, not rung 2**, when what is being put down is DELETE, CANCEL or
+     * CUT: those are not places you were building from, so stepping out of them into a build palette
+     * would be a rung the player never climbed. The tile they were pointed at is kept, because it is
+     * what they were looking at the whole time.
+     *
+     * ⛔ **The menu is not this method's business.** It is a sheet, it dims the screen, and it is the
+     * one rung that is view state rather than tool state — so this reports the ladder is exhausted
+     * and lets whoever owns the sheets open it. See `OutofspaceHud.escape`.
      */
-    fun pasteSettings(tile: TileIndex): String {
-        val settings = SettingsClipboard.contents ?: run {
-            clipboardStatus = "nothing copied"
-            return clipboardStatus
+    fun escape(): Boolean {
+        // Flight is not on the ladder — it is the other half of the game, and the way out of it is
+        // the same key because there is always a way out. Taken first so a pilot never has to press
+        // it twice.
+        if (mode == Mode.Flight) { mode = Mode.Build; return true }
+        when (tool) {
+            Tool.Build -> {
+                // Put the brush down but keep the palette open: the player asked to stop placing
+                // *this*, which is not the same as asking to stop building.
+                if (brush != null) { brush = null; return true }
+                tool = Tool.Inspect
+                return true
+            }
+            // Every tool that is not reading the world is one rung: down to the inspector, still
+            // pointed at whatever tile it was pointed at.
+            Tool.Delete, Tool.Cancel, Tool.Cut, Tool.Inject, Tool.InjectWater -> {
+                tool = Tool.Inspect
+                return true
+            }
+            Tool.Inspect -> {
+                if (inspectTile == TileIndex.NONE && selected == TileIndex.NONE) return false
+                select(TileIndex.NONE)
+                inspect(TileIndex.NONE)
+                return true
+            }
         }
-        val target = state.machineCovering(tile) ?: run {
-            clipboardStatus = "no machine there"
-            return clipboardStatus
-        }
-        // Only paste if the target is the same kind of machine
-        if (target.kind != settings.kind) {
-            clipboardStatus = "wrong machine type"
-            return clipboardStatus
-        }
-        val replaced = target.withSettings(settings)
-        pending.add(Edit.ReplaceDeckMachine(tile, replaced))
-        clipboardStatus = "pasted ${settings.kind.label}"
-        return clipboardStatus
     }
 
     /**
@@ -728,9 +880,15 @@ class OutofspaceController(
         pending.add(Edit.Remove(tile, layer))
     }
 
+    /**
+     * Steps along the palette, and **picks the first entry when nothing is held** — an empty palette
+     * is where the key is most likely to be pressed, and wrapping from "nothing" to the far end
+     * would make TAB's first press the one that behaves differently from all the rest.
+     */
     fun cycleBrush(delta: Int) {
         val all = Brush.ALL
-        brush = all[((all.indexOf(brush) + delta) % all.size + all.size) % all.size]
+        val at = brush?.let { all.indexOf(it) } ?: return run { brush = all[if (delta >= 0) 0 else all.lastIndex] }
+        brush = all[((at + delta) % all.size + all.size) % all.size]
     }
 
     fun rotateBrush() {

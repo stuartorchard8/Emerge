@@ -92,9 +92,6 @@ class OutofspaceHud {
     /** What the last save or load did, shown next to the buttons. Blank until something happens. */
     var saveStatus: String = ""
 
-    /** What the last clipboard action did, shown next to save status. Cleared after being read. */
-    var clipboardStatus: String = ""
-
     // ── Save/load dialog state ────────────────────────────────────────────────────────────────
     /** Whether the name input field is capturing keyboard characters. */
     var capturingName: Boolean = false
@@ -200,7 +197,12 @@ class OutofspaceHud {
      * ⚠️ **An enum rather than a flag apiece**, now there are two: a sheet dims the world behind it,
      * so two open at once is two scrims and a player who cannot tell which of them a click reaches.
      */
-    private var openSheet: Sheet = Sheet.None
+    var openSheet: Sheet = Sheet.None
+        // ⚠️ Readable, because it is the top rung of the ESC ladder and a test that could not see it
+        // could only assert on the pause it happens to cause. Writable only through [openMenu] and
+        // the dismissals below, which is what keeps "the menu is up" and "the world is stopped" from
+        // drifting apart.
+        private set
 
     /**
      * Whether the vessel was berthed last frame, so that arriving can open the counter by itself.
@@ -211,6 +213,65 @@ class OutofspaceHud {
      * the player is looking at, not about the vessel.
      */
     private var wasBerthed: Boolean = false
+
+    /**
+     * Where the pause switch was standing when the menu put the game on hold — see [openMenu].
+     */
+    private var pausedBeforeMenu: Boolean = false
+
+    /**
+     * Opens the game's own menu, **and stops the world while it is up**.
+     *
+     * ⛔ **The pause is the menu, not a courtesy attached to it.** This is the one screen that is not
+     * about the vessel: it is where you save, load, throw the ship away and read the instruments, and
+     * every one of those is a decision made *about* a world rather than *in* one. A game that carried
+     * on tumbling behind the scrim would be asking the player to make it in a hurry.
+     *
+     * ⚠️ Idempotent, because the top of the ESC ladder can be pressed twice.
+     */
+    fun openMenu(controller: OutofspaceController) {
+        if (openSheet == Sheet.Menu) return
+        pausedBeforeMenu = controller.paused
+        controller.paused = true
+        openSheet = Sheet.Menu
+    }
+
+    /**
+     * Shuts the menu and gives the pause switch back.
+     *
+     * ⚠️ **Only if nothing moved it in the meantime.** The menu has a PLAY button in it and SPACE
+     * still works behind it, so a player who deliberately started the world running from inside the
+     * menu means it — putting the switch back unconditionally would undo that a fraction of a second
+     * later and read as a menu that refuses to let go.
+     */
+    private fun closeMenu(controller: OutofspaceController) {
+        if (openSheet != Sheet.Menu) return
+        if (controller.paused) controller.paused = pausedBeforeMenu
+        openSheet = Sheet.None
+    }
+
+    /**
+     * One rung out — the whole of what ESC means, from anywhere in the game.
+     *
+     * The sheets sit above everything the controller knows about: they dim the world and take every
+     * click, so a player looking at one is one step further out than a player holding a brush, and
+     * ESC has to reach the scrim before it reaches the cursor. Below them the ladder is
+     * [OutofspaceController.escape]'s, and the bottom rung of that one is this method's business
+     * again — when there is nothing left to step out of, ESC opens the menu.
+     *
+     * ⛔ **The order here *is* the hierarchy.** It reads top-down deliberately: menu, then any other
+     * sheet, then the tool ladder, then the menu again from the other end.
+     */
+    fun escape(controller: OutofspaceController) {
+        when (openSheet) {
+            Sheet.Menu -> closeMenu(controller)
+            // The save dialog is holding the keyboard as well as the screen, so it gets shut down
+            // rather than merely hidden.
+            Sheet.SaveLoad -> closeSaveLoadDialog()
+            Sheet.Readouts, Sheet.Trade -> openSheet = Sheet.None
+            Sheet.None -> if (!controller.escape()) openMenu(controller)
+        }
+    }
 
     private val collapsed = mutableSetOf<String>()
     private val expanded = mutableSetOf<String>()
@@ -306,21 +367,42 @@ class OutofspaceHud {
                 )
                 gap()
                 if (controller.tool == Tool.Build) {
-                    title("BUILD  ·  ${controller.brush.label} facing ${controller.brushFacing.name.uppercase()}")
+                    val held = controller.brush
+                    title(
+                        if (held == null) "BUILD  ·  NOTHING PICKED"
+                        else "BUILD  ·  ${held.label} facing ${controller.brushFacing.name.uppercase()}",
+                    )
                     for (option in Brush.ALL) {
-                        val selected = option == controller.brush
+                        val selected = option == held
                         button(
                             if (selected) "> ${option.label}" else "  ${option.label}",
                             if (selected) brushColor(option) or 0xFFL else 0x232A38FFL,
                         ) { controller.brush = option }
                     }
                     gap()
-                    text("click or drag to place", 0x9A9A9AFFL)
-                    // Track: drag to connect (not by touching).
-                    if (controller.brush is Brush.Run) {
-                        text("DRAG to connect · a click alone joins nothing", 0xE8B84AFFL)
+                    // ⛔ **The empty palette says what it is for, not what is missing.** It is a place
+                    // to stand — clicking still reads a tile, which is the half of it a player would
+                    // never guess — and it is where B is pressed, which is the other half.
+                    if (held == null) {
+                        text("pick one above · or click a tile to read it", 0x9A9A9AFFL)
+                        text("B copies whatever the inspector is reading", 0xE8B84AFFL)
+                    } else {
+                        text("click or drag to place", 0x9A9A9AFFL)
+                        // Track: drag to connect (not by touching).
+                        if (held is Brush.Run) {
+                            text("DRAG to connect · a click alone joins nothing", 0xE8B84AFFL)
+                        }
+                        text("R rotate brush", 0x9A9A9AFFL)
                     }
-                    text("R rotate brush", 0x9A9A9AFFL)
+                    // ⚠️ **Said out loud, because it is otherwise invisible.** A stamped brush looks
+                    // exactly like a plain one in the palette and behaves differently in two ways —
+                    // it carries settings, and a click on a machine of its own kind tunes that one
+                    // instead of refusing. A player who cannot see they are holding a copy reads the
+                    // second of those as the build tool doing something at random.
+                    controller.stamped?.let {
+                        text("copied from a ${it.kind.label.lowercase()} · settings + facing", 0x6FCF97FFL)
+                        text("click one of those to re-tune it in place", 0x6FCF97FFL)
+                    }
 
                     // ── What it is to be made of ──────────────────────────────
                     //
@@ -385,6 +467,11 @@ class OutofspaceHud {
                     text("click a tile to read it  ·  click again for the next layer", 0x9A9A9AFFL)
                 }
                 text("Q tool · WASD or right-drag pan · wheel zoom", 0x9A9A9AFFL)
+                // ⚠️ **The two keys the whole editor is reached through, said in one line.** B is
+                // the way in — point at a thing, get one of those — and ESC is the way back out of
+                // whatever B left you holding, one rung at a time, all the way to the menu. Neither
+                // is discoverable from a panel that only names the tool you are already in.
+                text("B copy what you're inspecting · ESC back out", 0x9A9A9AFFL)
                 text("space pause", 0x9A9A9AFFL)
                 text("F8 fit grid", 0x9A9A9AFFL)
                 if (canSave) text("F9 save · F10 load", 0x9A9A9AFFL)
@@ -424,7 +511,6 @@ class OutofspaceHud {
         }
         // Clear one-shot status messages after they've been displayed.
         saveStatus = ""
-        clipboardStatus = ""
     }
 
     /**
@@ -679,7 +765,6 @@ class OutofspaceHud {
         val body: org.emerge.render.torus.ui.PanelBuilder.() -> Unit = {
             if (canSave) {
                 if (saveStatus.isNotEmpty()) text(saveStatus, 0x9AA4B4FFL)
-                if (clipboardStatus.isNotEmpty()) text(clipboardStatus, 0x9AA4B4FFL)
                 actionRow(
                     listOf(
                         Triple("SAVE  ·  F9", 0x2E5A6BFFL) { onSave() },
@@ -701,7 +786,9 @@ class OutofspaceHud {
             // Last, alone, and the only red thing in here: it throws the vessel away.
             button("RESET", 0xCC3333FFL) { onReset(); openSheet = Sheet.None }
         }
-        val dismiss = { openSheet = Sheet.None }
+        // ⚠️ **Through [closeMenu], not by clearing the sheet**, or the world stays stopped behind a
+        // menu that is no longer there.
+        val dismiss = { closeMenu(controller) }
         // ⛔ A centred popover where there is room and a bottom sheet where there is not: a
         // full-width sheet on a desktop monitor is a metre of empty table with six words on it, and
         // a centred box on a phone is a postage stamp you cannot hit.

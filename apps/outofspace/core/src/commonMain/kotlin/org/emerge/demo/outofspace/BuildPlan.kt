@@ -40,4 +40,14 @@ data class BuildPlan(
      * the way, or hanging off the rim, or filling the room that has nowhere to put its air.
      */
     val allowed: Boolean,
+    /**
+     * Whether the click would **tune what is already there** rather than build anything — see
+     * `OutofspaceController.place`.
+     *
+     * ⛔ **Not a shade of [allowed], a different verb.** A stamped brush over a machine of its own
+     * kind is the one case where the tile being occupied is the reason the click works, so a cursor
+     * that drew it in the refusal colours would say the exact opposite of what is about to happen.
+     * It is always allowed when it is true: there is nothing to fit, only settings to hand over.
+     */
+    val settingsOnly: Boolean = false,
 )

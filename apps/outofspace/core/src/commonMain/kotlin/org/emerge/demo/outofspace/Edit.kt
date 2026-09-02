@@ -35,6 +35,18 @@ sealed interface Edit {
         val brush: Brush,
         val facing: Direction,
         val material: Species,
+        /**
+         * How the thing arrives already tuned, or null for one straight out of the box.
+         *
+         * ⛔ **On the placement and not a second edit after it.** A copy of a machine is *one* act —
+         * see `OutofspaceController.grab` — and splitting it in two would put a tick between the
+         * building appearing and the building being the building the player asked for, which is a
+         * tick in which a wire could fire off a default nobody chose. It would also have to name the
+         * machine it meant, and on the tick it is placed there is nothing there to name.
+         *
+         * Ignored for a [Brush.Run]: there is nothing to set on a length of track.
+         */
+        val settings: org.emerge.demo.outofspace.world.MachineSettings? = null,
     ) : Edit
     data class Rotate(val tile: TileIndex) : Edit
     /**
@@ -199,11 +211,14 @@ sealed interface Edit {
     /**
      * Replaces a deck machine in place: same tile, same position, but with different settings.
      *
-     * Used by the settings clipboard: copy (C) captures settings from one machine, paste (V)
-     * applies them to another by replacing the machine object while keeping its position intact.
-     * The [machine] carries all the configuration — wiring, facing, tunables — while the reducer
-     * preserves the machine's energy state and buffer contents by applying the edit over the
-     * existing world state.
+     * What a **stamped build click on a machine that is already there** raises — see
+     * `OutofspaceController.place`. The [machine] carries all the configuration, wiring, facing and
+     * tunables included, while the reducer keeps its metal, its energy and its buffers exactly where
+     * they were: this is a machine being *re-tuned*, not one being replaced.
+     *
+     * ⚠️ **Refused when the new facing would not fit**, which only a machine whose footprint is not
+     * square can manage — a bridge swinging off two tiles and onto two others. Same rule as
+     * [Rotate], and for the same reason.
      */
     data class ReplaceDeckMachine(val tile: TileIndex, val machine: org.emerge.demo.outofspace.world.machine.DeckMachine) : Edit
 

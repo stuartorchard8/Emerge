@@ -238,10 +238,41 @@ object OutofspaceAgentHarness {
                     controller.reset(state.copy(creative = t.getOrNull(1) != "0"))
                     println("[agent] creative -> ${state.creative}")
                 }
+                // `brush none` empties the palette — the state ESC leaves the player in and the one
+                // a click reads a tile from instead of building. Reachable in the game by pressing
+                // ESC once while holding something, and until now not reachable from a script.
                 "brush" -> {
-                    controller.brush = kind(t[1])
+                    controller.brush = if (t[1].equals("none", true)) null else kind(t[1])
                     t.getOrNull(2)?.let { controller.brushFacing = direction(it) }
-                    println("[agent] brush -> ${controller.brush.label} facing ${controller.brushFacing}")
+                    println("[agent] brush -> ${controller.brush?.label ?: "nothing picked"} facing ${controller.brushFacing}")
+                }
+                /*
+                 * `grab` — the B key. Takes a copy of whatever the inspector is reading: the
+                 * building on the DECK layer or the track on the RAIL one, in its own metal and with
+                 * its own settings, and puts the build tool in the player's hand holding it.
+                 *
+                 * Goes through the controller and not through a hand-built brush on purpose, because
+                 * the whole of what it does is *derive* the brush, the material, the facing and the
+                 * settings from something already standing in the world — a script that set those
+                 * four itself would be testing that it can set four fields.
+                 */
+                "grab" -> {
+                    val got = controller.grab()
+                    settle()
+                    println("[agent] grab -> " + if (!got) "nothing (palette empty)" else
+                        "${controller.brush?.label} of ${controller.buildMaterial?.name} facing ${controller.brushFacing}" +
+                            (controller.stamped?.let { " settings $it" } ?: " (no settings)"))
+                }
+                /*
+                 * `escape` — one rung out of the tool hierarchy, exactly as the key does. The sheets
+                 * are above this and belong to the HUD, so a script that has run out of rungs is
+                 * told so rather than being handed a menu it cannot photograph from here.
+                 */
+                "escape" -> {
+                    val stepped = controller.escape()
+                    settle()
+                    println("[agent] escape -> " + if (!stepped) "already at the top (a player would get the MENU)" else
+                        "${controller.tool.label} ${controller.brush?.label ?: "-"} tile ${controller.inspectTile.index}")
                 }
                 "facing" -> { controller.brushFacing = direction(t[1]); println("[agent] facing -> ${controller.brushFacing}") }
                 /*
@@ -270,7 +301,7 @@ object OutofspaceAgentHarness {
                     controller.dragTo(index(t[3], t[4]))
                     controller.endDrag()
                     settle()
-                    println("[agent] drag (${t[1]},${t[2]}) -> (${t[3]},${t[4]}) with ${controller.brush.label}")
+                    println("[agent] drag (${t[1]},${t[2]}) -> (${t[3]},${t[4]}) with ${controller.brush?.label ?: "nothing picked"}")
                 }
                 // The build drag's exact opposite: the edges the stroke draws become anti-edges on
                 // one conduit, and nothing is taken up. A single tile draws no edge and so cuts
@@ -360,6 +391,30 @@ object OutofspaceAgentHarness {
                 }
 
                 "rotate" -> { controller.rotate(index(t[1], t[2])); settle() }
+                /*
+                 * `tune <x> <y> temp|dwell [steps]` — a furnace's two dials, stepped the way the
+                 * panel's own buttons step them.
+                 *
+                 * ⚠️ **A tick between each step, and it is not optional.** Every one of these reads
+                 * the machine's *current* rung to work out the next, so a burst of them queued in
+                 * one tick would all read the same starting value and the last would win — the dial
+                 * would appear to move one notch however many times it was pressed.
+                 */
+                "tune" -> {
+                    val at = index(t[1], t[2])
+                    val steps = t.getOrNull(4)?.toInt() ?: 1
+                    repeat(steps) {
+                        when (t[3].lowercase()) {
+                            "temp" -> controller.cycleDecomposerTemperature(at, 1)
+                            "dwell" -> controller.cycleDecomposerDwell(at, 1)
+                            else -> error("cannot tune '${t[3]}' (have temp, dwell)")
+                        }
+                        controller.stepOnce()
+                    }
+                    settle()
+                    val m = controller.state.machineCovering(at)
+                    println("[agent] tune ${t[1]},${t[2]} ${t[3]} x$steps -> $m")
+                }
                 // `wire <x> <y> <ALWAYS|WIRE> [not]` — appends one RUN term, which is the whole
                 // of the wiring grammar a script has ever needed. Without it an airlock cannot be
                 // opened headlessly at all: it ships wired to nothing on purpose, so every screenshot
@@ -437,7 +492,10 @@ object OutofspaceAgentHarness {
                     println("[agent] hover -> " + if (hovered == TileIndex.NONE) "nothing" else
                         "${state.grid.xOf(hovered)},${state.grid.yOf(hovered)}" +
                             (controller.planAt(hovered)?.let { p ->
-                                " (${p.brush.label} ${p.facing} ${if (p.allowed) "fits" else "REFUSED"})"
+                                // ⚠️ Three answers, not two — a stamped brush over a machine of its
+                                // own kind neither fits nor is refused, it re-tunes what is there.
+                                " (${p.brush.label} ${p.facing} " +
+                                    (if (p.settingsOnly) "RE-TUNES" else if (p.allowed) "fits" else "REFUSED") + ")"
                             } ?: ""))
                 }
                 "overlay" -> {

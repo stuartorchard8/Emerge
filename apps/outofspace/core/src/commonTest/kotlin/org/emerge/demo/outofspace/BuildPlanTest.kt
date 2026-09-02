@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.BufferLayer
+import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.RailLayer
@@ -70,9 +71,19 @@ class BuildPlanTest {
         return after == kind && before != kind
     }
 
+    /**
+     * The build tool out, something picked, something to build it out of — a player mid-build.
+     *
+     * ⚠️ **The brush has to be said now**, because the palette starts empty: with nothing picked
+     * there is no plan to draw at all, which is its own contract and lives in `GrabAndEscapeTest`.
+     * Every test here is about what the cursor says once the player *has* chosen.
+     */
     private fun controller(state: VesselState = world()): OutofspaceController =
         OutofspaceController(cfg, state).apply {
             tool = Tool.Build
+            // Track, which is what the palette used to hold by default and what the two tests
+            // below that do not name a brush were written against: it fits anywhere there is grid.
+            brush = Brush.Run(Conduit.Rail)
             buildMaterial = FIXTURE_MACHINE_METAL
         }
 

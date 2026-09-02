@@ -917,8 +917,21 @@ class OutofspaceRenderer {
      * cannot be drawn as a shape, so it is drawn as a refusal on the cursor tile alone.
      */
     private fun drawPlan(state: VesselState, plan: BuildPlan) {
-        val fill = if (plan.allowed) Colors.PLAN else Colors.PLAN_REFUSED
-        val edge = if (plan.allowed) Colors.PLAN_EDGE else Colors.PLAN_REFUSED_EDGE
+        // ⚠️ **A third colour, because it is a third answer.** Green for "this goes here", red for
+        // "it does not", and this for "there is already one of these and the click will tune it" —
+        // which is neither, and which is drawn over a machine the player can plainly see, so the
+        // cursor has to say the tile being full is the reason it works rather than the reason it
+        // will not. See [BuildPlan.settingsOnly].
+        val fill = when {
+            plan.settingsOnly -> Colors.PLAN_SETTINGS
+            plan.allowed -> Colors.PLAN
+            else -> Colors.PLAN_REFUSED
+        }
+        val edge = when {
+            plan.settingsOnly -> Colors.PLAN_SETTINGS_EDGE
+            plan.allowed -> Colors.PLAN_EDGE
+            else -> Colors.PLAN_REFUSED_EDGE
+        }
         val x = state.grid.xOf(plan.tile)
         val y = state.grid.yOf(plan.tile)
         when (val brush = plan.brush) {
@@ -1651,6 +1664,13 @@ class OutofspaceRenderer {
         // a decision the game is declining, and they should not be a shade apart.
         const val PLAN_REFUSED      = 0xE0402866L
         const val PLAN_REFUSED_EDGE = 0xFF6A4AFFL
+
+        // Settings only: the click will re-tune the machine already standing here rather than build
+        // anything — see [BuildPlan.settingsOnly]. Green, which is the one direction left: it is a
+        // *yes*, so it cannot be the refusal red, and it is a different act from building, so it
+        // must not be the plan's cyan. Same green the build panel says "copied from" in.
+        const val PLAN_SETTINGS      = 0x3FBF7F66L
+        const val PLAN_SETTINGS_EDGE = 0x6FCF97FFL
 
         // ── Rock ────────────────────────────────────────────────────────
         // Warm, desaturated.

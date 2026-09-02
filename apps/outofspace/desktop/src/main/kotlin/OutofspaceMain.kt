@@ -336,26 +336,18 @@ fun main() {
                 }
                 println("════════════════════════════════════════════════════════")
             }
-            GLFW_KEY_C -> {
-                val (ix, iy) = renderer.screenToTile(lastX, lastY)
-                hud.clipboardStatus = controller.copySettings(TileIndex(ix.toInt() + iy.toInt() * controller.state.grid.width))
-            }
-            GLFW_KEY_V -> {
-                val (ix, iy) = renderer.screenToTile(lastX, lastY)
-                hud.clipboardStatus = controller.pasteSettings(TileIndex(ix.toInt() + iy.toInt() * controller.state.grid.width))
-            }
+            // Take a copy of whatever the inspector is reading and go build it — see
+            // [OutofspaceController.grab]. It replaced C-then-V on the hovered tile, which was two
+            // keys for one idea and neither of them the one every other game in the genre uses.
+            GLFW_KEY_B -> controller.grab()
             // Through the controller's own ladder, so the keys and the HUD's buttons cannot reach
             // different speeds — see `OutofspaceController.SPEEDS`.
             GLFW_KEY_LEFT_BRACKET -> controller.nudgeSpeed(faster = false)
             GLFW_KEY_RIGHT_BRACKET -> controller.nudgeSpeed(faster = true)
-            GLFW_KEY_ESCAPE -> {
-                if (controller.mode == Mode.Flight) {
-                    controller.mode = Mode.Build
-                } else {
-                    controller.select(TileIndex.NONE)
-                    controller.inspect(TileIndex.NONE)
-                }
-            }
+            // One rung out of wherever the player is standing, all the way up to the menu — see
+            // [OutofspaceHud.escape]. Through the HUD rather than the controller because the top of
+            // the ladder is a sheet, and sheets are the HUD's.
+            GLFW_KEY_ESCAPE -> hud.escape(controller)
             in GLFW_KEY_1..GLFW_KEY_9 -> Brush.ALL.getOrNull(key - GLFW_KEY_1)?.let { controller.brush = it }
             GLFW_KEY_0 -> Brush.ALL.getOrNull(9)?.let { controller.brush = it }
         }

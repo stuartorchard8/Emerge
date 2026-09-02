@@ -5,6 +5,9 @@ import org.emerge.demo.outofspace.world.Acceptance
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.world.MachineSettings
+import org.emerge.demo.outofspace.world.aimed
+import org.emerge.demo.outofspace.world.withSettings
 import org.emerge.demo.outofspace.world.machine.HEATER_POWER
 import org.emerge.demo.outofspace.chem.process
 import org.emerge.demo.outofspace.logistics.Capacity
@@ -2074,7 +2077,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                             }
                         }
                         is Brush.Building ->
-                            placeDeckBuilding(edit.tile, brush.kind, edit.facing, deck, edit.material)
+                            placeDeckBuilding(edit.tile, brush.kind, edit.facing, deck, edit.material, edit.settings)
                     }
                 }
                 is Edit.Lay -> layConduit(edit.from, edit.to, edit.conduit, edit.material)
@@ -2102,11 +2105,17 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     }
                 }
                 is Edit.ReplaceDeckMachine -> {
-                    // Replace a machine in place with settings from the clipboard: same tile,
-                    // same position, but with new configuration. Preserves energy and buffers.
+                    // Hands a standing machine a new set of settings: same tile, same position, same
+                    // metal, new configuration. Preserves energy and buffers.
                     val tile = originAt(edit.tile) ?: return
                     val oldMachine = deck[tile] ?: return
                     if (oldMachine.kind != edit.machine.kind) return
+                    // ⚠️ **Settings include a facing, and a facing can move a footprint.** A bridge's
+                    // span is a line, so re-aiming one swings it off two tiles and onto two others —
+                    // exactly what [Edit.Rotate] refuses when they are not free, and for the same
+                    // reason: the alternative is a machine standing on top of another one. Square
+                    // footprints answer this trivially and pay nothing for the question.
+                    if (!canStandWhereItWouldTurn(edit.machine, tile)) return
                     if (deck.isGhost(tile)) {
                         // ⚠️ A ghost must stay a ghost: `rebuildInPlace` does `deck -=` + `deck +=`
                         // which releases zero and adds the full bill — matter from nowhere.
@@ -2564,6 +2573,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             facing: Direction,
             deck: DeckArray,
             material: Species,
+            settings: MachineSettings?,
         ) {
             // Every rail port already on the deck, which is what a proposed machine's own ports are
             // checked against. `lazy` because it walks the whole deck and most placements never
@@ -2587,7 +2597,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     },
                 )
             ) return
+            // ⚠️ **`aimed(facing)` and not the settings' own facing.** Everything above checked
+            // whether the footprint fits *pointed this way*; a machine that then stood pointed some
+            // other way would be a machine whose ports, and for a bridge whose very tiles, are not
+            // the ones the rule was asked about. The cursor's aim is the answer in both places.
             val built = newDeckMachine(kind, tile, facing)
+                .let { fresh -> if (settings?.kind == kind) fresh.withSettings(settings.aimed(facing)) else fresh }
             val covered = built.tiles(grid).toList()
 
             // Outside creative the machine arrives as a ghost: standing there, made of nothing, and
