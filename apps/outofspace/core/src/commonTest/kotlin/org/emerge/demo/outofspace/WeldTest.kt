@@ -3,6 +3,7 @@ package org.emerge.demo.outofspace
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.num.Budget
+import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.world.BodyKind
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.Conduits
@@ -26,6 +27,8 @@ import org.emerge.demo.outofspace.world.Rotation
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.Station
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.Weld
+import org.emerge.demo.outofspace.world.angularVelocity
 import org.emerge.sim.core.PlayerId
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -227,6 +230,114 @@ class WeldTest {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             assertEquals(0L, s.massBalance, "mass leaked while docked at tick ${s.tick}")
         }
+    }
+
+    // ── Letting go ───────────────────────────────────────────────────────────
+
+    /**
+     * ⛔ **The headline: release divides the pair's motion, it does not hand it all to the ship.**
+     *
+     * While berthed the vessel's three numbers are the *pair's*, so a release that only dropped the
+     * link left the ship holding a station's angular momentum against a hull's inertia — and the
+     * angular velocity it flew away at was the pair's multiplied by the ratio of the two, which for
+     * a small ship on a big terminal is a spin nothing aboard could stop. Asserted on the **angular
+     * velocities**, which is the quantity the player sees; the momenta are whatever they must be for
+     * those to hold, and the pair's inertias here differ by enough that a fifty-fifty split of the
+     * momentum would fail this by a wide margin.
+     */
+    @Test
+    fun `both members fly away turning at the rate the pair was turning`() {
+        val (world, port) = berthedWorld()
+        var s = run(world, 1, Edit.Dock(port.center))
+        assertNotNull(s.docked, "nothing docked, so nothing was proven")
+        repeat(20) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
+
+        // The pair's spin, taken the way the reducer takes it: the pair's angular momentum over the
+        // pair's distribution, not the ship's.
+        val station = s.bodies.single { it.kind == BodyKind.STATION }
+        val pair = Weld.jointOf(s.pose, s.distribution, station).about
+        val together = angularVelocity(s.angImpulse, pair)
+        assertTrue(together != 0L, "a pair at rest would prove nothing")
+
+        val free = run(s, 1, Edit.Undock)
+        val apart = free.bodies.single { it.kind == BodyKind.STATION }
+
+        // ⚠️ Within a unit or two of [Coord] raw, which is a spin of 3e-9 half-turns a tick: the
+        // split is two integer divisions per member and cannot be exact. Equality would be asserting
+        // that the arithmetic rounds, not that the physics holds.
+        val slack = 4L
+        assertTrue(
+            angularVelocity(free.angImpulse, free.distribution) - together in -slack..slack,
+            "the ship flew off at ${angularVelocity(free.angImpulse, free.distribution)} against the pair's $together",
+        )
+        assertTrue(
+            angularVelocity(apart.angImpulse, apart.about) - together in -slack..slack,
+            "the station was left at ${angularVelocity(apart.angImpulse, apart.about)} against the pair's $together",
+        )
+    }
+
+    /**
+     * And the same for the linear half: neither member speeds up when the clamps open.
+     *
+     * ⚠️ **A fixture with no spin anywhere, which is what makes the claim sayable at all.** A member
+     * whose centre is not the joint centre is also being carried *around* it, so in general it flies
+     * off at the pair's velocity plus its own orbit and there is no one number both members share.
+     * Take the turning away and there is: both are going exactly what the pair was going, and any
+     * release that keeps the momentum on the vessel divides it by a hull's mass instead of a pair's
+     * and shows up here as a thirty-fold jump.
+     */
+    @Test
+    fun `neither member speeds up when the clamps open`() {
+        val (spinning, port) = berthedWorld()
+        val berth = spinning.bodies.single()
+        // Both drifting at the same speed and neither turning, so the pair has no angular momentum
+        // at all: with `p = m·v` on both sides, the two orbital terms are `Σ m·r × v` about the
+        // joint centre, and that sum is zero by the definition of a joint centre.
+        val speed = 1_000_000L
+        val shipDrift = scaledRatio(speed, Flight.PER_TILE, spinning.distribution.mass)
+        val world = spinning.copy(
+            vesselImpulseX = shipDrift, vesselImpulseY = 0L, angImpulse = 0L,
+            debugImpulseX = shipDrift, debugImpulseY = 0L, bodyAngImpulse = 0L,
+            bodies = listOf(
+                berth.copy(
+                    impulseX = scaledRatio(speed, Flight.PER_TILE, berth.mass),
+                    impulseY = 0L,
+                    angImpulse = 0L,
+                ),
+            ),
+        )
+
+        var s = run(world, 1, Edit.Dock(port.center))
+        assertNotNull(s.docked, "nothing docked, so nothing was proven")
+        repeat(20) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
+
+        val free = run(s, 1, Edit.Undock)
+        val apart = free.bodies.single { it.kind == BodyKind.STATION }
+        // Within a thousandth of the speed itself: the fixture's two masses do not divide it evenly
+        // and the split is integer division, so this is the arithmetic's slack and nothing else.
+        val slack = speed / 1_000L
+        assertTrue(
+            free.velocityXAt(free.distribution.mass) - speed in -slack..slack,
+            "the ship left the berth at ${free.velocityXAt(free.distribution.mass)} rather than $speed",
+        )
+        assertTrue(
+            scaledRatio(apart.impulseX, apart.mass, Flight.PER_TILE) - speed in -slack..slack,
+            "the station was left at ${scaledRatio(apart.impulseX, apart.mass, Flight.PER_TILE)} rather than $speed",
+        )
+    }
+
+    /** And whatever the split is, the two halves still add up to what the pair was carrying. */
+    @Test
+    fun `release divides the pair's momentum rather than adding to it`() {
+        val (world, port) = berthedWorld()
+        var s = run(world, 1, Edit.Dock(port.center))
+        repeat(20) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
+        val carried = s.vesselImpulseX
+
+        val free = run(s, 1, Edit.Undock)
+        val apart = free.bodies.single { it.kind == BodyKind.STATION }
+        assertEquals(carried, free.vesselImpulseX + apart.impulseX, "the release minted momentum")
+        assertTrue(apart.impulseX != 0L, "the station was left dead in space")
     }
 
     // ── The interlock ────────────────────────────────────────────────────────

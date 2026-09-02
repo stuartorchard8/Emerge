@@ -80,6 +80,101 @@ object Weld {
         )
     }
 
+    /**
+     * Letting go: what the station takes away with it, so that **both members keep the spin the pair
+     * had**.
+     *
+     * ⛔ **Not half the momentum each, and not the momentum each arrived with.** A pair turning at ω
+     * is turning at ω all through, so the honest split is the one that leaves ω on both sides of the
+     * joint — which means each member keeps its **share of the pair's inertia**, `I = m·k²`, and the
+     * two shares are as unequal as the two bodies are. Halving would spin a tug off a terminal like a
+     * firework; restoring what each had at capture would put a berth of arbitrary length into the
+     * ledger, since the pair has been thrusting and turning ever since.
+     *
+     * ⛔ **A member's linear momentum is its share of the pair's, plus its own orbit.** The joint
+     * centre is somewhere between the two, so a turning pair is carrying each member *around* that
+     * point at `ω × r`, and that velocity is real: it is what the station is doing at the instant the
+     * clamps open. Leaving it out would stop a berth dead at the far end of a turning ship, which is
+     * the one release the player actually notices.
+     *
+     * Together those two conserve both totals exactly — the vessel keeps whatever this does not take
+     * — which is [capture] run backwards, as the class note promises. See [Release] for why the two
+     * angular numbers it hands back are different numbers.
+     */
+    fun release(
+        shipPose: Pose,
+        shipAbout: MassDistribution,
+        pairImpulseX: Long,
+        pairImpulseY: Long,
+        pairAngImpulse: Long,
+        station: RigidBody,
+    ): Release {
+        val joint = jointOf(shipPose, shipAbout, station)
+        val pair = joint.about
+        val stationAbout = station.about
+
+        // The two spins, each about its own centre. Their sum is *less* than the pair's angular
+        // momentum, and by exactly the orbital term below — the pair's `k²` carries a parallel-axis
+        // distance for each member that neither member's own does.
+        val keptSpin = inertiaShare(pairAngImpulse, pair, shipAbout)
+        val stationSpin = inertiaShare(pairAngImpulse, pair, stationAbout)
+
+        // The station's orbit about the joint centre: `ω × r`, in the vessel's axes, where the arm
+        // already is. `ω × r = (−ω·r_y, ω·r_x)`, and [spinSpeed] answers the magnitude of each.
+        val spin = angularVelocity(pairAngImpulse, pair)
+        val armX = (joint.stationComX - pair.comMilliX) * Rotation.PER_MILLI_TILE
+        val armY = (joint.stationComY - pair.comMilliY) * Rotation.PER_MILLI_TILE
+        // ⚠️ Momentum, not velocity, before it is turned: `p = m·v / PER_TILE` is the inverse of
+        // [VesselState.velocityXAt], and doing it here keeps the whole exchange in one unit.
+        val orbitPx = scaledRatio(-spinSpeed(spin, armY), Flight.PER_TILE, stationAbout.mass)
+        val orbitPy = scaledRatio(spinSpeed(spin, armX), Flight.PER_TILE, stationAbout.mass)
+
+        // ⚠️ **Into the world on the way out**, because a body's momentum is a world quantity and
+        // the arm that produced this one is not — the same frame change [capture] makes in the other
+        // direction, and the same trap if it is skipped.
+        val impulseX = scaledRatio(pairImpulseX, pair.mass, stationAbout.mass) +
+            shipPose.turnedX(orbitPx, orbitPy)
+        val impulseY = scaledRatio(pairImpulseY, pair.mass, stationAbout.mass) +
+            shipPose.turnedY(orbitPx, orbitPy)
+
+        return Release(
+            impulseX = impulseX,
+            impulseY = impulseY,
+            spinAngImpulse = stationSpin,
+            // The remainder, so the vessel is left holding exactly `keptSpin` however the two shares
+            // rounded. Everything that is not the ship's own spin has left the ship's book.
+            handedAngImpulse = pairAngImpulse - keptSpin,
+        )
+    }
+
+    /**
+     * What release hands over: the station's motion, and the vessel's side of the same exchange.
+     *
+     * ⚠️ **[spinAngImpulse] and [handedAngImpulse] are different numbers and both are right.** The
+     * first is what the station is now spinning at, about its own centre. The second is everything
+     * that left the vessel's angular book — the station's spin *plus* the orbital term that both
+     * members' linear momenta now carry between them, which is a quantity no body holds and only the
+     * ledger names. [capture] booked the same asymmetry the other way round.
+     */
+    class Release(
+        val impulseX: Long,
+        val impulseY: Long,
+        val spinAngImpulse: Long,
+        val handedAngImpulse: Long,
+    )
+
+    /**
+     * A member's share of the pair's angular momentum: its share of the pair's inertia, `m·k²`.
+     *
+     * The whole of "both keep the same ω", since `L = I·ω` and ω is common. Divided by the gyration
+     * radius first and the mass second, which is [angularVelocity]'s order and for its reason — the
+     * moment of inertia is never materialised, here or anywhere.
+     */
+    private fun inertiaShare(angImpulse: Long, pair: MassDistribution, member: MassDistribution): Long {
+        if (angImpulse == 0L || pair.mass <= 0L || pair.gyrationSq <= 0L) return 0L
+        return scaledRatio(scaledRatio(angImpulse, pair.gyrationSq, member.gyrationSq), pair.mass, member.mass)
+    }
+
     /** What capture did: the link, and what the vessel took off the station. */
     class Capture(
         val link: DockLink,

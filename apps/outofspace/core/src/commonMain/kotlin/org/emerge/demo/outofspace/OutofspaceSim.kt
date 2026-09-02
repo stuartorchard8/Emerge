@@ -2199,9 +2199,37 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     if (m is DockingPort) deck[tile] = m.copy(sell = edit.sell, buy = edit.buy)
                 }
                 is Edit.Undock -> {
+                    val link = docked ?: return
                     docked = null
                     // Nobody to trade with the moment the clamps let go.
                     market = null
+                    // ⛔ **And the pair's motion is divided back out**, or the vessel flies off
+                    // holding all of it: while berthed its three numbers are the *pair's*, so a
+                    // release that only dropped the link would leave the ship carrying a station's
+                    // momentum against a hull's mass and a station's angular momentum against a
+                    // hull's inertia — a shove and a violent spin, out of nothing, every time the
+                    // clamps opened. See [Weld.release] for the split and why it is not a half each.
+                    val index = bodies.indexOfFirst { it.station?.id == link.stationId }
+                    if (index < 0) return
+                    val station = bodies[index]
+                    val released = Weld.release(
+                        shipPose = before.pose,
+                        shipAbout = about,
+                        pairImpulseX = before.vesselImpulseX,
+                        pairImpulseY = before.vesselImpulseY,
+                        pairAngImpulse = before.angImpulse,
+                        station = station,
+                    )
+                    bodies[index] = station.copy(
+                        impulseX = released.impulseX,
+                        impulseY = released.impulseY,
+                        angImpulse = released.spinAngImpulse,
+                    )
+                    // The mirror of capture's three lines: positive `handed` is the vessel giving,
+                    // and these are the stores that keep the exchange out of the ledger's way.
+                    bodyHandedX += released.impulseX
+                    bodyHandedY += released.impulseY
+                    bodyHandedTorque += released.handedAngImpulse
                 }
                 is Edit.Dock -> {
                     val tile = originAt(edit.tile) ?: return
