@@ -1497,6 +1497,21 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
 
     /** A named character range `[from, to)` within a [text]'s text. */
     class TextSpan(val key: String, val from: Int, val to: Int)
+
+    /** A read-only line centred in the panel's content column rather than ranged left. */
+    fun centeredText(text: String, color: Long = 0xC8C8C8FFL) =
+        items.add(CenteredTextItem(text, color, rowHeight))
+
+    /**
+     * A reserved box the caller draws into itself, centred in the content column.
+     *
+     * The panel measures and stacks it like any other row, so a drawing sits in a column of text
+     * without either knowing where the other ended up — which is the whole difference between an
+     * instrument *in* a panel and one that has been positioned to look as though it is. [width] and
+     * [height] are dp, like every other size here.
+     */
+    fun canvasBox(width: Float, height: Float, draw: CanvasBuilder.(Float, Float, Float, Float) -> Unit) =
+        items.add(CanvasItem(width * scale, height * scale, draw))
     fun keyValue(key: String, value: String, keyColor: Long = 0x9A9A9AFFL, valueColor: Long = 0xFFFFFFFFL) =
         items.add(KeyValueItem(key, value, keyColor, valueColor, rowHeight))
     /**
@@ -2083,6 +2098,27 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
                 bx += w
                 placed = true
             }
+        }
+    }
+
+    private class CenteredTextItem(
+        val text: String,
+        val color: Long,
+        override val height: Float,
+    ) : Item {
+        override fun measureWidth(textH: Float) = UiTextRenderer.measureWidthPx(text, textH)
+        override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) =
+            ui.emitTextCentered(text, x + contentW * 0.5f, topY + (height - textH) * 0.5f, textH, color)
+    }
+
+    private class CanvasItem(
+        val boxW: Float,
+        override val height: Float,
+        val draw: CanvasBuilder.(Float, Float, Float, Float) -> Unit,
+    ) : Item {
+        override fun measureWidth(textH: Float) = boxW
+        override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
+            CanvasBuilder(ui).draw(x + (contentW - boxW) * 0.5f, topY, boxW, height)
         }
     }
 
