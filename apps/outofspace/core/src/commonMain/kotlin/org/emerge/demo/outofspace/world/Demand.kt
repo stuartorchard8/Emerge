@@ -521,6 +521,21 @@ class Whitelist private constructor(
          * its way to a sink that has enough is not thereby available to any other. The surplus is
          * simply surplus, and [room] clamps each sink's remainder at nought rather than letting one
          * sink's excess cancel another's need.
+         *
+         * ⛔ **Only among the sinks this matter can actually reach, which is the same question
+         * [Demand.wants] asks and not merely the bill.** A route with a [Block] still owed something
+         * this load cannot pay is a route this load will never travel — the door refuses it at the
+         * plug — so charging it a share credits the material against a sink that can never receive
+         * it, and the sink that *can* reads as covered by a fraction of what is really coming.
+         *
+         * Stu's save, 2026-09-03: a wire coming apart at `(11,11)`, one wire site at `(12,8)` on
+         * finished track wanting exactly one tile's worth of copper, and three more wire sites at
+         * `(13..15,8)` each standing on an unpaid **titanium** rail. The blocked three were counted
+         * into the division, so the 14.9kg already in the corridor was charged a quarter each and
+         * `(12,8)` read as covered by 3.7kg of it. The marked wire went on pouring, `(12,8)` was
+         * finished by the lump that was already coming, and the whole of the second wire — another
+         * 14.9kg — came to rest in the corridor with nothing on the network able to take it. The
+         * residue this pass exists to prevent, reached through the one route it did not weigh.
          */
         private fun chargeStandingLoad(
             here: MutableList<Demand>,
@@ -534,6 +549,7 @@ class Whitelist private constructor(
                 val d = here[k]
                 if (d.acceptance.isUnlimited) continue
                 if (loadOn(tile, d.acceptance.bill) <= 0L) continue
+                if (!reachedBy(d, tile, loadOn)) continue
                 val remaining = d.acceptance.wanted - d.covered
                 if (remaining <= 0L) continue
                 wantedHere += remaining
@@ -547,6 +563,7 @@ class Whitelist private constructor(
                 if (d.acceptance.isUnlimited) continue
                 val load = loadOn(tile, d.acceptance.bill)
                 if (load <= 0L) continue
+                if (!reachedBy(d, tile, loadOn)) continue
                 val remaining = d.acceptance.wanted - d.covered
                 if (remaining <= 0L) continue
                 // This sink's share of the matter standing here, floored; the rounding is settled
@@ -560,6 +577,24 @@ class Whitelist private constructor(
                 val d = here[hungriest]
                 here[hungriest] = Demand(d.acceptance, d.covered + (load - given), d.blocks)
             }
+        }
+
+        /**
+         * Whether what stands on [tile] can get as far as [d]'s sink — [Demand.wants]' order
+         * question, asked of the load rather than of a lump offered at a door.
+         *
+         * A [Block] is already paid down by this tile's load where that load can serve it, so what
+         * is left owed here is what this material cannot pay. Anything still owed is a site that
+         * will refuse it passage, and a sink behind one is not in the division.
+         */
+        private fun reachedBy(
+            d: Demand,
+            tile: TileIndex,
+            loadOn: (TileIndex, Mixture?) -> Long,
+        ): Boolean {
+            val blocks = d.blocks ?: return true
+            for (b in blocks) if (b.owed > 0L && loadOn(tile, b.bill) <= 0L) return false
+            return true
         }
 
         private fun owed(blocks: List<Block>?): Long {

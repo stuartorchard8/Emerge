@@ -487,4 +487,91 @@ class DemandTest {
         assertFalse(permits(titanium, siteOnGhost = false), "a bare ghost rail took titanium")
         assertTrue(permits(ironLump, siteOnGhost = false), "a bare ghost rail refused its own iron")
     }
+
+    /**
+     * ⛔ **A sink behind a plug this matter cannot pay takes no share of it.**
+     *
+     * The block above is honoured at the door — [Whitelist.permits] asks [Demand.wants], which
+     * refuses a route with a debt this lump cannot settle. It was *not* honoured when the matter
+     * already standing in the corridor was divided among the sinks that could eat it: that division
+     * weighed each route's **bill** and never its blocks, so a site that could never receive the
+     * copper was charged a share of it anyway and the site that could read as covered by a fraction
+     * of what was really coming.
+     *
+     * Stu's save, 2026-09-03: a wire at `(11,11)` marked for deconstruction, one wire site at
+     * `(12,8)` on finished track wanting exactly one tile of copper, and three more wire sites at
+     * `(13..15,8)` each standing on an unpaid **titanium** rail. 14.9kg of copper — the whole of
+     * what `(12,8)` was short of — was already in the corridor, and it was split four ways, so
+     * `(12,8)` read as covered by 3.7kg. The marked wire went on pouring; `(12,8)` was finished by
+     * the lump that was already coming; and the second wire's worth of copper came to rest in the
+     * corridor with nothing on the network able to take it.
+     *
+     * ```
+     *  [S] - . - c=14.9kg - [site]   g   g   g     g is a ghost TITANIUM rail with a copper wire
+     *   ^ marked wire        wants 14.9kg            site on it: blocked, and not in the division
+     * ```
+     */
+    @Test
+    fun `a site behind a plug takes no share of matter that cannot reach it`() {
+        val grid = cfg.initialGrid
+        val railBill = conduitBillOfMaterials(Conduit.Rail, Species.Titanium)
+        val wireBill = conduitBillOfMaterials(Conduit.Signal, Species.Copper)
+
+        val source = grid.tile(2, 3)
+        val loaded = grid.tile(3, 3)
+        val clearSite = grid.tile(4, 3)
+        val blockedSites = listOf(grid.tile(5, 3), grid.tile(6, 3), grid.tile(7, 3))
+        val tiles = (listOf(source, loaded, clearSite) + blockedSites).toMutableSet()
+
+        // Exactly what the clear site is short of, standing one tile short of it.
+        val copperInFlight = Mixture.of(Species.Copper to wireBill.total, energy = 0)
+
+        val flow = FlowGraph.build(
+            tiles,
+            sources = setOf(source),
+            sinks = (blockedSites + clearSite).toSet(),
+            linked = { tile, dir -> tile in tiles && grid.neighbour(tile, dir) in tiles },
+            grid = grid,
+            // ⛔ Unpaid *track* only: the three ghost rails. The wire sites are not walls.
+            walls = blockedSites.toSet(),
+        )
+        val whitelist = Whitelist.of(
+            flow,
+            grid.size,
+            acceptanceAt = { tile ->
+                when (tile) {
+                    // On finished track, so nothing is in its way.
+                    clearSite -> listOf(
+                        Acceptance.forBill(wireBill, wireBill.total, stopsTraffic = false),
+                    )
+                    // A ghost titanium rail with a copper wire site sharing its tile.
+                    in blockedSites -> listOf(
+                        Acceptance.forBill(railBill, railBill.total),
+                        Acceptance.forBill(wireBill, wireBill.total, stopsTraffic = false),
+                    )
+                    else -> null
+                }
+            },
+            loadOn = { tile, bill ->
+                if (tile != loaded) 0L
+                else if (bill == null || buildableFrom(bill, copperInFlight)) copperInFlight.total else 0L
+            },
+        )
+
+        assertFalse(
+            whitelist.permits(source, copperInFlight, rationed = true),
+            "the marked wire released copper the corridor already held enough of",
+        )
+        assertEquals(
+            0L,
+            whitelist.room(source, copperInFlight),
+            "there was room for copper the only site that can take it is already owed",
+        )
+        // The control: titanium is still wanted, because the ghost rails are what is in the way and
+        // nothing is on its way to them.
+        assertTrue(
+            whitelist.permits(source, Mixture.of(Species.Titanium to railBill.total, energy = 0)),
+            "the ghost rails could not draw the titanium that dissolves them",
+        )
+    }
 }
