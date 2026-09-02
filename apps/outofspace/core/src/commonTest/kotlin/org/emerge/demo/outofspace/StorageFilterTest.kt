@@ -4,6 +4,7 @@ import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
+import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.Conduits
@@ -236,5 +237,63 @@ class StorageFilterTest {
             SpeciesFilter(Species.Titanium, 70),
             (back.deck[grid.tile(2, 3)] as Storage).filter,
         )
+    }
+
+    // ── The ceiling ──────────────────────────────────────────────────────────
+
+    @Test
+    fun `a ceiling of a hundred per cent means exactly one thing - not pure`() {
+        // ⛔ **The reason the ceiling is EXCLUSIVE.** There is no inclusive value that means "more
+        // than one species is present": percentages here are integers, so a lump 99.5% iron measures
+        // as 99, and an inclusive ceiling of 99 would refuse it while 100 would admit pure metal.
+        // `< 100` says it exactly, and says the same thing `Mixture.impurities` does — which is what
+        // a station asks to decide whether a sale goes on a shelf or into the unworked heap.
+        val ore = SpeciesFilter.MIXED
+        val kg = Budget.KILOGRAM
+
+        assertTrue(ore.admits(Mixture.of(Species.Iron to 800L * kg, Species.Forsterite to 200L * kg, energy = 0L)))
+        // The awkward one: mixed, but only just, and an inclusive ceiling gets it wrong.
+        assertTrue(
+            ore.admits(Mixture.of(Species.Iron to 995L * kg, Species.Forsterite to 5L * kg, energy = 0L)),
+            "a lump 99.5% pure is still a blend and is still ore",
+        )
+        assertTrue(
+            ore.admits(Mixture.of(Species.Iron to 1000L * kg - 1L, Species.Forsterite to 1L, energy = 0L)),
+            "a lump one microgram short of pure is still a blend",
+        )
+        assertTrue(!ore.admits(Mixture.of(Species.Iron to 1000L * kg, energy = 0L)), "pure metal got in as ore")
+        assertTrue(!ore.admits(Mixture.EMPTY), "nothing is not a delivery")
+    }
+
+    @Test
+    fun `a species order and the ore order never compete for the same lump`() {
+        // The property that makes it safe to put both on one mouth: the ceiling is exclusive and the
+        // floor is inclusive, so `pure iron` and `not pure` partition every lump between them.
+        val pureIron = SpeciesFilter(Species.Iron, SpeciesFilter.MAX_PERCENT)
+        val kg = Budget.KILOGRAM
+        for (impurity in listOf(0L, 1L, 5L * kg, 200L * kg)) {
+            val lump = Mixture.of(
+                Species.Iron to 1000L * kg - impurity, Species.Forsterite to impurity, energy = 0L,
+            )
+            assertTrue(
+                pureIron.admits(lump) != SpeciesFilter.MIXED.admits(lump),
+                "a lump with ${impurity}g of grit matched both orders or neither",
+            )
+        }
+    }
+
+    @Test
+    fun `a ceiling survives a save and a load`() {
+        val grid = cfg.initialGrid
+        val deck = DeckArray(grid)
+        deck += fixtureStorage(grid.tile(2, 3), Direction.Right, filter = SpeciesFilter(null, null, 90))
+        val state = VesselState(
+            grid, deck,
+            conduits = Conduits.ofRails(arrayOfNulls<Segment>(grid.size).toList()),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+        )
+        val back = Save.read(Save.write(state))
+        assertEquals(SpeciesFilter(null, null, 90), (back.deck[grid.tile(2, 3)] as Storage).filter)
     }
 }

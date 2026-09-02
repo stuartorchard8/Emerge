@@ -534,6 +534,9 @@ object Save {
                 m.filter?.let {
                     put("filter", it.species?.name)
                     put("filterpct", it.minPercent.toString())
+                    // ⚠️ Written only when set, so a filter with no ceiling — every one a player can
+                    // make today — adds nothing to the line and an older file loads unchanged.
+                    it.belowPercent?.let { pct -> put("filterunder", pct.toString()) }
                 }
                 val autoLock = if (m.autoLock)     0b01 else 0
                 val autoUnlock = if (m.autoUnlock) 0b10 else 0
@@ -1751,8 +1754,9 @@ object Save {
                 filter = f["filter"].let { name ->
                     val species = Species.ALL.firstOrNull { it.name == name }
                     val pct = f["filterpct"]?.toIntOrNull()
-                    if (species == null && pct == null) null
-                    else SpeciesFilter(species, pct)
+                    val under = f["filterunder"]?.toIntOrNull()
+                    if (species == null && pct == null && under == null) null
+                    else SpeciesFilter(species, pct, under)
                 },
                 autoLock = (f["auto"]?.toIntOrNull() ?: 0)%2==1,
                 autoUnlock = (f["auto"]?.toIntOrNull() ?: 0)/2%2==1,
