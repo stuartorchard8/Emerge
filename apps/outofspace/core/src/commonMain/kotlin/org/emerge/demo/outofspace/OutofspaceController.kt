@@ -1021,8 +1021,35 @@ class OutofspaceController(
         return OutofspaceInput(edits, held)
     }
 
+    /**
+     * Which world this is, counted from the first — bumped by every [reset].
+     *
+     * ⚠️ **For anything holding a memory *about* a world rather than a copy of one.** The HUD keeps
+     * a few — whether the ship was berthed last frame is one — and a memory like that is nonsense
+     * across a load: the world it described is gone. There is nothing in the state itself that says
+     * so, because a loaded world is a perfectly ordinary world and a tick counter comes back with
+     * whatever the file said, so the fact is stated here instead of inferred there.
+     */
+    var worldSerial: Int = 0
+        private set
+
+    /**
+     * Whether the world was **already berthed when it was handed over** — see [reset].
+     *
+     * ⛔ **Not `state.docked != null`, and the difference is exactly what this exists for.** A world
+     * can be handed over flying free and be berthed before anybody draws it: the agent harness's
+     * `berth` puts the station in place and clamps on in one breath, and any host that steps the
+     * world before its first frame can do the same. The question the HUD is asking is whether the
+     * berth came out of a file or was flown to, and only the handover can answer it — by the first
+     * frame the two look identical.
+     */
+    var arrivedBerthed: Boolean = initial.docked != null
+        private set
+
     /** Replaces the world — what "new game" and "load" will call. */
     fun reset(newState: VesselState = starterWorld(cfg.initialGrid)) {
+        worldSerial++
+        arrivedBerthed = newState.docked != null
         selected = TileIndex.NONE
         inspectTile = TileIndex.NONE
         closeWiki()

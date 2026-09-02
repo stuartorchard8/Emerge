@@ -215,6 +215,20 @@ class OutofspaceHud {
     private var wasBerthed: Boolean = false
 
     /**
+     * Which world [wasBerthed] is a memory of — see [OutofspaceController.worldSerial].
+     *
+     * ⛔ **A load is not an arrival.** [wasBerthed] describes the frame before, and after a load
+     * there is no frame before: the previous world's answer was `false`, the new world's is `true`,
+     * and the difference read as a berthing the player had just flown to. So the trade sheet came up
+     * over every save that was made docked, unasked, before the world had drawn once. Starts at −1
+     * so the first world is a change like any other, which is what makes a game *started* from a
+     * docked save behave the same as one loaded into.
+     *
+     * ⚠️ What gets adopted is [OutofspaceController.arrivedBerthed], not the live answer.
+     */
+    private var berthWatchedWorld: Int = -1
+
+    /**
      * Where the pause switch was standing when the menu put the game on hold — see [openMenu].
      */
     private var pausedBeforeMenu: Boolean = false
@@ -275,6 +289,38 @@ class OutofspaceHud {
 
     private val collapsed = mutableSetOf<String>()
     private val expanded = mutableSetOf<String>()
+
+    /**
+     * Opens the counter on arriving at a berth and shuts it on leaving one — once each, on the
+     * **transition**.
+     *
+     * ⛔ **Arriving opens the counter, once.** A berth is somewhere the player has flown to on
+     * purpose, so putting the trade sheet in front of them is answering the question they came with
+     * rather than interrupting one. Closing it is theirs, and the way back is on the docking port's
+     * own panel — see [dockControls]. ⚠️ And letting go closes it, because a counter you have flown
+     * away from is a lie.
+     *
+     * ⛔ **A load is not an arrival**, and telling the two apart is the whole reason this reads
+     * [OutofspaceController.worldSerial]: see [berthWatchedWorld].
+     *
+     * Its own method rather than six lines inside the frame, because it is the one thing in [build]
+     * that is a *rule* rather than a drawing — it can be asked and answered without a screen, and a
+     * test that had to raise a GL context to reach it could not be written at all.
+     */
+    fun followBerth(controller: OutofspaceController) {
+        val berthed = controller.state.docked != null
+        // A new world under the same HUD: adopt the berth it was **handed over** with rather than
+        // reading a transition into it. ⚠️ [OutofspaceController.arrivedBerthed] and not `berthed`,
+        // because a world can be handed over free and be berthed by the time it is first drawn —
+        // and that one *is* an arrival. See that field.
+        if (controller.worldSerial != berthWatchedWorld) {
+            berthWatchedWorld = controller.worldSerial
+            wasBerthed = controller.arrivedBerthed
+        }
+        if (berthed && !wasBerthed) openSheet = Sheet.Trade
+        if (!berthed && wasBerthed && openSheet == Sheet.Trade) openSheet = Sheet.None
+        wasBerthed = berthed
+    }
 
     /**
      * @param hovered the tile under the pointer, or -1. Desktop and web have a pointer; on touch
@@ -488,15 +534,7 @@ class OutofspaceHud {
             val inspector = inspectPanel(controller)
             wikiPanel(controller, inspector)
 
-            // ⛔ **Arriving opens the counter, once.** A berth is somewhere the player has flown to
-            // on purpose, so putting the trade sheet in front of them is answering the question they
-            // came with rather than interrupting one. Closing it is theirs, and the way back is on
-            // the docking port's own panel — see [dockControls].
-            val berthed = s.docked != null
-            if (berthed && !wasBerthed) openSheet = Sheet.Trade
-            // ⚠️ And letting go closes it, because a counter you have flown away from is a lie.
-            if (!berthed && wasBerthed && openSheet == Sheet.Trade) openSheet = Sheet.None
-            wasBerthed = berthed
+            followBerth(controller)
 
             // ⚠️ **Last in the frame.** A sheet dims everything under it and takes every click
             // inside its box, so anything drawn after it would sit on top of a scrim that is

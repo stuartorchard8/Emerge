@@ -1265,6 +1265,15 @@ object Save {
             sas = sas,
             credits = credits,
             docked = dock,
+            // ⛔ **The counterparty is not written, it is found again.** A market is the station's
+            // own shelves and the vessel merely holds the one it is berthed at, so writing it would
+            // put a second copy of the same stock in the file for the two to disagree about. What a
+            // load that skipped this got instead was a berth with nobody behind it: the trade sheet
+            // read "not berthed" while the clamps were plainly shut, and the mouth traded nothing
+            // ever again, because only [Edit.Dock] ever opened a counterparty and the ship was
+            // already docked.
+            dockedMarket = dock?.let { link -> loaded.firstOrNull { it.station?.id == link.stationId } }
+                ?.station?.market,
             dockedThrustAllowed = dockedThrust,
             scrapping = scrapping,
             builtMass = built,

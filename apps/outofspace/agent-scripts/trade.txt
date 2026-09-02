@@ -10,7 +10,9 @@
 #   `ordered`   -- one species on order; the same green, on the other list;
 #   `closed`    -- the sheet dismissed, the world back;
 #   `reopened`  -- the way back in, from the docking port's BERTH section;
-#   `narrow`    -- the same counter on a phone-shaped screen, where the sheet comes off the bottom.
+#   `narrow`    -- the same counter on a phone-shaped screen, where the sheet comes off the bottom;
+#   `reloaded`  -- a world SAVED while berthed, loaded back: the counter stays shut, because a load
+#                  is not an arrival, and the berth behind it still has a counterparty.
 #
 # ⚠️ Two columns because they answer two questions. SELL is what is LOOSE aboard -- the same view the
 # material picker reads -- because the only thing worth offering is something the network can deliver
@@ -51,3 +53,19 @@ shot berthpanel
 
 tap TRADE
 shot reopened
+
+# ⛔ **A save made berthed comes back berthed, and the counter does not open itself.**
+#
+# Two things go wrong here if they are not held apart. The sheet opens on the TRANSITION into a
+# berth, and across a load the frame before said "not berthed" -- so every docked save used to come
+# up with the counter already over the ship. And the market is the station's, not the vessel's, so it
+# is not written to the file: a load that did not go and find it again left the clamps shut with
+# nobody behind them, the sheet reading "not berthed", and the mouth trading nothing ever again.
+tap close
+save agent-out/berthed.save
+load agent-out/berthed.save
+run 2
+shot reloaded
+inspect 38 9
+tap TRADE
+shot reloaded-counter

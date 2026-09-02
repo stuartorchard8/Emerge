@@ -365,11 +365,93 @@ class WeldTest {
         assertEquals(link, back, "the berth came back different")
     }
 
+    /**
+     * ⛔ **And it reloads with somebody on the other side of the mouth.** The market is the station's
+     * and is not written twice, so a load has to find it again — see [Save]. Without that, a world
+     * saved while berthed came back with the clamps shut and no counterparty: the trade sheet read
+     * "not berthed", and the mouth stayed dead for ever, because only docking ever opened one and
+     * the ship was already docked.
+     */
+    @Test
+    fun `a berth reloads with its counterparty`() {
+        val (world, port) = berthedWorld()
+        val docked = run(world, 1, Edit.Dock(port.center))
+        val back = Save.read(Save.write(docked))
+        val market = assertNotNull(back.dockedMarket, "the ship reloaded berthed at nobody")
+        assertEquals(
+            assertNotNull(docked.dockedMarket).stockOf(Species.Iron), market.stockOf(Species.Iron),
+            "the counterparty that came back is not the one that was saved",
+        )
+    }
+
+    /** And a ship that reloads berthed can still trade, which is the whole of what that is for. */
+    @Test
+    fun `a reloaded berth still trades`() {
+        val (world, port) = berthedWorld()
+        val listed = world.copy(
+            deck = world.deck.also {
+                it[port.center] = port.copy(sell = listOf(SpeciesFilter(Species.Titanium, null)))
+            },
+        )
+        // ⚠️ The cargo goes in **after** the round trip, so this is the reloaded mouth doing the
+        // selling and not a sale the save happened to have already made.
+        val back = Save.read(Save.write(run(listed, 1, Edit.Dock(port.center))))
+            .stocked(port.center, Mixture.of(Species.Titanium to 500L * Budget.KILOGRAM, energy = 0L).atAmbient())
+
+        var s = back
+        val banked = s.credits
+        repeat(5) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
+        assertTrue(s.credits > banked, "a reloaded berth sold nothing")
+    }
+
     @Test
     fun `an undocked world writes no berth`() {
         val (world, _) = berthedWorld()
         assertTrue(Save.write(world).lineSequence().none { it.startsWith("dock ") })
     }
+    /**
+     * ⛔ **Loading a berthed world is not arriving at a berth.**
+     *
+     * The counter opens on the *transition* into a berth — see [OutofspaceHud.followBerth] — and the
+     * HUD's memory of the frame before is a memory about a world. Across a load the previous world's
+     * answer was "not berthed" and the new one's is "berthed", so every save made docked came back
+     * with the trade sheet already over the screen, before the player had looked at their own ship.
+     */
+    @Test
+    fun `loading a berthed world does not open the counter`() {
+        val (world, port) = berthedWorld()
+        val docked = run(world, 1, Edit.Dock(port.center))
+
+        val c = OutofspaceController(cfg, world)
+        val hud = OutofspaceHud()
+        // A frame of the world as it was, so the HUD has a "before" that says not berthed — which is
+        // exactly the state a player is in when they open the menu and load.
+        hud.followBerth(c)
+        assertEquals(Sheet.None, hud.openSheet, "the counter was up before anything was loaded")
+
+        c.reset(docked)
+        hud.followBerth(c)
+        assertEquals(Sheet.None, hud.openSheet, "loading a docked save put the trade counter up unasked")
+    }
+
+    /** And arriving still opens it, which is the behaviour the fix must not have thrown away. */
+    @Test
+    fun `arriving at a berth still opens the counter`() {
+        val (world, port) = berthedWorld()
+        val c = OutofspaceController(cfg, world)
+        val hud = OutofspaceHud()
+        hud.followBerth(c)
+        assertEquals(Sheet.None, hud.openSheet)
+
+        // ⚠️ Through the controller and a tick of the world, not through [OutofspaceController.reset]
+        // — this is a ship *flying into* a berth, which is the one thing a load is not.
+        c.dock(port)
+        c.stepOnce()
+        assertNotNull(c.state.docked, "nothing docked, so nothing was proven")
+        hud.followBerth(c)
+        assertEquals(Sheet.Trade, hud.openSheet, "flying into a berth no longer opens the counter")
+    }
+
     // ── Where steps 2 and 3 meet ─────────────────────────────────────────────
 
     @Test
