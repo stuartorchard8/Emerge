@@ -65,6 +65,7 @@ import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.machine.BuyOrder
 import org.emerge.demo.outofspace.world.machine.DockingPort
+import org.emerge.demo.outofspace.world.machine.SellOrder
 import org.emerge.demo.outofspace.world.Market
 import org.emerge.demo.outofspace.world.Prices
 import org.emerge.demo.outofspace.world.BodyKind
@@ -1299,6 +1300,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // [org.emerge.demo.outofspace.chem.Mixture.impurities], which is exactly this question.
             if (forSale.impurities == 0L) here = here.absorbing(forSale) else consigned += forSale
             putStore(m, tile, BufferRole.Input, null)
+            machine = machine.copy(sell = machine.sell.worked(forSale))
         }
 
         // ── Work the standing orders down ────────────────────────────────────
@@ -1345,6 +1347,28 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         market = here
         return machine
+    }
+
+    /**
+     * The sell list after [sold] has gone out of the mouth: the one order that pulled it in is that
+     * much closer to done, and a finished order leaves the list.
+     *
+     * ⛔ **Exactly one order can match**, and that is a property rather than an assumption — a
+     * per-species order takes only pure metal and the ore order takes only blends, so the two
+     * partition every lump between them ([SellOrder]). Were they to overlap, "which order paid for
+     * this delivery" would be a guess, and the guess would be wrong every time the player had both.
+     *
+     * ⚠️ **Clamped, not asserted.** The network will not route more than an order asked for, but a
+     * lump already standing in the mouth when the player cuts the order down is matter that has
+     * arrived and is going to be sold; refusing to book it against a shrunken order would leave an
+     * order that never completes.
+     */
+    private fun List<SellOrder>.worked(sold: Mixture): List<SellOrder> {
+        val order = firstOrNull { it.filter.admits(sold) } ?: return this
+        if (order.isEndless) return this
+        val left = order.remaining - sold.total
+        return if (left > 0L) map { if (it === order) it.copy(remaining = left) else it }
+        else filterNot { it === order }
     }
 
     private fun Work.refine(cfg: OutofspaceConfig, m: Concentrator, on: Boolean, tile: TileIndex): Concentrator {
@@ -3830,7 +3854,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // behalf is a demand nothing can satisfy.
                 if (deck.isGhost(input.owner)) continue
                 val list = accepts.getOrPut(tile) { mutableListOf() }
-                for (order in port.sell) list.add(Acceptance.filtered(order))
+                // ⚠️ **The order's own remaining mass is the appetite**, so a finite sell order stops
+                // the network delivering more than was asked for — the same way a construction site's
+                // shortfall does. An endless order carries [Acceptance.UNLIMITED] because
+                // [SellOrder.ENDLESS] *is* that number; see the note there.
+                for (order in port.sell) list.add(Acceptance.filtered(order.filter, order.remaining))
             }
 
             // ── Which consumers can use what is standing on the track ────────

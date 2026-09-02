@@ -128,8 +128,8 @@ class Acceptance private constructor(
          * would be a wall the player can build across their own network with no ghost in sight —
          * the exact exploit [stopsTraffic] exists to prevent, inverted.
          */
-        fun filtered(filter: SpeciesFilter): Acceptance =
-            Acceptance(null, filter, stopsTraffic = false, wanted = UNLIMITED)
+        fun filtered(filter: SpeciesFilter, wanted: Long = UNLIMITED): Acceptance =
+            Acceptance(null, filter, stopsTraffic = false, wanted = wanted)
 
         /**
          * Takes what [bill] can be built from, and [shortBy] more grams of it.

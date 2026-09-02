@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace.world.machine
 
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.world.Acceptance
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.SpeciesFilter
 import org.emerge.demo.outofspace.world.TileIndex
@@ -35,15 +36,8 @@ data class DockingPort(
     override val center: TileIndex,
     override val facing: Direction,
     override val wiring: Wiring = Wiring.RUNNING,
-    /**
-     * What the player is willing to sell, one filter per order.
-     *
-     * Each is the same shape a locked warehouse uses — a species and a minimum purity — because the
-     * question is the same one: what may come down the branch that ends here. A player selling only
-     * *pure* iron sets the purity to 100 and the network stops delivering their dirty ore to the
-     * mouth that would give it away at a quarter rate.
-     */
-    val sell: List<SpeciesFilter> = emptyList(),
+    /** What the player is willing to sell, and how much of it. */
+    val sell: List<SellOrder> = emptyList(),
     /** Standing purchase orders, worked through in list order until the money runs out. */
     val buy: List<BuyOrder> = emptyList(),
 ) : DirectedDeckMachine {
@@ -52,8 +46,11 @@ data class DockingPort(
     override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
     override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
 
-    /** Whether [species] may be routed here to be sold. */
-    fun sells(species: Species): Boolean = sell.any { it.species == species }
+    /** The standing order to sell pure [species], if there is one. */
+    fun selling(species: Species): SellOrder? = sell.firstOrNull { it.filter.species == species }
+
+    /** The standing order to sell mixed ore, if there is one. */
+    fun sellingOre(): SellOrder? = sell.firstOrNull { it.filter == SpeciesFilter.MIXED }
 
     companion object {
         /**
@@ -65,6 +62,45 @@ data class DockingPort(
          * their mind about it, rather than inside the mouth that is about to give it away.
          */
         val CAP: Long = 2L * MACHINE_BUFFER_CAP
+    }
+}
+
+/**
+ * A standing order to sell [remaining] mass of whatever [filter] admits, worked down as the network
+ * delivers it.
+ *
+ * ⛔ **Pure, or mixed, and never both** — see [SpeciesFilter.MIXED]. A per-species order is written
+ * at [SpeciesFilter.MAX_PERCENT], so it takes that species and nothing blended; the ore order takes
+ * everything blended and nothing pure. The two **partition** every lump between them, which is what
+ * makes it safe to have both on one mouth: no lump can satisfy two orders, so attributing a delivery
+ * to the order that pulled it in is never a guess.
+ *
+ * ⚠️ **It used to be a bare filter at any purity**, which was the same thing as "sell everything
+ * with iron in it" — so a sell order for iron quietly gave away the ship's ore at a quarter rate,
+ * which is precisely the trade `Market.sellValue` exists to make the player think about. The
+ * `SELL` column shows [org.emerge.demo.outofspace.world.Stockpile.buildable], which counts only
+ * stores holding nothing but that species, so the number and the order now agree about what will go.
+ */
+data class SellOrder(val filter: SpeciesFilter, val remaining: Long) {
+    /** True while this order has no end — the `>>` button. */
+    val isEndless: Boolean get() = remaining == ENDLESS
+
+    companion object {
+        /**
+         * An order with no end: sell this, for as long as the ship keeps making it.
+         *
+         * ⚠️ **The same number [Acceptance.UNLIMITED] is, and deliberately the same one.** This
+         * becomes that when the acceptance is built, and two constants for one idea is how they
+         * drift apart.
+         */
+        const val ENDLESS: Long = Acceptance.UNLIMITED
+
+        /** Sell pure [species] — [mass], or [ENDLESS]. */
+        fun of(species: Species, mass: Long): SellOrder =
+            SellOrder(SpeciesFilter(species, SpeciesFilter.MAX_PERCENT), mass)
+
+        /** Sell mixed ore — [mass], or [ENDLESS]. */
+        fun ore(mass: Long): SellOrder = SellOrder(SpeciesFilter.MIXED, mass)
     }
 }
 

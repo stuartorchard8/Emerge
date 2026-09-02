@@ -732,7 +732,7 @@ class OutofspaceHud {
                     text("nothing loose to sell", 0x5A5A5AFFL)
                 } else {
                     for (species in offerable) {
-                        val listed = port.sells(species)
+                        val listed = port.selling(species) != null
                         val bid = market.bidFor(species, Capacity.PACKET_MASS)
                         button(
                             listOf(
@@ -741,7 +741,7 @@ class OutofspaceHud {
                                 "  ${mass(stock.buildable(species))}  ·  $bid cr/100kg" to null,
                             ),
                             if (listed) 0x2E6B4AFFL else 0x2A3550FFL,
-                        ) { controller.toggleSell(port, species) }
+                        ) { controller.toggleSellForever(port, species) }
                     }
                 }
 

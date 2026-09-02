@@ -27,6 +27,7 @@ import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.DockingPort
+import org.emerge.demo.outofspace.world.machine.SellOrder
 import org.emerge.demo.outofspace.world.machine.BuyOrder
 import org.emerge.demo.outofspace.world.machine.Furnace
 import org.emerge.demo.outofspace.world.machine.Thruster
@@ -546,8 +547,14 @@ object Save {
             // line. A sell order is `species:percent` (percent absent means any purity); a buy order
             // is `species:mass`. ⚠️ Masses go through the scale like every other mass in the file.
             is DockingPort -> {
+                // A sell order is `species:percent:remaining`. ⚠️ The remaining mass goes through
+                // the scale like every other mass in the file; [SellOrder.ENDLESS] does not, and is
+                // written as an empty field so it cannot be rescaled into a merely very large number.
                 if (m.sell.isNotEmpty()) put("sell", m.sell.joinToString(",") {
-                    (it.species?.name ?: "ANY") + ":" + (it.minPercent?.toString() ?: "")
+                    (it.filter.species?.name ?: "ANY") + ":" +
+                        (it.filter.minPercent?.toString() ?: "") + ":" +
+                        (if (it.isEndless) "" else it.remaining.toString()) + ":" +
+                        (it.filter.belowPercent?.toString() ?: "")
                 })
                 if (m.buy.isNotEmpty()) put("buy", m.buy.joinToString(",") {
                     it.species.name + ":" + it.remaining
@@ -1739,7 +1746,18 @@ object Save {
                     val parts = entry.split(":")
                     val species = Species.ALL.firstOrNull { it.name == parts[0] }
                     if (parts[0] != "ANY" && species == null) return@mapNotNull null
-                    SpeciesFilter(species, parts.getOrNull(1)?.takeIf { it.isNotEmpty() }?.toIntOrNull())
+                    val filter = SpeciesFilter(
+                        species,
+                        parts.getOrNull(1)?.takeIf { it.isNotEmpty() }?.toIntOrNull(),
+                        parts.getOrNull(3)?.takeIf { it.isNotEmpty() }?.toIntOrNull(),
+                    )
+                    // ⛔ **An absent remaining is ENDLESS, not zero.** Below the version that wrote
+                    // the field there was no such thing as a finite sell order — every entry on the
+                    // list meant "sell this for as long as I keep making it" — so a file with no
+                    // third field describes exactly that, and reading it as zero would silently
+                    // cancel every standing order in the save.
+                    val left = parts.getOrNull(2)?.takeIf { it.isNotEmpty() }?.toLongOrNull()
+                    SellOrder(filter, if (left == null) SellOrder.ENDLESS else scale.of(left))
                 } ?: emptyList(),
                 buy = f["buy"]?.split(",")?.mapNotNull { entry ->
                     val parts = entry.split(":")

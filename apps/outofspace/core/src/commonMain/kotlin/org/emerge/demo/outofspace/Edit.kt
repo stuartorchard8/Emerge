@@ -169,7 +169,7 @@ sealed interface Edit {
      */
     data class TuneDockingPort(
         val tile: TileIndex,
-        val sell: List<org.emerge.demo.outofspace.world.SpeciesFilter>,
+        val sell: List<org.emerge.demo.outofspace.world.machine.SellOrder>,
         val buy: List<org.emerge.demo.outofspace.world.machine.BuyOrder>,
     ) : Edit
 

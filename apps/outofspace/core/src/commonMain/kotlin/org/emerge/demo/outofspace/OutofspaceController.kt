@@ -24,6 +24,7 @@ import org.emerge.demo.outofspace.world.Docking
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.machine.BuyOrder
 import org.emerge.demo.outofspace.world.machine.DockingPort
+import org.emerge.demo.outofspace.world.machine.SellOrder
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
@@ -579,15 +580,57 @@ class OutofspaceController(
     fun undock() = pending.add(Edit.Undock)
     fun setDockedThrust(allowed: Boolean) = pending.add(Edit.SetDockedThrust(allowed))
 
-    /** Put [species] up for sale, or take it off the list if it is already on it. */
-    fun toggleSell(port: DockingPort, species: Species) = pending.add(
-        Edit.TuneDockingPort(
-            port.center,
-            sell = if (port.sells(species)) port.sell.filterNot { it.species == species }
-            else port.sell + SpeciesFilter(species, null),
-            buy = port.buy,
-        ),
-    )
+    /**
+     * Add [mass] more of [species] to the sell order, or start one.
+     *
+     * ⚠️ **Cumulative** — one click is one packet, and five clicks is five. An order that replaced
+     * itself would make the button mean "sell exactly a packet", which is not a thing anybody wants
+     * to press five times to say.
+     */
+    fun sellMore(port: DockingPort, species: Species, mass: Long) =
+        retuned(port, sell = port.sell.adding(SellOrder.of(species, mass)))
+
+    /** Add [mass] more mixed ore to the sell order, or start one. */
+    fun sellMoreOre(port: DockingPort, mass: Long) =
+        retuned(port, sell = port.sell.adding(SellOrder.ore(mass)))
+
+    /** Sell pure [species] for as long as the ship keeps making it, or stop. */
+    fun toggleSellForever(port: DockingPort, species: Species) =
+        setEndlessSell(port, SellOrder.of(species, SellOrder.ENDLESS))
+
+    /** Sell mixed ore for as long as the ship keeps digging it, or stop. */
+    fun toggleSellOreForever(port: DockingPort) =
+        setEndlessSell(port, SellOrder.ore(SellOrder.ENDLESS))
+
+    /** Take [species] off the sell list altogether, ore row included when [species] is null. */
+    fun cancelSell(port: DockingPort, species: Species?) =
+        retuned(port, sell = port.sell.filterNot { it.filter.species == species })
+
+    /**
+     * Turn an endless order on, or off if it is already on.
+     *
+     * ⏸ **The `<<`/`>>` exclusion is not here yet**, deliberately: an endless *buy* does not exist
+     * until the port can be pulled from, so there is nothing to exclude against. Cancelling any buy
+     * order of the same species would be wrong — a finite order to buy fifty kilos of iron and a
+     * standing order to sell the iron you refine are not a loop, they are a Tuesday.
+     */
+    private fun setEndlessSell(port: DockingPort, order: SellOrder) {
+        val already = port.sell.firstOrNull { it.filter == order.filter }?.isEndless == true
+        val without = port.sell.filterNot { it.filter == order.filter }
+        retuned(port, sell = if (already) without else without + order)
+    }
+
+    /** One list of orders with [order] folded in: cumulative if it is already there, else appended. */
+    private fun List<SellOrder>.adding(order: SellOrder): List<SellOrder> {
+        val existing = firstOrNull { it.filter == order.filter }
+        // An endless order is not added to. It already means "all of it".
+        if (existing != null && existing.isEndless) return this
+        return if (existing == null) this + order
+        else map { if (it.filter == order.filter) it.copy(remaining = it.remaining + order.remaining) else it }
+    }
+
+    private fun retuned(port: DockingPort, sell: List<SellOrder> = port.sell, buy: List<BuyOrder> = port.buy) =
+        pending.add(Edit.TuneDockingPort(port.center, sell = sell, buy = buy))
 
     /** Order [mass] more of [species], or cancel the order if there is one. */
     fun toggleBuy(port: DockingPort, species: Species, mass: Long) = pending.add(

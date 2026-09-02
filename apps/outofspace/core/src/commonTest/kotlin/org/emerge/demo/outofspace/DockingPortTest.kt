@@ -32,6 +32,7 @@ import org.emerge.demo.outofspace.world.heatCapacityOf
 import org.emerge.demo.outofspace.world.machine.BuyOrder
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DockingPort
+import org.emerge.demo.outofspace.world.machine.SellOrder
 import org.emerge.sim.core.PlayerId
 
 /**
@@ -92,7 +93,7 @@ class DockingPortTest {
 
     /** A full tank at (2,3) pouring right into a docking port at (10,3). */
     private fun world(
-        sell: List<SpeciesFilter> = listOf(SpeciesFilter(Species.Iron, null)),
+        sell: List<SellOrder> = listOf(SellOrder.of(Species.Iron, SellOrder.ENDLESS)),
         buy: List<BuyOrder> = emptyList(),
         market: Market? = Market.empty(),
         stock: Mixture = ore(6L * Capacity.PACKET_MASS),
@@ -163,7 +164,7 @@ class DockingPortTest {
     @Test
     fun `a port is only sent what is on its list`() {
         // Selling titanium; the tank holds iron. Same shape as a warehouse locked to the wrong thing.
-        val s = run(world(sell = listOf(SpeciesFilter(Species.Titanium, null))), 60 * RAIL_PERIOD)
+        val s = run(world(sell = listOf(SellOrder.of(Species.Titanium, SellOrder.ENDLESS))), 60 * RAIL_PERIOD)
         assertEquals(0L, s.exportedMass, "iron was sold to a port listing only titanium")
         assertEquals(0L, s.onTrack(), "the run filled up against a list that will never admit it")
     }
@@ -192,7 +193,11 @@ class DockingPortTest {
         val pure = run(world(stock = ore(mass)), 60 * RAIL_PERIOD)
         val blended = run(
             world(
-                sell = listOf(SpeciesFilter(Species.Iron, null), SpeciesFilter(Species.Forsterite, null)),
+                // ⚠️ **The ore order, not two species orders.** A per-species order is written at
+                // full purity and takes pure metal only, so a blend can reach the mouth by exactly
+                // one route — see [SellOrder]. Listing iron and forsterite separately routes nothing
+                // at all, which would have made this measure an empty mouth rather than a penalty.
+                sell = listOf(SellOrder.ore(SellOrder.ENDLESS)),
                 stock = Mixture.of(
                     Species.Iron to mass / 2, Species.Forsterite to mass / 2, energy = 0L,
                 ).atAmbient(),
@@ -206,6 +211,49 @@ class DockingPortTest {
             pure.credits > blended.credits * 3,
             "pure paid ${pure.credits} against a blend's ${blended.credits}",
         )
+    }
+
+    // ── Orders ───────────────────────────────────────────────────────────────
+
+    @Test
+    fun `a finite sell order stops when it is filled`() {
+        // ⛔ **The order is the appetite**, so this is the network declining to deliver rather than
+        // the mouth declining to take: two packets asked for, two packets sold, and the rest of a
+        // six-packet tank still in the tank. Were the order merely a filter with a counter beside
+        // it, the belts would keep coming and the mouth would sell whatever turned up.
+        val start = world(sell = listOf(SellOrder.of(Species.Iron, 2L * Capacity.PACKET_MASS)))
+        val s = run(start, 120 * RAIL_PERIOD)
+
+        assertEquals(2L * Capacity.PACKET_MASS, s.exportedMass, "a two-packet order did not sell two packets")
+        assertTrue((s.deck[port] as DockingPort).sell.isEmpty(), "a filled order stayed on the list")
+        assertEquals(0L, s.onTrack(), "the run kept filling after the order was done")
+    }
+
+    @Test
+    fun `an endless sell order does not stop`() {
+        // The other side of the same rule, on the same tank: without this the test above passes for
+        // the boring reason that nothing ever sells more than two packets.
+        val start = world(sell = listOf(SellOrder.of(Species.Iron, SellOrder.ENDLESS)))
+        val s = run(start, 120 * RAIL_PERIOD)
+
+        assertTrue(
+            s.exportedMass > 2L * Capacity.PACKET_MASS,
+            "an endless order sold only ${s.exportedMass}",
+        )
+        assertTrue((s.deck[port] as DockingPort).sell.isNotEmpty(), "an endless order completed")
+    }
+
+    @Test
+    fun `a species order will not take ore, and the ore order will not take metal`() {
+        // The partition, through the whole machine rather than against `SpeciesFilter` directly.
+        // This is what makes attributing a delivery to an order a fact rather than a guess.
+        val dirty = dirtyOre(4L * Capacity.PACKET_MASS)
+        val bySpecies = run(world(sell = listOf(SellOrder.of(Species.Iron, SellOrder.ENDLESS)), stock = dirty), 60 * RAIL_PERIOD)
+        assertEquals(0L, bySpecies.exportedMass, "a pure-iron order gave away the ship's ore")
+
+        val pure = ore(4L * Capacity.PACKET_MASS)
+        val byOre = run(world(sell = listOf(SellOrder.ore(SellOrder.ENDLESS)), stock = pure), 60 * RAIL_PERIOD)
+        assertEquals(0L, byOre.exportedMass, "the ore order gave away refined metal")
     }
 
     // ── Where a sale lands ───────────────────────────────────────────────────
@@ -229,7 +277,7 @@ class DockingPortTest {
         // reserve, had nothing to do for the rest of the game.
         val post = Station(Mixture.EMPTY, Market.empty(), id = 3)
         val s = run(world(
-            sell = listOf(SpeciesFilter(Species.Iron, null), SpeciesFilter(Species.Forsterite, null)),
+            sell = listOf(SellOrder.ore(SellOrder.ENDLESS)),
             stock = dirtyOre(4L * Capacity.PACKET_MASS),
         ).berthedTo(post), 60 * RAIL_PERIOD)
         val after = s.station(3)
@@ -250,7 +298,7 @@ class DockingPortTest {
         val post = Station(Mixture.EMPTY, Market.empty(), id = 3)
         val mass = 4L * Capacity.PACKET_MASS
         val s = run(world(
-            sell = listOf(SpeciesFilter(Species.Iron, null), SpeciesFilter(Species.Forsterite, null)),
+            sell = listOf(SellOrder.ore(SellOrder.ENDLESS)),
             stock = Mixture.of(
                 Species.Iron to mass - Budget.GRAM, Species.Forsterite to Budget.GRAM, energy = 0L,
             ).atAmbient(),
@@ -437,7 +485,7 @@ class DockingPortTest {
         // that changed hands, which reads as a bug in the thermal sim.
         val lump = ore(Capacity.PACKET_MASS)
         val start = bareWorld(
-            DockingPort(this.port, Direction.Right, sell = listOf(SpeciesFilter(Species.Iron, null))),
+            DockingPort(this.port, Direction.Right, sell = listOf(SellOrder.of(Species.Iron, SellOrder.ENDLESS))),
             Market.empty(),
         ).stocked(this.port, lump).anchored()
 
@@ -470,17 +518,22 @@ class DockingPortTest {
 
     @Test
     fun `sell and buy lists survive a round trip`() {
+        // One of each kind the mouth can hold: endless, finite, and the ore order — whose whole
+        // content is a *ceiling*, which is the field a `species:percent` line had nowhere to put.
+        val orders = listOf(
+            SellOrder.of(Species.Iron, SellOrder.ENDLESS),
+            SellOrder.of(Species.Titanium, 3L * Capacity.PACKET_MASS),
+            SellOrder.ore(Budget.TONNE),
+        )
         val start = world(
-            sell = listOf(SpeciesFilter(Species.Iron, null), SpeciesFilter(Species.Titanium, 90)),
+            sell = orders,
             buy = listOf(BuyOrder(Species.Gold, 5L * Budget.KILOGRAM), BuyOrder(Species.Copper, Budget.TONNE)),
         )
         val back = Save.read(Save.write(start)).deck[port] as DockingPort
 
-        assertEquals(2, back.sell.size, "the sell list did not come back")
-        assertEquals(Species.Iron, back.sell[0].species)
-        assertEquals(null, back.sell[0].minPercent, "an absent purity came back as a number")
-        assertEquals(Species.Titanium, back.sell[1].species)
-        assertEquals(90, back.sell[1].minPercent)
+        // ⚠️ Compared whole rather than field by field: the filter carries three numbers now, and a
+        // per-field check is exactly how the ceiling would go missing without anything failing.
+        assertEquals(orders, back.sell, "the sell list did not come back as it went in")
         // ⚠️ A buy order's mass goes through the file's mass scale like every other mass. A count
         // read through it — or a mass read around it — is off by a factor of a million.
         assertEquals(
