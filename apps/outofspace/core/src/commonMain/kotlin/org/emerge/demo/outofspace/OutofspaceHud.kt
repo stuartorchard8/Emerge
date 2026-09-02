@@ -899,12 +899,35 @@ class OutofspaceHud {
         s: VesselState,
         prospecting: Species?,
         frame: CameraFrame,
-    ) = canvas {
+    ) {
         RockSpawner.highlight = prospecting
-        val size = 190f * density
-        val pad = 10f * density
-        val x0 = (screenW - size) / 2f
-        val y0 = screenH - size - pad
+        // ⚠️ **A panel, not a canvas at hand-picked screen coordinates.** The dial and its two labels
+        // are one instrument, and they used to be three things that happened to line up because each
+        // was measured from the bottom of the screen by hand — the title from the disc's top edge,
+        // the readout from its bottom, and the disc from `screenH - size - pad`. Anything that moved
+        // one moved it out of the other two's arithmetic. Now the panel stacks them, and it is the
+        // panel that knows where the bottom of the screen is.
+        panel(Anchor.BottomCenter, padding = 6f, rowHeight = 12f) {
+            if (prospecting == null) {
+                centeredText("NAV  ·  ${NAV_RANGE_TILES.toInt()} TILES", 0x7A8A9AFFL)
+            } else {
+                centeredText("NAV  ·  ${prospecting.name.uppercase()}", speciesColor(prospecting))
+            }
+            canvasBox(NAV_DIAL_DP, NAV_DIAL_DP) { boxX, boxY, boxW, _ ->
+                navDial(s, frame, boxX, boxY, boxW)
+            }
+            centeredText("${navTiles(s.positionX)}, ${navTiles(s.positionY)}", 0x9AA4B4FFL)
+        }
+    }
+
+    /** The dial itself, drawn into the box the panel reserved for it. */
+    private fun org.emerge.render.torus.ui.CanvasBuilder.navDial(
+        s: VesselState,
+        frame: CameraFrame,
+        x0: Float,
+        y0: Float,
+        size: Float,
+    ) {
         val cx = x0 + size / 2f
         val cy = y0 + size / 2f
 
@@ -1040,16 +1063,6 @@ class OutofspaceHud {
         // entirely, since the panel behind is nearly black.
         val h = 1f * density
         rect(cx - h, cy - h, h * 2f, h * 2f, 0x0B1220FFL)
-
-        if (prospecting == null) {
-            label("NAV  ·  ${NAV_RANGE_TILES.toInt()} tiles", cx, y0 + 3f * density, 9f * density, 0x7A8A9AFFL)
-        } else {
-            label("NAV  ·  ${prospecting.name.uppercase()}", cx, y0 + 3f * density, 9f * density, speciesColor(prospecting))
-        }
-        label(
-            "${tiles(s.positionX)}, ${tiles(s.positionY)}",
-            cx, y0 + size - 11f * density, 9f * density, 0x9AA4B4FFL,
-        )
     }
 
     /**
@@ -2173,12 +2186,30 @@ class OutofspaceHud {
         return "$sign${a / Flight.PER_TILE}.${frac.toString().padStart(6, '0')}"
     }
 
+    /**
+     * A position for the **dial**: whole tiles, rounded.
+     *
+     * ⚠️ **Not [tiles], and the difference is the panel.** [tiles] prints six decimals — a millionth
+     * of a tile, which is what the readouts panel wants and what a nav instrument has no use for on
+     * a face 256 tiles across. It also *changes width* as the ship flies, and a panel is sized by
+     * its widest row: the whole instrument breathed in and out once per tick. Whole tiles are both
+     * the readable number and a stable one, and stay comfortably narrower than the dial above them,
+     * which is what actually fixes the width.
+     */
+    private fun navTiles(v: Long): String {
+        val half = Flight.PER_TILE / 2L
+        return ((if (v < 0L) v - half else v + half) / Flight.PER_TILE).toString()
+    }
+
     /** Gravity as thousandths of the one g [VesselState.PLATING_ONE_G] means. */
     private fun milliG(raw: Long): Long = raw * 1000L / Int.MAX_VALUE.toLong()
 
     companion object {
         /** Nav view half-width (provisional — 20s debug thrust). */
         const val NAV_RANGE_TILES: Float = 256f
+
+        /** The dial's diameter, in dp — the panel sizes itself around it. */
+        const val NAV_DIAL_DP: Float = 190f
 
         /** The speed at which the needle is fully extended, in tiles per tick. Provisional likewise. */
         const val NAV_FULL_SCALE_SPEED: Float = 2f
