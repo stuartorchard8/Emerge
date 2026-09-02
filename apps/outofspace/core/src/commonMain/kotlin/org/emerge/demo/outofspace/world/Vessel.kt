@@ -904,6 +904,15 @@ data class VesselState(
     val distribution: MassDistribution by lazy { massDistribution(grid, rail, conduits, deck, buffers) }
 
     /**
+     * The bounding box of everything placed, `(minX, minY, maxX, maxY)` in tiles, or null for an
+     * empty world — memoised for the same reason [distribution] is.
+     *
+     * ⛔ **Read only.** It is an `IntArray` because [fitToFrame] wanted one and it is shared now, so
+     * writing to it would rewrite what every later reader sees. Nothing does; nothing should.
+     */
+    val placedBox: IntArray? by lazy { computePlacedBounds() }
+
+    /**
      * How fast the vessel is turning, in [Coord] raw per tick — the angular twin of [velocityX].
      *
      * Derived from [angImpulse] over the moment of inertia, so like the linear velocity there is no

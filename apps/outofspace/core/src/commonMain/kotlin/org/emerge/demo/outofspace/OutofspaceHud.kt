@@ -946,10 +946,59 @@ class OutofspaceHud {
             line(cx, cy, cx + vx / speed * reach, cy + vy / speed * reach, 1.5f * density, 0x6ED09AFFL)
         }
 
-        // Ship (drawn last, legible over everything).
-        val h = 2.5f * density
-        rect(cx - h - density, cy - h - density, (h + density) * 2f, (h + density) * 2f, 0x080D14FFL)
-        rect(cx - h, cy - h, h * 2f, h * 2f, 0xFFFFFFFFL)
+        // Ship silhouette: the built extent, turned to the ship's heading, at the map's own scale.
+        //
+        // ⚠️ **What this is for is the scale.** The map is 256 tiles across and everything on it was
+        // a dot, so there was nothing to read a distance against — an ore field two hundred tiles
+        // off and one twenty tiles off look the same when the only other mark is a five-pixel
+        // square. The starter vessel comes out 11.5 × 6.3 px, which makes the panel about seventeen
+        // ships wide: small, and honestly so, because the range genuinely is 256 tiles.
+        //
+        // ⛔ **It has to turn, because the map does not.** The density field and the velocity needle
+        // are both drawn in world axes, so this is a north-up map, and the ship's heading was the
+        // one thing on it that was completely invisible — the marker being a square. [Pose.turnedX]
+        // is the right conversion and not a matrix: a corner is an *offset from the centre of mass*,
+        // which is a direction, and directions turn without translating.
+        s.placedBox?.let { box ->
+            val pose = s.pose
+            val comTileX = pose.comLocalX.toFloat() / Flight.PER_TILE
+            val comTileY = pose.comLocalY.toFloat() / Flight.PER_TILE
+            val cosF = pose.cos.toFloat() / Flight.FRAC_ONE
+            val sinF = pose.sin.toFloat() / Flight.FRAC_ONE
+            // `+ 1` on the far corners because the box names *tiles* and a tile is a square, not a
+            // point: the far edge of the last one is a tile past its index.
+            val cornerX = FloatArray(4)
+            val cornerY = FloatArray(4)
+            val tiles = arrayOf(
+                box[0].toFloat() to box[1].toFloat(),
+                (box[2] + 1).toFloat() to box[1].toFloat(),
+                (box[2] + 1).toFloat() to (box[3] + 1).toFloat(),
+                box[0].toFloat() to (box[3] + 1).toFloat(),
+            )
+            for (i in 0..3) {
+                val dx = tiles[i].first - comTileX
+                val dy = tiles[i].second - comTileY
+                cornerX[i] = cx + (dx * cosF - dy * sinF) * perPx
+                cornerY[i] = cy + (dx * sinF + dy * cosF) * perPx
+            }
+            // ⛔ **Filled, and no outline.** It had one, and a one-pixel border around a shape six
+            // pixels tall spends two of those six rows on its own edge — the hull came back as a
+            // smear with a bright rim and no inside. A solid pale shape at this size is the ship;
+            // an outlined one is a rectangle drawn by somebody who could not see it.
+            fillQuad(cornerX, cornerY, 0xCFE2F5EEL)
+        }
+
+        // The ship's centre of mass — which is the point the coordinates below actually name.
+        //
+        // ⚠️ **A dot, where it used to be a five-pixel square.** That square was the whole ship on
+        // this panel, and it was wider than the vessel it stood for: drawn over the silhouette it
+        // hid it almost exactly, which is how this looked like a broken outline the first time it
+        // was rendered rather than a marker sitting on top of a working one.
+        // ⚠️ Dark, against a hull that is now pale — it was white, which is invisible on the thing
+        // it is supposed to mark. Dark also keeps it legible when the ship is off the built area
+        // entirely, since the panel behind is nearly black.
+        val h = 1f * density
+        rect(cx - h, cy - h, h * 2f, h * 2f, 0x0B1220FFL)
 
         if (prospecting == null) {
             label("NAV  ·  ${NAV_RANGE_TILES.toInt()} tiles", cx, y0 + 3f * density, 9f * density, 0x7A8A9AFFL)
@@ -960,6 +1009,16 @@ class OutofspaceHud {
             "${tiles(s.positionX)}, ${tiles(s.positionY)}",
             cx, y0 + size - 11f * density, 9f * density, 0x9AA4B4FFL,
         )
+    }
+
+    /**
+     * A filled convex quad, which the canvas has no primitive for either — one rect per scanline.
+     *
+     * The spans come from [quadSpans], which is where the arithmetic is and where it is tested; this
+     * is the part that knows how to draw a rectangle.
+     */
+    private fun org.emerge.render.torus.ui.CanvasBuilder.fillQuad(xs: FloatArray, ys: FloatArray, color: Long) {
+        quadSpans(xs, ys) { x, y, w -> rect(x, y, w, 1f, color) }
     }
 
     /** A hollow box, which the canvas has no primitive for: four rectangles is the whole of it. */
@@ -2132,5 +2191,48 @@ class OutofspaceHud {
 
         /** Below this much room under the head, in dp, the article's body is not drawn at all. */
         const val MIN_REFERENCE_HEIGHT_DP: Float = 80f
+    }
+}
+
+
+/**
+ * The scanlines of a filled convex quad: calls [emit] with `(x, y, width)` once per pixel row.
+ *
+ * ⚠️ Scanlines rather than two triangles because the canvas draws axis-aligned rectangles and
+ * nothing else, and rather than a stack of `line` calls because those would overdraw the interior
+ * once per step. A ship on the nav map is six pixels tall, so this is six rectangles.
+ *
+ * ⚠️ **Half-open in y**, so a vertex shared by two edges is counted once rather than twice — the
+ * usual polygon-fill rule. Counted twice, a row through a corner gets its span from one edge and
+ * back again, and the shape grows a notch at exactly the place it should come to a point.
+ *
+ * Separated from the drawing so it can be checked without a GL context: [OutofspaceHud] draws the
+ * ship's silhouette with it at about eleven pixels by six, which is far too small to review by eye.
+ */
+internal inline fun quadSpans(xs: FloatArray, ys: FloatArray, emit: (Float, Float, Float) -> Unit) {
+    var top = ys[0]
+    var bottom = ys[0]
+    for (i in 1 until ys.size) {
+        if (ys[i] < top) top = ys[i]
+        if (ys[i] > bottom) bottom = ys[i]
+    }
+    var y = kotlin.math.floor(top)
+    while (y < bottom) {
+        val mid = y + 0.5f
+        var lo = Float.MAX_VALUE
+        var hi = -Float.MAX_VALUE
+        for (i in xs.indices) {
+            val j = (i + 1) % xs.size
+            val y0 = ys[i]
+            val y1 = ys[j]
+            if ((mid >= y0 && mid < y1) || (mid >= y1 && mid < y0)) {
+                val t = (mid - y0) / (y1 - y0)
+                val x = xs[i] + (xs[j] - xs[i]) * t
+                if (x < lo) lo = x
+                if (x > hi) hi = x
+            }
+        }
+        if (hi > lo) emit(lo, y, hi - lo)
+        y += 1f
     }
 }

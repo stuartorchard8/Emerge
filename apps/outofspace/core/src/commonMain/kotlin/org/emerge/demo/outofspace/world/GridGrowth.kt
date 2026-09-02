@@ -111,7 +111,15 @@ const val GRID_PAD: Int = 4
  *
  * Shared by [fitGrid] and [growToFit] so that "what the box encloses" has exactly one definition.
  */
-internal fun VesselState.placedBounds(): IntArray? {
+internal fun VesselState.placedBounds(): IntArray? = placedBox
+
+/**
+ * The walk itself. [VesselState.placedBox] memoises this; nothing should call it twice.
+ *
+ * ⚠️ It is two passes over the grid plus one per conduit layer, which is nothing once an edit and
+ * something once a *frame* — and the nav view's ship silhouette asks every frame.
+ */
+internal fun VesselState.computePlacedBounds(): IntArray? {
     var minX = Int.MAX_VALUE
     var minY = Int.MAX_VALUE
     var maxX = Int.MIN_VALUE
