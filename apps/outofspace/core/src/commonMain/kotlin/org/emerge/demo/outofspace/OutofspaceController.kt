@@ -617,7 +617,7 @@ class OutofspaceController(
     /** Whether the port at [tile] is lined up with a berth it could take right now. */
     fun berthInReach(port: DockingPort): Boolean {
         val s = state
-        if (s.docked != null) return false
+        if (s.assembly.isHeld(port.center.index) || s.berth != null) return false
         for (body in s.bodies) {
             val economy = body.station ?: continue
             for (i in economy.docks.indices) {
@@ -629,7 +629,7 @@ class OutofspaceController(
 
     /** The station the vessel is berthed at, or null. */
     val dockedStation: RigidBody?
-        get() = state.docked?.let { link -> state.bodies.firstOrNull { it.station?.id == link.stationId } }
+        get() = state.berth?.let { weld -> state.memberBody(weld.childId) }
     fun lockStorageSpecies(storage: Storage, species: Species?) = pending.add(Edit.LockStorageSpecies(storage.center, species))
     fun toggleStorageAutoLock(storage: Storage) = pending.add(Edit.TuneStorage(
         storage.center,
@@ -1176,20 +1176,20 @@ class OutofspaceController(
     /**
      * Whether the world was **already berthed when it was handed over** — see [reset].
      *
-     * ⛔ **Not `state.docked != null`, and the difference is exactly what this exists for.** A world
+     * ⛔ **Not `state.berth != null`, and the difference is exactly what this exists for.** A world
      * can be handed over flying free and be berthed before anybody draws it: the agent harness's
      * `berth` puts the station in place and clamps on in one breath, and any host that steps the
      * world before its first frame can do the same. The question the HUD is asking is whether the
      * berth came out of a file or was flown to, and only the handover can answer it — by the first
      * frame the two look identical.
      */
-    var arrivedBerthed: Boolean = initial.docked != null
+    var arrivedBerthed: Boolean = initial.berth != null
         private set
 
     /** Replaces the world — what "new game" and "load" will call. */
     fun reset(newState: VesselState = starterWorld(cfg.initialGrid)) {
         worldSerial++
-        arrivedBerthed = newState.docked != null
+        arrivedBerthed = newState.berth != null
         selected = TileIndex.NONE
         inspectTile = TileIndex.NONE
         closeWiki()

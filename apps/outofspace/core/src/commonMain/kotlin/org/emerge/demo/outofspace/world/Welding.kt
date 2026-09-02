@@ -6,30 +6,42 @@ import org.emerge.sim.core.physics.primitives.Coord
 /**
  * Bolting the vessel to a station, and letting go again — `PLAN_economy.md` §7.
  *
- * ### The vessel carries the pair
+ * ### The root carries the assembly
  *
- * A weld could be represented from either end. This one puts the pair's **momentum, angular momentum
- * and mass distribution on the vessel**, and derives the station's pose from the vessel's. That
- * choice is what makes the whole feature small: the reducer already advances the vessel's pose by its
- * own momentum about its own centre of mass, so handing it the *pair's* three numbers turns that
- * same expression into the pair's advance, with no second integrator and no constraint to solve.
+ * A weld could be represented from either end. This one puts the assembly's **momentum, angular
+ * momentum and mass distribution on its root**, and derives every held member's pose from it — see
+ * [Assembly.poseOf]. That choice is what makes the whole feature small: the reducer already advances
+ * the vessel's pose by its own momentum about its own centre of mass, so handing it the *assembly's*
+ * three numbers turns that same expression into the assembly's advance, with no second integrator
+ * and no constraint to solve.
+ *
+ * ⚠️ **The root is the vessel today, and that is the sim's assumption rather than this file's.** The
+ * functions here take a root pose and the distribution of what is welded to it; none of them asks
+ * what kind of thing the root is. What is genuinely still vessel-shaped is [capture] and [release]
+ * naming a `station` — the member joining or leaving — which is the last place a member's kind is
+ * visible and the thing `PLAN_rigid_bodies.md` step 6 retires.
  *
  * ⛔ **Nothing is minted.** Capture is an inelastic collision: total linear momentum and total angular
  * momentum about the joint centre are both conserved, and the half that leaves the station is booked
  * through [VesselState.bodyImpulseX] and [VesselState.bodyAngImpulse] — the stores that exist to name
  * exactly this exchange. Release divides the pair's motion back out the same way.
  */
-object Weld {
+object Welding {
 
     /**
-     * Where the station sits in the vessel's frame, and the pair's motion, at the moment of capture.
+     * Where the joining member sits in the root's frame, and the assembly's motion, at capture.
      *
-     * The offset is frozen here and never recomputed — see [DockLink]. Returns the link, and the
-     * vessel's new momentum, angular momentum and the transfers to book.
+     * The offset is frozen here and never recomputed — see [Weld]. Returns the joint, and the
+     * root's new momentum, angular momentum and the transfers to book.
      */
     fun capture(
-        shipPose: Pose,
-        shipAbout: MassDistribution,
+        rootPose: Pose,
+        /**
+         * The distribution of everything already welded together, in the root's frame — **not the
+         * vessel's own**. Adding a second member to an assembly is the same arithmetic as forming
+         * the first pair, provided this is what the first operand is.
+         */
+        heldAbout: MassDistribution,
         shipImpulseX: Long,
         shipImpulseY: Long,
         shipAngImpulse: Long,
@@ -38,6 +50,8 @@ object Weld {
         nodeIndex: Int,
     ): Capture {
         val economy = station.station ?: error("cannot dock to a body with no economy")
+        val shipPose = rootPose
+        val shipAbout = heldAbout
         val joint = jointOf(shipPose, shipAbout, station)
 
         // Linear: the pair simply carries the sum. What the station had is what the vessel gains, so
@@ -66,13 +80,14 @@ object Weld {
         val gainedAng = station.angImpulse + orbital
 
         return Capture(
-            link = DockLink(
-                stationId = economy.id,
+            weld = Weld(
+                childId = economy.id,
+                parentId = Member.VESSEL,
+                childX = shipPose.toLocalX(station.positionX, station.positionY),
+                childY = shipPose.toLocalY(station.positionX, station.positionY),
+                childAng = station.ang.raw - shipPose.ang.raw,
                 portTile = portTile,
                 nodeIndex = nodeIndex,
-                stationLocalX = shipPose.toLocalX(station.positionX, station.positionY),
-                stationLocalY = shipPose.toLocalY(station.positionX, station.positionY),
-                stationRelativeAng = station.ang.raw - shipPose.ang.raw,
             ),
             gainedImpulseX = gainedX,
             gainedImpulseY = gainedY,
@@ -102,13 +117,20 @@ object Weld {
      * angular numbers it hands back are different numbers.
      */
     fun release(
-        shipPose: Pose,
-        shipAbout: MassDistribution,
+        rootPose: Pose,
+        /**
+         * The distribution of everything that **stays** welded, in the root's frame. With one member
+         * leaving a two-member assembly that is the vessel alone; with three it is the other two,
+         * and the arithmetic below does not know the difference.
+         */
+        remainderAbout: MassDistribution,
         pairImpulseX: Long,
         pairImpulseY: Long,
         pairAngImpulse: Long,
         station: RigidBody,
     ): Release {
+        val shipPose = rootPose
+        val shipAbout = remainderAbout
         val joint = jointOf(shipPose, shipAbout, station)
         val pair = joint.about
         val stationAbout = station.about
@@ -175,9 +197,9 @@ object Weld {
         return scaledRatio(scaledRatio(angImpulse, pair.gyrationSq, member.gyrationSq), pair.mass, member.mass)
     }
 
-    /** What capture did: the link, and what the vessel took off the station. */
+    /** What capture did: the joint, and what the root took off the member it swallowed. */
     class Capture(
-        val link: DockLink,
+        val weld: Weld,
         val gainedImpulseX: Long,
         val gainedImpulseY: Long,
         val gainedAngImpulse: Long,
@@ -216,20 +238,6 @@ object Weld {
 
     /** The pair's distribution in the vessel's frame, plus the station's own centre within it. */
     class Joint(val about: MassDistribution, val stationComX: Long, val stationComY: Long)
-
-    /**
-     * Where the station must be, given where the vessel has got to. The whole of "rigid".
-     *
-     * ⚠️ [DockLink.stationLocalX] is the station's **centre of mass** in the vessel's grid, so what
-     * comes back is already anchored where a body is anchored and needs no further offset. It was
-     * the station's origin before the anchor flipped, and the link is versioned for it.
-     */
-    fun stationPose(shipPose: Pose, link: DockLink, station: MassDistribution): Pose = Pose(
-        x = shipPose.toWorldX(link.stationLocalX, link.stationLocalY),
-        y = shipPose.toWorldY(link.stationLocalX, link.stationLocalY),
-        ang = Coord(shipPose.ang.raw + link.stationRelativeAng),
-        about = station,
-    )
 
     /**
      * One tick of flight for whichever body is actually moving — the vessel alone, or the pair.

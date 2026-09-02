@@ -610,7 +610,7 @@ object OutofspaceAgentHarness {
                     controller.reset(s0.copy(bodies = s0.bodies + post))
                     controller.dock(port)
                     settle()
-                    println("[agent] berthed at station ${controller.state.docked?.stationId}")
+                    println("[agent] berthed at station ${controller.state.berth?.childId}")
                 }
                 "undock" -> { controller.undock(); settle(); println("[agent] clamps released") }
                 "rock" -> {

@@ -68,9 +68,10 @@ import org.emerge.demo.outofspace.world.Market
 import org.emerge.demo.outofspace.world.Prices
 import org.emerge.demo.outofspace.world.BodyKind
 import org.emerge.demo.outofspace.world.Station
-import org.emerge.demo.outofspace.world.DockLink
+import org.emerge.demo.outofspace.world.Assembly
+import org.emerge.demo.outofspace.world.Member
 import org.emerge.demo.outofspace.world.Docking
-import org.emerge.demo.outofspace.world.Weld
+import org.emerge.demo.outofspace.world.Welding
 import org.emerge.demo.outofspace.world.Composite
 import org.emerge.demo.outofspace.world.worked
 import org.emerge.demo.outofspace.world.heatCapacityOf
@@ -465,7 +466,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // [VesselState.dockedThrustAllowed].
                     is Thruster -> w.fire(
                         cfg, m,
-                        if (state.docked != null && !state.dockedThrustAllowed) 0
+                        if (!state.assembly.isEmpty && !state.dockedThrustAllowed) 0
                         else flight[tile.index].takeIf { m.control == ThrusterControl.Flight }
                             ?: if (on) SignalField.FULL else 0,
                         tile, structure,
@@ -882,17 +883,23 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // torque is not known until this tick's fluid has been solved. `toInt` is not a truncation
         // to apologise for — [Coord]'s two's-complement wrap *is* the turn, so an angle that runs
         // past π comes back at −π exactly and never drifts. See [Rotation].
-        // ⛔ **While docked the vessel advances as one member of a welded pair**, so the three numbers
-        // this expression reads — the mass, the centre of mass and the radius of gyration — are the
-        // *pair's*. Substituting them here is the whole of the weld's dynamics: there is no second
-        // integrator, no constraint to solve and nothing to drift, because a rigid pair turning about
-        // its joint centre is exactly what this line already computes for one body about its own. See
-        // [Weld], which explains why the pair's numbers live on the vessel and not anywhere else.
-        val dockedStation = state.docked?.let { link ->
-            w.bodies.firstOrNull { it.station?.id == link.stationId }
-        }
-        val moveAbout = if (dockedStation == null) w.about
-        else Weld.jointOf(state.pose, w.about, dockedStation).about
+        // ⛔ **While anything is welded on the vessel advances as one member of an assembly**, so the
+        // three numbers this expression reads — the mass, the centre of mass and the radius of
+        // gyration — are the *assembly's*. Substituting them here is the whole of the weld's
+        // dynamics: there is no second integrator, no constraint to solve and nothing to drift,
+        // because a rigid assembly turning about its joint centre is exactly what this line already
+        // computes for one body about its own. See [Welding], which explains why the assembly's
+        // numbers live on its root and not anywhere else.
+        // The assembly's three numbers, folded over however many members are welded on — one, today.
+        // ⛔ Folded from `w.bodies` rather than from `state`, because an edit this tick may have
+        // docked or undocked and the pose must advance under the assembly the tick actually has.
+        val heldWelds = w.assembly.descendants(Member.VESSEL)
+        fun heldBody(id: Int): RigidBody? = w.bodies.firstOrNull { it.station?.id == id }
+        fun heldAbout(id: Int): MassDistribution =
+            if (id == Member.VESSEL) w.about else heldBody(id)?.about ?: MassDistribution.EMPTY
+        val moveAbout =
+            if (heldWelds.isEmpty()) w.about
+            else w.assembly.distribution(Member.VESSEL, state.pose, w.about) { id -> heldAbout(id) }
         val spin = angularVelocity(state.angImpulse, moveAbout)
         // ⛔ **A frozen tick does not fly.** The ship keeps the pose it had — which is the whole of
         // "no time passes" as far as the world outside the hull is concerned, since the pose is what
@@ -901,10 +908,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // restarting it.
         // The pair's velocity, not the vessel's: the same momentum divided by the heavier thing it is
         // now bolted to, which is what makes a berthing look like an arrival rather than a bounce.
-        val moveVelocityX = if (dockedStation == null) startVelocityX else state.velocityXAt(moveAbout.mass)
-        val moveVelocityY = if (dockedStation == null) startVelocityY else state.velocityYAt(moveAbout.mass)
+        val moveVelocityX = if (heldWelds.isEmpty()) startVelocityX else state.velocityXAt(moveAbout.mass)
+        val moveVelocityY = if (heldWelds.isEmpty()) startVelocityY else state.velocityYAt(moveAbout.mass)
         val newPose = if (frozen) state.pose
-        else Weld.advance(state.pose, w.about, moveAbout, Coord(spin.toInt()), moveVelocityX, moveVelocityY)
+        else Welding.advance(state.pose, w.about, moveAbout, Coord(spin.toInt()), moveVelocityX, moveVelocityY)
         val newPositionX = newPose.x
         val newPositionY = newPose.y
         val newAng = newPose.ang
@@ -937,7 +944,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (frozen || bodiesToDrift.none { it.kind == BodyKind.STATION }) bodiesToDrift
             else bodiesToDrift.map { body ->
                 val station = body.station ?: return@map body
-                val atTheCounter = w.docked?.stationId == station.id && w.market != null
+                val atTheCounter = w.assembly.isHeld(station.id) && w.market != null
                 // ⚠️ **Trade first, then the station's own plants.** The docking port ran in the
                 // machine loop above and left its result in `w.market`; installing it here before
                 // [Station.worked] is what makes a tick read "the ship sold me this, now I separate
@@ -964,14 +971,22 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 if (atTheCounter) w.market = after.market
                 body.copy(station = after)
             }
-        // ⛔ **The docked station does not drift.** It is not free any more — its pose is the
-        // vessel's pose plus a frozen offset, and letting the sweep integrate it as well would have
-        // two different answers for where it is. Held out here rather than special-cased inside
-        // [driftBodies], which stays a function about free bodies and knows nothing about berths.
-        val berthed = state.docked?.let { link -> bodiesAtWork.firstOrNull { it.station?.id == link.stationId } }
+        // ⛔ **A held member does not drift.** It is not free any more — its pose is the assembly
+        // root's pose plus a frozen offset, and letting the sweep integrate it as well would have two
+        // different answers for where it is. Held out here rather than special-cased inside
+        // [driftBodies], which stays a function about free bodies and knows nothing about welds.
+        //
+        // ⚠️ **Held out of the *integrator*, and not out of the collision set.** For most of this
+        // file's life it was both, because they were the same list — so an asteroid flew straight
+        // through the station a berthed ship was bolted to, and lodged in it the moment the clamps
+        // opened and the geometry came back. A held member goes to the sweep separately, as
+        // geometry the assembly presents, through [BodyStep.held].
+        val heldBodies = w.assembly.descendants(Member.VESSEL).mapNotNull { weld ->
+            bodiesAtWork.firstOrNull { it.station?.id == weld.childId }
+        }
         // Replace w.bodies contents (driftBodies mutates by reference via the list).
         w.bodies.clear()
-        w.bodies.addAll(if (berthed == null) bodiesAtWork else bodiesAtWork.filter { it !== berthed })
+        w.bodies.addAll(if (heldBodies.isEmpty()) bodiesAtWork else bodiesAtWork.filter { body -> heldBodies.none { it === body } })
 
         // Bodies fly here because this is where the ship's own motion is known.
         // A body is stated entirely in the *world* now — position and momentum both — so drifting
@@ -1069,7 +1084,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             exportedEnergy = w.exportedEnergy,
             credits = w.credits,
             dockedMarket = w.market,
-            docked = w.docked,
+            assembly = w.assembly,
             dockedThrustAllowed = w.dockedThrustAllowed,
             ventedMass = w.ventedMass,
             builtMass = w.builtMass,
@@ -1119,8 +1134,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // The berthed station, back on the list at the pose the weld says it must be at. One
             // rotation and one translation, both already applied to the vessel above — a rigid pair
             // needs nothing else, which is the whole reason the weld is cheap.
-            bodies = if (berthed == null) bodiesDrifted.bodies else bodiesDrifted.bodies + berthed.let {
-                val at = Weld.stationPose(newPose, state.docked!!, it.about)
+            bodies = if (heldBodies.isEmpty()) bodiesDrifted.bodies else bodiesDrifted.bodies + heldBodies.map {
+                val at = w.assembly.poseOf(it.station!!.id, newPose) { id -> heldAbout(id) }
                 it.copy(positionX = at.x, positionY = at.y, ang = at.ang)
             },
             bodyImpulseX = state.bodyImpulseX + handedX,
@@ -1720,8 +1735,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * sweep, which is the one place that can see both.
          */
         var consigned: Mixture = Mixture.EMPTY
-        /** The berth the vessel is bolted to — see [VesselState.docked]. */
-        var docked: DockLink? = state.docked
+        /** What is bolted to what — see [VesselState.assembly]. */
+        var assembly: Assembly = state.assembly
         var dockedThrustAllowed: Boolean = state.dockedThrustAllowed
         // Editable conduit layers (array of lists avoids per-tile Conduits rebuild).
         val layers: Array<MutableList<Segment?>> =
@@ -2254,8 +2269,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     if (m is DockingPort) deck[tile] = m.copy(orders = edit.orders, ore = edit.ore)
                 }
                 is Edit.Undock -> {
-                    val link = docked ?: return
-                    docked = null
+                    val weld = assembly.welds.firstOrNull { it.parentId == Member.VESSEL } ?: return
+                    assembly = assembly.without(weld.childId)
                     // Nobody to trade with the moment the clamps let go.
                     market = null
                     // ⛔ **And the pair's motion is divided back out**, or the vessel flies off
@@ -2263,13 +2278,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // release that only dropped the link would leave the ship carrying a station's
                     // momentum against a hull's mass and a station's angular momentum against a
                     // hull's inertia — a shove and a violent spin, out of nothing, every time the
-                    // clamps opened. See [Weld.release] for the split and why it is not a half each.
-                    val index = bodies.indexOfFirst { it.station?.id == link.stationId }
+                    // clamps opened. See [Welding.release] for the split and why it is not a half each.
+                    val index = bodies.indexOfFirst { it.station?.id == weld.childId }
                     if (index < 0) return
                     val station = bodies[index]
-                    val released = Weld.release(
-                        shipPose = before.pose,
-                        shipAbout = about,
+                    // ⚠️ **What stays welded, not the hull alone.** With one member leaving a
+                    // two-member assembly those are the same distribution; with three they are not,
+                    // and [Welding.release] divides the assembly's motion against whichever it is.
+                    val released = Welding.release(
+                        rootPose = before.pose,
+                        remainderAbout = assembly.distribution(Member.VESSEL, before.pose, about) { id ->
+                            if (id == Member.VESSEL) about
+                            else bodies.firstOrNull { it.station?.id == id }?.about ?: MassDistribution.EMPTY
+                        },
                         pairImpulseX = before.vesselImpulseX,
                         pairImpulseY = before.vesselImpulseY,
                         pairAngImpulse = before.angImpulse,
@@ -2289,17 +2310,26 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Edit.Dock -> {
                     val tile = originAt(edit.tile) ?: return
                     val port = deck[tile] as? DockingPort ?: return
-                    if (docked != null) return
+                    // ⚠️ One weld per docking port, not one per vessel: a ship with two ports may
+                    // hold two members, and the port is what is occupied. A member already welded
+                    // anywhere is refused by [Assembly.plus], which is where that rule lives.
+                    if (assembly.welds.any { it.portTile == tile }) return
                     // The first berth on the first station this port is lined up with. Silent when
                     // there is none: the affordance that issues this only appears when it would work.
                     outer@ for (index in bodies.indices) {
                         val body = bodies[index]
                         val economy = body.station ?: continue
+                        if (assembly.isHeld(economy.id)) continue
                         for (i in economy.docks.indices) {
                             if (!Docking.canDock(grid, port, before.pose, body, i)) continue
-                            val cap = Weld.capture(
-                                shipPose = before.pose,
-                                shipAbout = about,
+                            val cap = Welding.capture(
+                                rootPose = before.pose,
+                                // Everything already welded on, so a second berth composes with the
+                                // first rather than replacing it.
+                                heldAbout = assembly.distribution(Member.VESSEL, before.pose, about) { id ->
+                                    if (id == Member.VESSEL) about
+                                    else bodies.firstOrNull { it.station?.id == id }?.about ?: MassDistribution.EMPTY
+                                },
                                 shipImpulseX = before.vesselImpulseX,
                                 shipImpulseY = before.vesselImpulseY,
                                 shipAngImpulse = before.angImpulse,
@@ -2307,7 +2337,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                                 portTile = tile,
                                 nodeIndex = i,
                             )
-                            docked = cap.link
+                            assembly = assembly.plus(cap.weld)
                             // ✅ **Where steps 2 and 3 finally meet.** The port has been trading
                             // against a stub since it was built; berthing is what puts a real
                             // station's shelves on the other side of the mouth.

@@ -47,8 +47,13 @@ class Station(
      * one particular trading post, and the obvious key — an index into
      * [VesselState.bodies] — is wrong: the spawner rebuilds that list every tick and rocks despawning
      * *around* a station shift it. So the link names the station, and the station says who it is.
+     *
+     * ⚠️ **In the same id space as every other member of a weld** — see [Member], which reserves
+     * zero for the vessel. Numbering from one is what keeps a station from silently answering to the
+     * vessel's id, where [VesselState.memberBody] would return null for it and an assembly holding
+     * it would look like an assembly holding the ship.
      */
-    val id: Int = 0,
+    val id: Int = 1,
     /**
      * Where a ship may berth, in the body's own cells.
      *
@@ -70,6 +75,10 @@ class Station(
      * while the pure pile it turns into could not. The boundary is the door.
      */
     val ore: Mixture = if (ore.energy == 0L) ore else Mixture.of(ore.masses, 0L)
+
+    init {
+        require(id != Member.VESSEL) { "station id ${Member.VESSEL} is the vessel's" }
+    }
 
     override fun equals(other: Any?): Boolean =
         this === other || (other is Station && id == other.id && ore == other.ore &&

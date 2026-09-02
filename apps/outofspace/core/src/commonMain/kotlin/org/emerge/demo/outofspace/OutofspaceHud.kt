@@ -311,7 +311,7 @@ class OutofspaceHud {
      * test that had to raise a GL context to reach it could not be written at all.
      */
     fun followBerth(controller: OutofspaceController) {
-        val berthed = controller.state.docked != null
+        val berthed = controller.state.berth != null
         // A new world under the same HUD: adopt the berth it was **handed over** with rather than
         // reading a transition into it. ⚠️ [OutofspaceController.arrivedBerthed] and not `berthed`,
         // because a world can be handed over free and be berthed by the time it is first drawn —
@@ -903,7 +903,7 @@ class OutofspaceHud {
         val s = controller.state
         val station = controller.dockedStation
         val market = s.dockedMarket
-        val port = s.docked?.let { s.deck[it.portTile] as? DockingPort }
+        val port = s.berth?.let { s.deck[it.portTile] as? DockingPort }
         val stock = s.stockpile
 
         val body: org.emerge.render.torus.ui.PanelBuilder.() -> Unit = {
@@ -2090,7 +2090,7 @@ class OutofspaceHud {
      * able to get it back without undocking and re-docking. So the port carries the door.
      */
     private fun PanelBuilder.dockControls(controller: OutofspaceController, port: DockingPort) {
-        val docked = controller.state.docked
+        val docked = controller.state.berth
         if (docked != null) {
             val station = controller.dockedStation
             keyValue("BERTHED AT", station?.station?.let { "STATION ${it.id}" } ?: "?", 0x9A9A9AFFL, 0x6EE08AFFL)

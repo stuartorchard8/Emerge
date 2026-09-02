@@ -15,7 +15,9 @@ import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.Direction
-import org.emerge.demo.outofspace.world.DockLink
+import org.emerge.demo.outofspace.world.Assembly
+import org.emerge.demo.outofspace.world.Member
+import org.emerge.demo.outofspace.world.Weld
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Market
@@ -78,10 +80,10 @@ class DockingPortTest {
         )
         return copy(
             bodies = bodies + body,
-            docked = DockLink(
-                stationId = station.id, portTile = port, nodeIndex = 0,
-                stationLocalX = body.positionX, stationLocalY = body.positionY, stationRelativeAng = 0,
-            ),
+            assembly = Assembly(listOf(Weld(
+                childId = station.id, parentId = Member.VESSEL, portTile = port, nodeIndex = 0,
+                childX = body.positionX, childY = body.positionY, childAng = 0,
+            ))),
         )
     }
 

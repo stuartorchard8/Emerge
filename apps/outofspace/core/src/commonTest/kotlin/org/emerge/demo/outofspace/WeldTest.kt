@@ -27,7 +27,7 @@ import org.emerge.demo.outofspace.world.Rotation
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.Station
 import org.emerge.demo.outofspace.world.VesselState
-import org.emerge.demo.outofspace.world.Weld
+import org.emerge.demo.outofspace.world.Welding
 import org.emerge.demo.outofspace.world.angularVelocity
 import org.emerge.sim.core.PlayerId
 import kotlin.test.AfterTest
@@ -160,20 +160,20 @@ class WeldTest {
     @Test
     fun `a ship lined up with a berth docks, and one that is not does not`() {
         val (world, port) = berthedWorld()
-        assertNotNull(run(world, 1, Edit.Dock(port.center)).docked, "a lined-up ship would not dock")
+        assertNotNull(run(world, 1, Edit.Dock(port.center)).berth, "a lined-up ship would not dock")
 
         // Same ship, station shoved well out of range.
         val far = world.copy(
             bodies = world.bodies.map { it.copy(positionX = it.positionX + 60L * Flight.PER_TILE) },
         )
-        assertEquals(null, run(far, 1, Edit.Dock(port.center)).docked, "docked across sixty tiles")
+        assertEquals(null, run(far, 1, Edit.Dock(port.center)).berth, "docked across sixty tiles")
     }
 
     @Test
     fun `the station holds its place relative to the ship`() {
         val (world, port) = berthedWorld()
         val docked = run(world, 1, Edit.Dock(port.center))
-        val link = assertNotNull(docked.docked)
+        val link = assertNotNull(docked.berth)
         var s = docked
         repeat(200) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
 
@@ -188,14 +188,14 @@ class WeldTest {
         // integrated, so there is no running total for an error to collect in.
         val slack = 1_000L
         assertTrue(
-            (link.stationLocalX - s.pose.toLocalX(station.positionX, station.positionY)) in -slack..slack,
+            (link.childX - s.pose.toLocalX(station.positionX, station.positionY)) in -slack..slack,
             "the berth drifted in x",
         )
         assertTrue(
-            (link.stationLocalY - s.pose.toLocalY(station.positionX, station.positionY)) in -slack..slack,
+            (link.childY - s.pose.toLocalY(station.positionX, station.positionY)) in -slack..slack,
             "the berth drifted in y",
         )
-        assertEquals(link.stationRelativeAng, station.ang.raw - s.pose.ang.raw, "the berth twisted")
+        assertEquals(link.childAng, station.ang.raw - s.pose.ang.raw, "the berth twisted")
     }
 
     @Test
@@ -207,7 +207,7 @@ class WeldTest {
         assertEquals(0L, world.momentumBalanceX, "the fixture did not start balanced")
 
         var s = run(world, 1, Edit.Dock(port.center))
-        assertNotNull(s.docked, "nothing docked, so nothing was proven")
+        assertNotNull(s.berth, "nothing docked, so nothing was proven")
         repeat(300) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             assertEquals(0L, s.momentumBalanceX, "momentum leaked in x at tick ${s.tick}")
@@ -216,7 +216,7 @@ class WeldTest {
         }
 
         s = run(s, 1, Edit.Undock)
-        assertEquals(null, s.docked, "undocking did nothing")
+        assertEquals(null, s.berth, "undocking did nothing")
         repeat(100) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
         assertEquals(0L, s.momentumBalanceX, "momentum leaked after release")
         assertEquals(0L, s.angularBalance, "angular momentum leaked after release")
@@ -249,13 +249,13 @@ class WeldTest {
     fun `both members fly away turning at the rate the pair was turning`() {
         val (world, port) = berthedWorld()
         var s = run(world, 1, Edit.Dock(port.center))
-        assertNotNull(s.docked, "nothing docked, so nothing was proven")
+        assertNotNull(s.berth, "nothing docked, so nothing was proven")
         repeat(20) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
 
         // The pair's spin, taken the way the reducer takes it: the pair's angular momentum over the
         // pair's distribution, not the ship's.
         val station = s.bodies.single { it.kind == BodyKind.STATION }
-        val pair = Weld.jointOf(s.pose, s.distribution, station).about
+        val pair = Welding.jointOf(s.pose, s.distribution, station).about
         val together = angularVelocity(s.angImpulse, pair)
         assertTrue(together != 0L, "a pair at rest would prove nothing")
 
@@ -308,7 +308,7 @@ class WeldTest {
         )
 
         var s = run(world, 1, Edit.Dock(port.center))
-        assertNotNull(s.docked, "nothing docked, so nothing was proven")
+        assertNotNull(s.berth, "nothing docked, so nothing was proven")
         repeat(20) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
 
         val free = run(s, 1, Edit.Undock)
@@ -360,8 +360,8 @@ class WeldTest {
     fun `a berth survives a round trip`() {
         val (world, port) = berthedWorld()
         val docked = run(world, 1, Edit.Dock(port.center))
-        val link = assertNotNull(docked.docked)
-        val back = assertNotNull(Save.read(Save.write(docked)).docked, "the ship reloaded flying free")
+        val link = assertNotNull(docked.berth)
+        val back = assertNotNull(Save.read(Save.write(docked)).berth, "the ship reloaded flying free")
         assertEquals(link, back, "the berth came back different")
     }
 
@@ -447,7 +447,7 @@ class WeldTest {
         // — this is a ship *flying into* a berth, which is the one thing a load is not.
         c.dock(port)
         c.stepOnce()
-        assertNotNull(c.state.docked, "nothing docked, so nothing was proven")
+        assertNotNull(c.state.berth, "nothing docked, so nothing was proven")
         hud.followBerth(c)
         assertEquals(Sheet.Trade, hud.openSheet, "flying into a berth no longer opens the counter")
     }

@@ -435,15 +435,20 @@ data class VesselState(
      */
     val dockedMarket: Market? = null,
     /**
-     * The berth the vessel is bolted to, or null when it is flying free — `PLAN_economy.md` §7.
+     * What is bolted to what — see [Assembly].
      *
-     * ⛔ **While this is set the vessel does not integrate its own pose.** It is one member of a
-     * welded pair, and the pair moves as a single rigid body about a joint centre of mass that
-     * belongs to neither of them. See [org.emerge.demo.outofspace.world.Composite].
+     * ⛔ **While the vessel holds anything it does not integrate its own pose.** It is the root of a
+     * welded assembly, and the assembly moves as a single rigid body about a joint centre of mass
+     * that belongs to none of its members. See [Composite].
+     *
+     * ⚠️ **A forest and not one nullable joint**, which is the change that stopped this field
+     * encoding "at most one berth" and "the vessel is always the root" as though they were the same
+     * claim. [Assembly]'s header has the argument.
      */
-    val docked: DockLink? = null,
+    val assembly: Assembly = Assembly.NONE,
     /**
-     * Whether the engines may fire while [docked] is set. Off by default — see [Edit.SetDockedThrust].
+     * Whether the engines may fire while the vessel is berthed. Off by default — see
+     * [org.emerge.demo.outofspace.Edit.SetDockedThrust].
      *
      * On the **vessel** and not on the docking port, for exactly the reason [sas] is: it is a
      * standing instruction about what the ship should do with the engines it has, and a fleet of
@@ -918,7 +923,7 @@ data class VesselState(
      * Derived from [angImpulse] over the moment of inertia, so like the linear velocity there is no
      * integrated quantity to drift and nothing to be wrong about across a save.
      */
-    val angVel: Long get() = angularVelocity(angImpulse, distribution)
+    val angVel: Long get() = angularVelocity(angImpulse, assemblyDistribution)
 
     /**
      * How fast the vessel is going, in the billionths of a tile per tick [Flight.PER_TILE] counts.
@@ -927,8 +932,14 @@ data class VesselState(
      * its mass, so there is no accumulated velocity to drift and nothing to be wrong about across a
      * save. See [Flight] for what counts as the ship and why the atmosphere does not.
      */
-    val velocityX: Long get() = velocityXAt(mass)
-    val velocityY: Long get() = velocityYAt(mass)
+    /**
+     * ⚠️ **Over the assembly's mass, not the hull's.** [vesselImpulseX] is the *assembly's* momentum
+     * whenever anything is welded on (see [Assembly]), so dividing it by the hull alone reported a
+     * berthed ship travelling at several times its actual speed — on the nav readout, on the speed
+     * line, and into the air-drag term that reads this. Undocked the two masses are the same number.
+     */
+    val velocityX: Long get() = velocityXAt(assemblyDistribution.mass)
+    val velocityY: Long get() = velocityYAt(assemblyDistribution.mass)
 
     /**
      * The same two velocities, against a [mass] the caller already has.
@@ -967,6 +978,54 @@ data class VesselState(
      * `PLAN_rigid_bodies.md`.
      */
     val pose: Pose get() = Pose(positionX, positionY, ang, distribution)
+
+    /**
+     * The body carrying [memberId], or null when nothing in the world answers to that id.
+     *
+     * ⚠️ **[Member.VESSEL] answers null**, because the vessel is not a body — that is the asymmetry
+     * `PLAN_rigid_bodies.md` step 6 exists to remove, and until it does every caller that walks an
+     * assembly has to know it. Stated here once rather than at each of them.
+     */
+    fun memberBody(memberId: Int): RigidBody? =
+        if (memberId == Member.VESSEL) null else bodies.firstOrNull { it.station?.id == memberId }
+
+    /** A member's own mass distribution: the vessel's, or the body's. */
+    fun memberAbout(memberId: Int): MassDistribution =
+        if (memberId == Member.VESSEL) distribution else memberBody(memberId)?.about ?: MassDistribution.EMPTY
+
+    /**
+     * The mass distribution of the vessel **and everything welded to it**, in the vessel's frame.
+     *
+     * ⛔ **This, not [distribution], is what the assembly turns about and how reluctantly.** The two
+     * are the same object when nothing is docked — [Assembly.distribution] returns its first operand
+     * untouched — so the common case pays nothing and, more to the point, accumulates no rounding.
+     *
+     * Memoised for the reason [distribution] is: the tick reads it on the path that advances the
+     * ship, and the fold underneath walks a [Composite] per member.
+     */
+    val assemblyDistribution: MassDistribution by lazy {
+        assembly.distribution(Member.VESSEL, pose, distribution) { id -> memberAbout(id) }
+    }
+
+    /** Every member welded to the vessel, parents before children. Empty when it is flying free. */
+    val held: List<Weld> get() = assembly.descendants(Member.VESSEL)
+
+    /**
+     * Where a held member is, given where the vessel has got to — [Assembly.poseOf] against this
+     * state's pose.
+     */
+    fun memberPose(memberId: Int): Pose =
+        assembly.poseOf(memberId, pose, { id -> memberAbout(id) })
+
+    /**
+     * The berth the vessel is currently using, or null when it is flying free.
+     *
+     * ⚠️ **A convenience over [assembly] and not a second source of truth.** It answers the first
+     * weld the vessel holds, which is the only one there can be while a ship has one docking port —
+     * the trade counter and the HUD want *the* berth and there is exactly one. Everything that must
+     * cope with several asks [held] instead.
+     */
+    val berth: Weld? get() = assembly.welds.firstOrNull { it.parentId == Member.VESSEL }
 
     /**
      * The whole momentum identity as one number: zero, or momentum has been minted or lost.

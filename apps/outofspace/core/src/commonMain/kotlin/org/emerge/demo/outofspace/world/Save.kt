@@ -91,7 +91,7 @@ fun materialBefore(conduit: Conduit): Species = when (conduit) {
 object Save {
 
     /** Bump when a field's meaning changes. An old save is migrated, or refused rather than misread. */
-    const val VERSION = 24
+    const val VERSION = 25
 
     /**
      * The first version whose station shelves hold only what a station **put** there — see
@@ -104,6 +104,15 @@ object Save {
      * takes matter *off* a shelf except a purchase.
      */
     const val WORKED_SHELVES_VERSION = 24
+
+    /**
+     * The first version that writes `weld` lines instead of the single `dock` line.
+     *
+     * A file below it carries at most one berth, always the vessel's, so it reads straight into a
+     * one-weld [Assembly] with no migration pass — see the `dock` case in [read]. Nothing older can
+     * describe an assembly the new shape could not.
+     */
+    const val ASSEMBLY_VERSION = 25
 
     /**
      * The first version that can carry a [org.emerge.demo.outofspace.world.BodyKind.STATION].
@@ -204,14 +213,18 @@ object Save {
         // the player through the station they were bolted to, at whatever attitude they had. Written
         // only when docked, so an undocked world's file is unchanged. Position is in [Flight] units
         // like a body's, so it does not go through the mass scale.
-        state.docked?.let {
-            out.append("dock ").append(it.stationId).append(' ').append(it.portTile.index)
-                .append(' ').append(it.nodeIndex)
-                .append(' ').append(it.stationLocalX).append(' ').append(it.stationLocalY)
-                .append(' ').append(it.stationRelativeAng)
-                .append(' ').append(if (state.dockedThrustAllowed) 1 else 0)
+        // ⛔ **A berth has to survive a save.** One line per weld, so an assembly of any size round
+        // trips; an undocked world writes none and its file is unchanged.
+        for (weld in state.assembly.welds) {
+            out.append("weld ").append(weld.childId).append(' ').append(weld.parentId)
+                .append(' ').append(weld.portTile.index).append(' ').append(weld.nodeIndex)
+                .append(' ').append(weld.childX).append(' ').append(weld.childY)
+                .append(' ').append(weld.childAng)
                 .append('\n')
         }
+        // The interlock is a fact about the ship and not about any one joint, so it is its own line
+        // rather than a column on the first weld — where it lived while there could only be one.
+        if (state.dockedThrustAllowed) out.append("dockthrust 1\n")
         out.append("acquired ").append(state.acquiredEnergy).append('\n')
         out.append("solidtoair ").append(state.solidToAirEnergy).append('\n')
         out.append("baselineair ").append(state.baselineAirMass).append('\n')
@@ -809,7 +822,7 @@ object Save {
         var creative = false
         var sas = false
         var credits = 0L
-        var dock: DockLink? = null
+        var welds = ArrayList<Weld>()
         var dockedThrust = false
         val scrapping = mutableSetOf<TileIndex>()
         var built = 0L
@@ -1066,17 +1079,30 @@ object Save {
                 // through the mass scale would multiply the player's bank by 10⁶ on any file
                 // written at a different unit.
                 "credits" -> credits = tokens.getOrNull(1)?.toLongOrNull() ?: fail("unreadable credits")
+                // A pre-[ASSEMBLY_VERSION] berth: one joint, the station held by the vessel, with
+                // the interlock riding in the last column. Exactly a one-weld assembly.
                 "dock" -> {
-                    dock = DockLink(
-                        stationId = tokens.getOrNull(1)?.toIntOrNull() ?: fail("unreadable dock station"),
+                    welds.add(Weld(
+                        childId = tokens.getOrNull(1)?.toIntOrNull() ?: fail("unreadable dock station"),
+                        parentId = Member.VESSEL,
+                        childX = long(4),
+                        childY = long(5),
+                        childAng = tokens.getOrNull(6)?.toIntOrNull() ?: 0,
                         portTile = TileIndex(tokens.getOrNull(2)?.toIntOrNull() ?: fail("unreadable dock port")),
                         nodeIndex = tokens.getOrNull(3)?.toIntOrNull() ?: fail("unreadable dock berth"),
-                        stationLocalX = long(4),
-                        stationLocalY = long(5),
-                        stationRelativeAng = tokens.getOrNull(6)?.toIntOrNull() ?: 0,
-                    )
+                    ))
                     dockedThrust = tokens.getOrNull(7) == "1"
                 }
+                "weld" -> welds.add(Weld(
+                    childId = tokens.getOrNull(1)?.toIntOrNull() ?: fail("unreadable weld child"),
+                    parentId = tokens.getOrNull(2)?.toIntOrNull() ?: fail("unreadable weld parent"),
+                    portTile = TileIndex(tokens.getOrNull(3)?.toIntOrNull() ?: fail("unreadable weld port")),
+                    nodeIndex = tokens.getOrNull(4)?.toIntOrNull() ?: fail("unreadable weld berth"),
+                    childX = long(5),
+                    childY = long(6),
+                    childAng = tokens.getOrNull(7)?.toIntOrNull() ?: 0,
+                ))
+                "dockthrust" -> dockedThrust = tokens.getOrNull(1) == "1"
                 // Grams that stopped being cargo and became fabric. Absent reads as zero, which is
                 // what a world where nothing has ever been built out of its own stores has.
                 "baselinecargo" -> baselineCargo = scale.of(tokens.getOrNull(1)?.toLongOrNull() ?: fail("unreadable baseline cargo"))
@@ -1284,7 +1310,7 @@ object Save {
             creative = creative,
             sas = sas,
             credits = credits,
-            docked = dock,
+            assembly = Assembly(welds),
             // ⛔ **The counterparty is not written, it is found again.** A market is the station's
             // own shelves and the vessel merely holds the one it is berthed at, so writing it would
             // put a second copy of the same stock in the file for the two to disagree about. What a
@@ -1292,7 +1318,7 @@ object Save {
             // read "not berthed" while the clamps were plainly shut, and the mouth traded nothing
             // ever again, because only [Edit.Dock] ever opened a counterparty and the ship was
             // already docked.
-            dockedMarket = dock?.let { link -> loaded.firstOrNull { it.station?.id == link.stationId } }
+            dockedMarket = welds.firstOrNull()?.let { weld -> loaded.firstOrNull { it.station?.id == weld.childId } }
                 ?.station?.market,
             dockedThrustAllowed = dockedThrust,
             scrapping = scrapping,
@@ -2137,17 +2163,22 @@ private fun VesselState.comAnchored(): VesselState {
         bodies = movedBodies,
     )
 
-    val link = anchored.docked ?: return anchored
-    val station = movedBodies.firstOrNull { it.station?.id == link.stationId } ?: return anchored
+    if (anchored.assembly.isEmpty) return anchored
     val berth = anchored.pose
+    // ⚠️ Only welds the **vessel** holds are re-stated here: below [COM_ANCHOR_VERSION] the vessel
+    // is the only member anything can hang off, so a deeper chain cannot occur in such a file.
     return anchored.copy(
-        docked = DockLink(
-            stationId = link.stationId,
-            portTile = link.portTile,
-            nodeIndex = link.nodeIndex,
-            stationLocalX = berth.toLocalX(station.comX, station.comY),
-            stationLocalY = berth.toLocalY(station.comX, station.comY),
-            stationRelativeAng = link.stationRelativeAng,
-        ),
+        assembly = Assembly(anchored.assembly.welds.map { weld ->
+            val child = movedBodies.firstOrNull { it.station?.id == weld.childId } ?: return@map weld
+            Weld(
+                childId = weld.childId,
+                parentId = weld.parentId,
+                childX = berth.toLocalX(child.comX, child.comY),
+                childY = berth.toLocalY(child.comX, child.comY),
+                childAng = weld.childAng,
+                portTile = weld.portTile,
+                nodeIndex = weld.nodeIndex,
+            )
+        }),
     )
 }
