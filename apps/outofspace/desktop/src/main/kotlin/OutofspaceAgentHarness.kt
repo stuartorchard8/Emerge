@@ -573,10 +573,17 @@ object OutofspaceAgentHarness {
                         composition = Mixture.of(Species.Steel to Budget.KILOGRAM, energy = 0L),
                         station = Station(
                             ore = Mixture.of(Species.Forsterite to 20L * Budget.TONNE, energy = 0L),
+                            // ⚠️ **HydrogenSulfide is here because it is the LONGEST species name
+                            // in the game**, and the counter's columns are made of padding. A berth
+                            // stocked only with short names photographs perfectly whatever the name
+                            // column is set to — which is exactly how a ten-character column shipped
+                            // past nineteen species that overrun it. `TradeSheetTest` is the real
+                            // guard; this makes the picture show the worst case too.
                             market = Market.of(
                                 Species.Iron to 30L * Budget.TONNE,
                                 Species.Copper to 4L * Budget.TONNE,
                                 Species.Titanium to 2L * Budget.TONNE,
+                                Species.HydrogenSulfide to 1L * Budget.TONNE,
                             ),
                             id = 1,
                             docks = listOf(node),

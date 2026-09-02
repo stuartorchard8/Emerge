@@ -721,22 +721,6 @@ class OutofspaceHud {
     // `widthEm` for the same reason: an arrow that grew a character would shove every row's centre
     // sideways by a different amount.
 
-    private val TRADE_NAME_W = 10
-
-    /**
-     * ⚠️ **Every width has to EXCEED its longest value, not merely fit it.** Padding is the only
-     * separator between these columns, so a value that fills its cell exactly touches the one
-     * beside it: a screenshot read `192892000.0KG` where the truth was an ask of 19,289 next to
-     * 2,000.0 kg of stock. `mass` runs to eight characters (`4311.1KG`) and a price to five, so
-     * these are those plus a clear space.
-     */
-    private val TRADE_MASS_W = 10
-    private val TRADE_PRICE_W = 8
-    private val TRADE_PENDING_W = 9
-
-    /** How wide the counter wants to be: ten columns, four of them controls. */
-    private val TRADE_WIDTH_DP = 780f
-
     /** How wide the four controls are pinned, so that every row's centre sits at the same place. */
     private val TRADE_FAR_EM = 1.7f
     private val TRADE_NEAR_EM = 1.2f
@@ -2523,6 +2507,31 @@ class OutofspaceHud {
     private fun milliG(raw: Long): Long = raw * 1000L / Int.MAX_VALUE.toLong()
 
     companion object {
+
+        /**
+         * ⛔ **Wide enough for the longest species name in the game, plus a separator.**
+         * `HydrogenSulfide` is fifteen characters and nineteen species run past ten, so a narrower
+         * column would not truncate — `padEnd` cannot — it would shove every column in those rows
+         * sideways by however much the name overran. `TradeSheetTest` fails the build if a longer
+         * species is ever added, which is the only way this stays true: the harness berth stocks iron,
+         * copper and titanium, so no screenshot would ever show it.
+         */
+        internal val TRADE_NAME_W = 16
+
+        /**
+         * ⚠️ **Every width has to EXCEED its longest value, not merely fit it.** Padding is the only
+         * separator between these columns, so a value that fills its cell exactly touches the one
+         * beside it: a screenshot read `192892000.0KG` where the truth was an ask of 19,289 next to
+         * 2,000.0 kg of stock. `mass` runs to eight characters (`4311.1KG`) and a price to five, so
+         * these are those plus a clear space.
+         */
+        internal val TRADE_MASS_W = 10
+        private val TRADE_PRICE_W = 8
+        private val TRADE_PENDING_W = 9
+
+        /** How wide the counter wants to be: ten columns, four of them controls. */
+        private val TRADE_WIDTH_DP = 880f
+
         /** Nav view half-width (provisional — 20s debug thrust). */
         const val NAV_RANGE_TILES: Float = 256f
 
