@@ -497,7 +497,9 @@ class VesselSimTest {
      */
     @Test
     fun `a lump a full concentrator will not take waits on a belt nothing feeds`() {
-        val lump = SolidPacket(Mixture.of(Species.Iron to 1_000L, energy = 0))
+        // ⚠️ A blend, because a concentrator asks for [SpeciesFilter.MIXED] and would refuse a pure
+        // lump on the way in — which is a different refusal from the one under test here.
+        val lump = SolidPacket(Mixture.of(Species.Iron to 750L, Species.Forsterite to 250L, energy = 0))
         val s = tappedBelt(
             { tile -> Concentrator(tile, Direction.Down).withWiring(Wiring(mapOf(Action.Run to emptyList()))) },
             lump,
@@ -524,7 +526,8 @@ class VesselSimTest {
     fun `ore on the same belt is lifted off in passing`() {
         // The other half, on the identical layout: the belt has not changed shape, so the only thing
         // that decided this packet's fate is what the machine was willing to take.
-        val ore = SolidPacket(Mixture.of(Species.Iron to 1_000L, energy = 0))
+        // ⚠️ Actually ore, now that the name matters: a concentrator is never sent anything pure.
+        val ore = SolidPacket(Mixture.of(Species.Iron to 750L, Species.Forsterite to 250L, energy = 0))
         val s = tappedBelt({ tile -> Concentrator(tile, Direction.Down) }, ore)
         // Asserted as conservation rather than as "the input buffer is not empty", which is a moment
         // and not a fact: the concentrator grinds at 125 g a tick, so whether the ore is still in the

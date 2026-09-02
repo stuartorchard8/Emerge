@@ -59,6 +59,67 @@ class ConcentratorChainTest {
         return (r[d] * 100 / r.total).toInt()
     }
 
+    /**
+     * A tank of ore and a tank of pure iron, both upstream of one concentrator.
+     *
+     * The concentrator is the only sink either can reach, so what ends up inside it is entirely a
+     * statement about what it asked for.
+     */
+    private fun twoTanksFeeding(feed: Mixture): VesselState {
+        val grid = Grid(12, 10)
+        val deck = DeckArray(grid)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        deck += Concentrator(grid.tile(8, 3), Direction.Right)   // covers x 7..9
+        deck += fixtureStorage(grid.tile(2, 3), Direction.Right) // pours right, from (3,3)
+        // Under the machine as well as up to it, the way `DockingPortTest` threads its mouth.
+        joinRow(grid, rails, 3, 9, 3)
+        return VesselState(
+            grid, deck,
+            conduits = Conduits.ofRails(rails.toList()),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+        ).stocked(grid.tile(2, 3), feed)
+    }
+
+    @Test
+    fun `a concentrator is never sent metal that is already pure`() {
+        // ⛔ **A concentrator has nothing to do to a pure lump** — it spends a charge and a tick of
+        // heat handing back what went in, and it puts the ship's own refined metal at the back of a
+        // queue behind the ore that actually needs the work. So it asks for [SpeciesFilter.MIXED]
+        // and the network never routes pure metal to it.
+        //
+        // ⚠️ **Refused by the DEMAND and not at the door**, which is this file's rule: refusing at
+        // the door would let the belt fill solid against a mouth that will never take what is on it.
+        // So the assertion is that the run stays EMPTY, not merely that the machine stays empty.
+        val pure = Mixture.of(Species.Iron to 6L * Capacity.PACKET_MASS, energy = 0L).atAmbient()
+        val s = run(twoTanksFeeding(pure), 400)
+
+        assertEquals(
+            null, s.inStore(s.grid.tile(8, 3), BufferRole.Input),
+            "pure iron was routed into a concentrator",
+        )
+        var onTrack = 0L
+        for (i in 0 until s.grid.size) onTrack += s.rail.massAt(TileIndex(i))
+        assertEquals(0L, onTrack, "the run filled up against a mouth that will never take it")
+    }
+
+    @Test
+    fun `a concentrator is still sent ore`() {
+        // The other half of the gate: the appetite is a ceiling and not a lock, so anything that is
+        // actually a blend still gets in. Without this the test above passes on a machine that has
+        // simply stopped working.
+        val ore = OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(6 * Capacity.PACKET_MASS)
+        val s = run(twoTanksFeeding(ore), 400)
+        var onTrack = 0L
+        for (i in 0 until s.grid.size) onTrack += s.rail.massAt(TileIndex(i))
+        val inside = s.inStore(s.grid.tile(8, 3), BufferRole.Input)?.total ?: 0L
+        val working = s.inStore(s.grid.tile(8, 3), BufferRole.Inside)?.total ?: 0L
+        assertTrue(
+            onTrack + inside + working > 0L,
+            "ore never left the tank either, so the test above proves nothing",
+        )
+    }
+
     @Test
     fun `the concentrate leaves forward and the tailings leave downward`() {
         val grid = Grid(12, 10)

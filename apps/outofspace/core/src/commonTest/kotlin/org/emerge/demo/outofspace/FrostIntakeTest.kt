@@ -279,7 +279,18 @@ class FrostIntakeTest {
 
     // ── Whole packets ────────────────────────────────────────────────────────
 
-    private fun ore(mass: Long): Mixture = Mixture.of(Species.Iron to mass, energy = 0L).atAmbient()
+    /**
+     * A lump of actual **ore**, which is to say a blend.
+     *
+     * ⚠️ **It used to be pure iron, and calling that "ore" was the whole of a later bug.** These
+     * tests run on the starter vessel, whose extractor's output run ends at a concentrator — and a
+     * concentrator asks for [SpeciesFilter.MIXED], so it is never sent anything already pure. A pure
+     * payload therefore never leaves the hopper, and the two tests below stopped measuring whole
+     * packets and started measuring the routing rule instead.
+     */
+    private fun ore(mass: Long): Mixture =
+        Mixture.of(Species.Iron to mass * 3L / 4L, Species.Forsterite to mass - mass * 3L / 4L, energy = 0L)
+            .atAmbient()
 
     @Test
     fun `a part packet waits in the hopper`() {

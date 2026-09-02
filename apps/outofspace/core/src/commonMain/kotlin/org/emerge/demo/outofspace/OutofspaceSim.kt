@@ -3784,6 +3784,31 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 accepts.getOrPut(tile) { mutableListOf() }.add(Acceptance.filtered(filter))
             }
 
+            // ── Concentrators: ore, and never anything already pure ──────────
+            //
+            // ⛔ **A concentrator has nothing to do to a pure lump.** Feeding it one wastes a charge
+            // and a tick of heat to hand back what went in, and — worse — it puts the ship's own
+            // refined metal at the back of a queue behind the ore that actually needs the work. So
+            // the machine states an appetite for [SpeciesFilter.MIXED] and the network stops routing
+            // pure metal to it at all.
+            //
+            // ⚠️ **Stated here and not refused at the door**, which is this file's own rule: *"the
+            // demand work is where kind comes back, and it comes back as something a sink asks for
+            // rather than something it happens to reject at the door."* Refusing at the door would
+            // let a belt fill solid against a mouth that will never take what is on it.
+            //
+            // ✅ **The exclusive ceiling is what makes this expressible at all.** "Not pure" has no
+            // inclusive percentage — see [SpeciesFilter.belowPercent].
+            for ((tile, at) in ports) {
+                if (rails[tile.index] == null) continue
+                val input = at.firstOrNull { it.kind == PortKind.Input } ?: continue
+                if (deck[input.owner] !is Concentrator) continue
+                // A site is not a machine — the same rule the warehouse above follows, and for the
+                // same reason: an unbuilt shell holds nothing.
+                if (deck.isGhost(input.owner)) continue
+                accepts.getOrPut(tile) { mutableListOf() }.add(Acceptance.filtered(SpeciesFilter.MIXED))
+            }
+
             // ── Docking ports: what the player has put up for sale ───────────
             //
             // ⛔ **The sell list is what makes the network route cargo to the mouth**, and it is the
