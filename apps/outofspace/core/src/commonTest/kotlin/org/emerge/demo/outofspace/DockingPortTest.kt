@@ -98,6 +98,15 @@ class DockingPortTest {
         market: Market? = Market.empty(),
         stock: Mixture = ore(6L * Capacity.PACKET_MASS),
         credits: Long = 0L,
+        /**
+         * A warehouse locked to this, downstream of the port's **output**, or none.
+         *
+         * ⚠️ **Down, not right.** A docking port takes cargo in at its inboard face and hands
+         * purchases out of a *flank* — `LocalPort(0, r, Direction.Down, Output)` — so a run laid
+         * along the row reaches the input and nothing else. A pull test on such a run answers "the
+         * ship wants nothing" for the wrong reason entirely.
+         */
+        consumer: Species? = null,
     ): VesselState {
         val grid = cfg.initialGrid
         val deck = DeckArray(grid)
@@ -106,6 +115,10 @@ class DockingPortTest {
         val rails = arrayOfNulls<Segment>(grid.size)
         // Ten, so there is track under the port itself as well as up to its door.
         joinRow(grid, rails, 3, 10, 3)
+        if (consumer != null) {
+            deck += fixtureStorage(grid.tile(10, 6), Direction.Down, filter = SpeciesFilter(consumer, null))
+            joinCol(grid, rails, 10, 4, 5)
+        }
         return VesselState(
             grid, deck,
             conduits = Conduits.ofRails(rails.toList()),
@@ -254,6 +267,64 @@ class DockingPortTest {
         val pure = ore(4L * Capacity.PACKET_MASS)
         val byOre = run(world(sell = listOf(SellOrder.ore(SellOrder.ENDLESS)), stock = pure), 60 * RAIL_PERIOD)
         assertEquals(0L, byOre.exportedMass, "the ore order gave away refined metal")
+    }
+
+    // ── Buying by pull ───────────────────────────────────────────────────────
+
+    private fun buying(orders: List<BuyOrder>, wants: Species?): VesselState = run(
+        world(
+            sell = emptyList(), buy = orders, consumer = wants,
+            market = Market.of(
+                Species.Titanium to 10L * Budget.TONNE, Species.Gold to 10L * Budget.TONNE,
+            ),
+            credits = 100_000_000L,
+        ),
+        60 * RAIL_PERIOD,
+    )
+
+    @Test
+    fun `an endless order buys nothing the ship has no use for`() {
+        // ⛔ **The whole of what `<<` means.** A finite order is a thing the player asked for and is
+        // pushed; an endless one is pulled, and with nothing aboard short of titanium there is
+        // nothing to pull.
+        val s = buying(listOf(BuyOrder(Species.Titanium, BuyOrder.ENDLESS)), wants = null)
+        assertEquals(0L, s.importedMass, "an endless order bought what nothing wanted")
+        assertEquals(100_000_000L, s.credits, "money left the account for it too")
+    }
+
+    @Test
+    fun `an endless order buys what the ship is short of`() {
+        // The other side: without this the test above passes on an order that never buys anything.
+        val s = buying(listOf(BuyOrder(Species.Titanium, BuyOrder.ENDLESS)), wants = Species.Titanium)
+        assertTrue(s.importedMass > 0L, "a warehouse asking for titanium was never supplied")
+        assertTrue(s.credits < 100_000_000L, "the titanium was free")
+    }
+
+    @Test
+    fun `a finite order buys even when nothing wants it`() {
+        // ⚠️ **Pushed, deliberately.** The player asked for this by name; it is allowed to sit in
+        // the mouth until they come for it. Only the endless kind waits to be asked.
+        val s = buying(listOf(BuyOrder(Species.Titanium, Capacity.PACKET_MASS)), wants = null)
+        assertTrue(s.importedMass > 0L, "an order the player placed by hand was not filled")
+    }
+
+    @Test
+    fun `an endless order nobody wants does not starve the one behind it`() {
+        // ⛔ **The failure the pull rule exists to prevent.** A port has ONE output store and the
+        // list is worked in order, so an endless order for something nothing wants would buy a
+        // packet, park it in the only store there is, and block every order behind it for ever.
+        val s = buying(
+            listOf(
+                BuyOrder(Species.Gold, BuyOrder.ENDLESS),      // nothing aboard wants gold
+                BuyOrder(Species.Titanium, BuyOrder.ENDLESS),  // the warehouse wants titanium
+            ),
+            wants = Species.Titanium,
+        )
+        assertTrue(s.importedMass > 0L, "the order behind the unwanted one never ran")
+        assertEquals(
+            0L, s.inStore(port, BufferRole.Product)?.get(Species.Gold) ?: 0L,
+            "gold nobody wants was bought and left in the mouth",
+        )
     }
 
     // ── Where a sale lands ───────────────────────────────────────────────────

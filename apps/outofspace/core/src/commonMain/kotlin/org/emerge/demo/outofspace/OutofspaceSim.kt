@@ -515,6 +515,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Rails first: produced output can go on the track after it moves.
             val ports = w.portsByTile(Conduit.Rail)
             w.advanceRails(ports)
+            // ⚠️ **After the rails, because [Work.whitelist] does not exist until they have run.**
+            w.supplyEndlessOrders(state.signals)
 
             for ((tile, at) in ports) for (port in at) {
                 if (port.kind == PortKind.Output) w.pushOut(tile, port, state.signals)
@@ -1307,46 +1309,81 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         //
         // One order per tick at most, and only into an empty output store: a purchase is a lump, and
         // two lumps merged inside a buffer is the thing [Packet] refuses to let happen anywhere else.
+        //
+        // ⛔ **Finite orders only. An endless one is not filled here at all** — see
+        // [Work.supplyEndlessOrders], which runs with the rail step because that is where the
+        // network's own demand is worked out. A finite order is a thing the player asked for by
+        // name, so the mouth fills it and parks it; an endless order is filled by the network, so it
+        // is filled where the network is.
+        market = here
         if (store(m, tile, BufferRole.Product) == null) {
-            val orders = machine.buy
-            for (i in orders.indices) {
-                val order = orders[i]
-                val wanted = minOf(order.remaining, Capacity.PACKET_MASS)
-                if (wanted <= 0L) continue
-                if (!here.canSupply(order.species, wanted)) continue
-                val cost = here.buyCost(order.species, wanted)
-                if (cost > credits) continue
-
-                // ⚠️ **Bought matter arrives at ambient**, and that is a claim the heat ledger has to
-                // hear about: the station kept it in a warehouse, not in a furnace. Energy is
-                // computed from what the lump is made of rather than assumed, which is the same rule
-                // `temperatureKelvin` follows and for the same reason.
-                val cold = Mixture.of(order.species to wanted, energy = 0L)
-                val bought = Mixture.of(
-                    order.species to wanted,
-                    energy = heatCapacityOf(cold) * Temperature.AMBIENT_KELVIN,
-                )
-                credits -= cost
-                importedMass += bought.total
-                importedEnergy += bought.energy
-                here = here.releasing(order.species, wanted)
-                putStore(m, tile, BufferRole.Product, bought)
-
-                val left = order.remaining - wanted
-                machine = machine.copy(
-                    buy = orders.toMutableList().also { list ->
-                        // ⛔ A completed order leaves the list rather than lingering at zero. An
-                        // order that never ends would drain the balance the moment the player docked
-                        // somewhere well stocked — see [BuyOrder].
-                        if (left > 0L) list[i] = order.copy(remaining = left) else list.removeAt(i)
-                    },
-                )
+            for (order in machine.buy) {
+                if (order.isEndless) continue
+                machine = fill(machine, tile, order) ?: continue
                 break
             }
         }
-
-        market = here
         return machine
+    }
+
+    /**
+     * One packet of [order] bought onto the port's product store, or null if it cannot be.
+     *
+     * ⛔ **The one place a purchase happens**, called from two: the mouth fills finite orders every
+     * tick, and the rail step fills endless ones. Two callers and one body, because "what a purchase
+     * costs the balance and the ledgers" must not have two answers.
+     *
+     * ⚠️ **Bought matter arrives at ambient**, and that is a claim the heat ledger has to hear
+     * about: the station kept it in a warehouse, not in a furnace. Energy is computed from what the
+     * lump is made of rather than assumed, which is the rule `temperatureKelvin` follows.
+     */
+    private fun Work.fill(m: DockingPort, tile: TileIndex, order: BuyOrder): DockingPort? {
+        val here = market ?: return null
+        val wanted = minOf(order.remaining, Capacity.PACKET_MASS)
+        if (wanted <= 0L) return null
+        if (!here.canSupply(order.species, wanted)) return null
+        val cost = here.buyCost(order.species, wanted)
+        if (cost > credits) return null
+
+        val cold = Mixture.of(order.species to wanted, energy = 0L)
+        val bought = Mixture.of(
+            order.species to wanted,
+            energy = heatCapacityOf(cold) * Temperature.AMBIENT_KELVIN,
+        )
+        credits -= cost
+        importedMass += bought.total
+        importedEnergy += bought.energy
+        market = here.releasing(order.species, wanted)
+        putStore(m, tile, BufferRole.Product, bought)
+
+        // ⚠️ An endless order is never worked down; there is nothing to subtract from.
+        val left = if (order.isEndless) BuyOrder.ENDLESS else order.remaining - wanted
+        return m.copy(
+            buy = m.buy.toMutableList().also { list ->
+                // ⛔ A completed order leaves the list rather than lingering at zero. A *finite*
+                // order that never ended would drain the balance the moment the player docked
+                // somewhere well stocked — see [BuyOrder].
+                val at = list.indexOfFirst { it.species == order.species }
+                if (left > 0L) list[at] = order.copy(remaining = left) else list.removeAt(at)
+            },
+        )
+    }
+
+    /**
+     * Whether anything the port's output can reach is short of [mass] of [species].
+     *
+     * ⚠️ **Asked at the tile the packet would leave from**, which is the port's own output port and
+     * not its centre: [Whitelist] answers about routes *out of* a tile, and the centre of a
+     * three-tile machine is not on the network at all.
+     *
+     * ⚠️ **Last tick's answer**, because the whitelist is published by the rail pass and this runs in
+     * the machine pass. The same staleness `handBack` documents, and harmless for the same reason:
+     * an appetite that appeared this tick is bought for on the next one.
+     */
+    private fun Work.anythingWants(m: DockingPort, species: Species, mass: Long): Boolean {
+        val out = portsOf(grid, m).firstOrNull { it.kind == PortKind.Output } ?: return false
+        if (rails[out.tile.index] == null) return false
+        return whitelist.room(out.tile, Mixture.of(species to mass, energy = 0L)) > 0L
     }
 
     /**
@@ -3711,6 +3748,41 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         private fun railCount(): Int = rails.count { it != null }
 
         /** Advance all conduits one step (flow derived from input ports). */
+        /**
+         * Endless buy orders, filled against what the ship is actually short of — `<<`.
+         *
+         * ⛔ **Here and not in [trade], because this is where the answer exists.** [whitelist] is
+         * built by the rail step and [Work] is rebuilt every tick, so a question asked in the
+         * machine pass reads an empty whitelist and answers "nothing wants anything" — always, and
+         * silently. Running with the rail step is also the right *cadence*: an endless order is
+         * filled by the network, and the network moves once every [RAIL_PERIOD] ticks.
+         *
+         * ⛔ **The pull is what stops one order starving the rest.** A port has one output store and
+         * the list is worked in order, so an endless order for something nothing wants would buy a
+         * packet, park it in the only store there is, and block everything behind it for ever.
+         *
+         * ⚠️ **Bounded by the balance and the shelf and nothing else.** It will spend down to broke,
+         * which is the discipline that makes it worth having: leave `<<` on for iron and steel, draw
+         * a hundred metres of track, and the metal arrives because the sites asked for it.
+         */
+        fun supplyEndlessOrders(signals: SignalField) {
+            if (market == null) return
+            for (i in 0 until deck.size) {
+                val tile = TileIndex(i)
+                val m = deck[tile] as? DockingPort ?: continue
+                if (m.center != tile) continue
+                // The same gate the mouth runs under: a port switched off buys nothing.
+                if (m.kind.gatesOutput && !m.wiring.isOn(Action.Run, signals.at(tile))) continue
+                if (store(m, tile, BufferRole.Product) != null) continue
+                for (order in m.buy) {
+                    if (!order.isEndless) continue
+                    if (!anythingWants(m, order.species, Capacity.PACKET_MASS)) continue
+                    deck[tile] = fill(m, tile, order) ?: continue
+                    break
+                }
+            }
+        }
+
         fun advanceRails(ports: Map<TileIndex, List<Port>>) {
             // Bridges drain first (three real slots, not one).
             for ((tile, at) in ports) for (port in at) {

@@ -609,15 +609,21 @@ class OutofspaceController(
     /**
      * Turn an endless order on, or off if it is already on.
      *
-     * ⏸ **The `<<`/`>>` exclusion is not here yet**, deliberately: an endless *buy* does not exist
-     * until the port can be pulled from, so there is nothing to exclude against. Cancelling any buy
-     * order of the same species would be wrong — a finite order to buy fifty kilos of iron and a
-     * standing order to sell the iron you refine are not a loop, they are a Tuesday.
+     * ⛔ **Cancels an endless buy of the same species** — see [toggleBuyForever] for why the pair is
+     * a loop and why only the endless one counts.
      */
     private fun setEndlessSell(port: DockingPort, order: SellOrder) {
         val already = port.sell.firstOrNull { it.filter == order.filter }?.isEndless == true
         val without = port.sell.filterNot { it.filter == order.filter }
-        retuned(port, sell = if (already) without else without + order)
+        val species = order.filter.species
+        retuned(
+            port,
+            sell = if (already) without else without + order,
+            // The other half of [toggleBuyForever]'s rule, stated at the other switch. Only the
+            // endless buy is cancelled; a finite one is not a loop.
+            buy = if (already || species == null) port.buy
+            else port.buy.filterNot { it.species == species && it.isEndless },
+        )
     }
 
     /** One list of orders with [order] folded in: cumulative if it is already there, else appended. */
@@ -632,15 +638,39 @@ class OutofspaceController(
     private fun retuned(port: DockingPort, sell: List<SellOrder> = port.sell, buy: List<BuyOrder> = port.buy) =
         pending.add(Edit.TuneDockingPort(port.center, sell = sell, buy = buy))
 
-    /** Order [mass] more of [species], or cancel the order if there is one. */
-    fun toggleBuy(port: DockingPort, species: Species, mass: Long) = pending.add(
-        Edit.TuneDockingPort(
-            port.center,
-            sell = port.sell,
-            buy = if (port.buy.any { it.species == species }) port.buy.filterNot { it.species == species }
-            else port.buy + BuyOrder(species, mass),
-        ),
-    )
+    /** Add [mass] more of [species] to the buy order, or start one. Cumulative, like [sellMore]. */
+    fun buyMore(port: DockingPort, species: Species, mass: Long) {
+        val existing = port.buy.firstOrNull { it.species == species }
+        if (existing != null && existing.isEndless) return
+        retuned(
+            port,
+            buy = if (existing == null) port.buy + BuyOrder(species, mass)
+            else port.buy.map { if (it.species == species) it.copy(remaining = it.remaining + mass) else it },
+        )
+    }
+
+    /** Take [species] off the buy list altogether. */
+    fun cancelBuy(port: DockingPort, species: Species) =
+        retuned(port, buy = port.buy.filterNot { it.species == species })
+
+    /**
+     * Keep the ship supplied with [species] for as long as it wants any, or stop.
+     *
+     * ⛔ **Turning this on cancels an endless sell of the same species, and only an endless one.**
+     * The pair is a loop with no end and the ship as its pump: bought at the ask, sold at the bid,
+     * for ever, and the spread is the player's money. A *finite* order on the other side is not a
+     * loop and is left alone — buying fifty kilos of iron while standing ready to sell the iron you
+     * refine is a Tuesday, not a mistake.
+     */
+    fun toggleBuyForever(port: DockingPort, species: Species) {
+        val already = port.buy.firstOrNull { it.species == species }?.isEndless == true
+        val without = port.buy.filterNot { it.species == species }
+        retuned(
+            port,
+            sell = if (already) port.sell else port.sell.filterNot { it.filter.species == species && it.isEndless },
+            buy = if (already) without else without + BuyOrder(species, BuyOrder.ENDLESS),
+        )
+    }
 
     /** Whether the port at [tile] is lined up with a berth it could take right now. */
     fun berthInReach(port: DockingPort): Boolean {

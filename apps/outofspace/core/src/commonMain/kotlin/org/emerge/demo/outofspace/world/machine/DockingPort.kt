@@ -105,11 +105,26 @@ data class SellOrder(val filter: SpeciesFilter, val remaining: Long) {
 }
 
 /**
- * A standing order to buy [remaining] mass of [species], worked down as the money allows.
+ * A standing order to buy [remaining] mass of [species], worked down as the money allows — or
+ * [ENDLESS], which is a different kind of order rather than a big number.
  *
- * ⛔ **A quantity, not a subscription.** An order with no end would drain the player's balance the
- * moment they docked with a well-stocked station, and the whole of the early game is a balance
- * measured in the tens. So an order is a thing that *completes*, and a completed order leaves the
- * list.
+ * ⛔ **A finite order is PUSHED and an endless one is PULLED**, and the difference is not a detail.
+ * A finite order is a thing the player asked for, so it buys a packet and parks it in the output
+ * store until the network comes for it. An endless order buys only what something aboard is
+ * actually short of — because the port has *one* output store, and an endless order for something
+ * nobody wants would fill it and starve every other order behind it for ever.
+ *
+ * ⚠️ **A finite order that never ended would drain the balance** the moment the player docked
+ * somewhere well stocked, and the whole of the early game is a balance measured in the tens. What
+ * makes the endless one safe is not a smaller appetite, it is that the network's own demand is the
+ * appetite.
  */
-data class BuyOrder(val species: Species, val remaining: Long)
+data class BuyOrder(val species: Species, val remaining: Long) {
+    /** True while this order has no end — the `<<` button. */
+    val isEndless: Boolean get() = remaining == ENDLESS
+
+    companion object {
+        /** Keep the ship supplied with this, for as long as it wants any. See [SellOrder.ENDLESS]. */
+        const val ENDLESS: Long = Acceptance.UNLIMITED
+    }
+}

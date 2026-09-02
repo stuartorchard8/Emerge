@@ -766,7 +766,7 @@ class OutofspaceHud {
                                 cost > s.credits -> 0x3A3038FFL
                                 else -> 0x2A3550FFL
                             },
-                        ) { controller.toggleBuy(port, species, Capacity.PACKET_MASS) }
+                        ) { controller.buyMore(port, species, Capacity.PACKET_MASS) }
                     }
                 }
             }
