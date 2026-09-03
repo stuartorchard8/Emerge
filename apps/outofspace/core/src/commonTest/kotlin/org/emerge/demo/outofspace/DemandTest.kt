@@ -23,6 +23,8 @@ import org.emerge.demo.outofspace.world.conduitBillOfMaterials
 import org.emerge.demo.outofspace.world.machineBillOfMaterials
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
+import org.emerge.demo.outofspace.world.SpeciesFilter
+import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.sim.core.PlayerId
@@ -124,6 +126,58 @@ class DemandTest {
         val movedEarly = 10L * Capacity.PACKET_MASS - (early.inStore(early.grid.tile(2, 3), BufferRole.Inside)?.total ?: 0L)
         val movedLate = 10L * Capacity.PACKET_MASS - (late.inStore(late.grid.tile(2, 3), BufferRole.Inside)?.total ?: 0L)
         assertTrue(movedLate > movedEarly, "the tank stopped feeding a vent: $movedEarly then $movedLate")
+    }
+
+    // ── The door IS the acceptance ────────────────────────────────────────────
+
+    /**
+     * A run that **crosses** a fussy machine's input port on its way to a tank that wants the cargo.
+     *
+     * Out of the tank along row 3 as far as the concentrator's input door at (5,3), then up and away
+     * along row 1 to a warehouse at (12,1) locked to iron. The concentrator is simply in the way; it
+     * never sees a route drawn to it, because a mill states an appetite for **ore** and what is on
+     * the belt is refined metal.
+     */
+    private fun acrossAMillsDoor(): VesselState {
+        val grid = cfg.initialGrid
+        val deck = DeckArray(grid)
+        deck += fixtureStorage(grid.tile(2, 3), Direction.Right)
+        deck += Concentrator(grid.tile(6, 3), Direction.Right)
+        deck += fixtureStorage(grid.tile(12, 1), Direction.Right, filter = SpeciesFilter(Species.Iron, null))
+        val rails = arrayOfNulls<Segment>(grid.size)
+        joinRow(grid, rails, 3, 5, 3)
+        joinCol(grid, rails, 5, 1, 3)
+        joinRow(grid, rails, 5, 11, 1)
+        return VesselState(
+            grid, deck,
+            conduits = Conduits.ofRails(rails.toList()),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+        ).stocked(grid.tile(2, 3), iron(4L * Capacity.PACKET_MASS).atAmbient())
+    }
+
+    @Test
+    fun `a sink's door is the acceptance it states, and no machine keeps a second one`() {
+        // ⛔ **Demand and acceptance are one thing.** An `Acceptance` decides what is *sent* to a
+        // tile; a machine deciding for itself what it *keeps* is a second statement of the same
+        // fact, and two statements of one fact drift. They did — `Storage` re-implemented its lock
+        // at the door and a `DockingPort` had no door at all, so a lump merely crossing a mouth was
+        // swallowed and sold (`DockingPortTest`, Stu's save at (12,24)).
+        //
+        // This is the general claim, on a machine that never had a hand-rolled door and never needed
+        // one written for it: the mill states "ore, nothing already pure", and refined iron crossing
+        // its input port on the way somewhere else is neither sent to it nor taken by it. Any kind
+        // with an appetite gets its door from the same line, or this fails.
+        val s = run(acrossAMillsDoor(), 40 * RAIL_PERIOD)
+
+        assertEquals(
+            0L, s.inStore(s.grid.tile(6, 3), BufferRole.Input)?.total ?: 0L,
+            "the mill ate pure metal that was only passing over its door",
+        )
+        assertTrue(
+            (s.inStore(s.grid.tile(12, 1), BufferRole.Inside)?.total ?: 0L) > 0L,
+            "nothing reached the warehouse the iron was bound for",
+        )
     }
 
     // ── 1. A marked rail does not shed metal with nowhere to put it ───────────

@@ -4122,6 +4122,34 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             fun plugAt(to: TileIndex): List<Acceptance>? =
                 accepts[to]?.filter { it.stopsTraffic }?.takeIf { it.isNotEmpty() }
 
+            /*
+             * Whether the sink standing at [tile] will take [cargo] — **its door**, asked of the
+             * very statement the routing walk above is built from.
+             *
+             * ⛔ **Demand and acceptance are ONE thing, and this is what makes that structural.**
+             * An `Acceptance` decides what is *sent* to a tile; a machine deciding for itself what
+             * it *keeps* is a second statement of the same fact, and two statements of one fact are
+             * one edit away from disagreeing. They did: `Storage` re-implemented its lock here and
+             * `DockingPort` had no door at all, so a lump merely **crossing** a mouth's tile on its
+             * way to a tank beyond it — never routed there, never asked about — was swallowed and
+             * sold. Stu's save `dock.txt` at (12,24). Every machine reads this one line now, so a
+             * kind that grows an appetite grows a door with it and cannot be given one that says
+             * something else.
+             *
+             * ⚠️ **Nothing stated means anything, for ever**, which is not a default but the same
+             * sentence [Whitelist.of] reads: `own == null && tile in flow.sinks` is what "a tile
+             * that is a sink and says nothing is a machine" means there. An *empty* statement is a
+             * different thing and refuses everything — a docking port with an empty book.
+             *
+             * ⚠️ Ghosts never reach this: track, machine and conduit sites all take the tile's turn
+             * above, each at its own door, which is `Acceptance.admits` again by another road.
+             */
+            fun sinkAdmits(tile: TileIndex, cargo: Mixture): Boolean {
+                val own = accepts[tile] ?: return true
+                for (a in own) if (a.admits(cargo)) return true
+                return false
+            }
+
             // Whether [to] would take this exact matter: the site's own door, then the demand rule.
             // Split out of `admits` because the split below has to ask it a second time, of the
             // *slice* rather than of the pile.
@@ -4246,6 +4274,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 if (at == null || at.none { it.kind == PortKind.Input }) null
                 else {
                     val packet = rail.packetAt(tile)
+                    // The sink's own door — one question, the same one the routes were drawn by.
+                    // Asked after the port lookup and not before it, so the tiles with no port pay
+                    // nothing for it.
+                    if (packet != null && !sinkAdmits(tile, packet.contents)) return@advanceSegments null
                     var left: Packet? = packet
                     for (port in at) {
                         if (port.kind != PortKind.Input) continue
@@ -4328,14 +4360,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // the whole of what "storage" means here. Everything else about the delivery is the
                 // machine-list path's, so it is done by the same two calls.
                 is Storage -> {
-                    // ⛔ **The warehouse's own door, and not merely a second opinion.** The
-                    // whitelist keeps the wrong material from being *sent* here, which is the whole
-                    // value of the lock; but the whitelist is a statement about routes, and a lump
-                    // already standing on this tile when the player locks the tank never travelled a
-                    // route. Without this the act of locking swallows whatever happened to be at the
-                    // door. See [Acceptance.admits], which asks the same question from the network's
-                    // side.
-                    destination.filter?.let { if (!it.admits(packet.contents)) return false }
+                    // ⛔ **The lock is not asked here.** It used to be — a hand-rolled second
+                    // opinion beside the acceptance the network routes by — and the two were one
+                    // divergence away from disagreeing. There is one statement of what a sink takes
+                    // now and the door reads it before this is ever reached; see `sinkAdmits`.
                     val role = inputBufferRole(destination) ?: return false
                     val store = bufferTile(grid, destination, destination.center, role) ?: return false
                     val merged = acceptInto(destination, buffers.resourceAt(store), packet) ?: return false
@@ -4359,23 +4387,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // anything to. A gauge watches the track under it and never takes anything off it;
                 // a valve is an opening onto the room, not a destination.
                 is Sensor, is WireButton, is Pump, is Gauge, is Valve -> false
-                // ⛔ **The mouth's own door**, the twin of the warehouse's above and closed for the
-                // same reason: an acceptance is a statement about routes, and a lump *crossing* the
-                // input port tile on its way to a tank beyond it was never routed here. Since the
-                // doors moved to the corners of the inboard face that tile is a natural place to lay
-                // track along, so this is now the common case rather than a curiosity. See
-                // [DockingPort.admits].
-                is DockingPort -> {
-                    if (!destination.admits(packet.contents)) return false
-                    val role = inputBufferRole(destination) ?: return false
-                    val store = bufferTile(grid, destination, destination.center, role) ?: return false
-                    val merged = acceptInto(destination, buffers.resourceAt(store), packet) ?: return false
-                    buffers.put(store, merged)
-                    true
-                }
                 // Both take a feed, and both take it the way every buffered kind does — by role
                 // tile, kind-blind. See the machine-list twin above.
-                is Thruster, is Concentrator, is Furnace, is Extractor -> {
+                is Thruster, is Concentrator, is Furnace,
+                is DockingPort, is Extractor -> {
                     val role = inputBufferRole(destination) ?: return false
                     val store = bufferTile(grid, destination, destination.center, role) ?: return false
                     val merged = acceptInto(destination, buffers.resourceAt(store), packet) ?: return false
