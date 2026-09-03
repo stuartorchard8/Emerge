@@ -67,6 +67,7 @@ class FlowGraph internal constructor(
     private val _sinks: Set<TileIndex>,
     private val _order: List<TileIndex>,
     private val _feeders: Map<TileIndex, List<TileIndex>>,
+    private val _hops: Map<TileIndex, TileIndex>,
     private val grid: Grid,
 ) {
     val tiles: Set<TileIndex> get() = _tiles
@@ -117,6 +118,21 @@ class FlowGraph internal constructor(
     /** The tiles [tile] may send material to, ascending. */
     fun successorTiles(tile: TileIndex): List<TileIndex> =
         successorDirections(tile).map { grid.neighbour(tile, it) }
+
+    /**
+     * Where a machine standing at [tile] sets material down, when that is somewhere the lattice
+     * does not reach — the far end of a bridge, and nothing else today.
+     *
+     * ⛔ **Not an edge, and deliberately not part of [successorTiles].** Nothing on the track moves
+     * this way: a lump crosses a span by being lifted into a slot, shuffled along and set down, and
+     * [advanceSegments] must never see a route it could walk a packet over instead. What a hop is
+     * for is the *other* direction — appetite travels back along it, so a corridor leading to a
+     * span is told what lies past the span rather than being told a span takes anything.
+     *
+     * It does count as an edge for [order], though, and it has to: the far end has to be weighed
+     * before the near end, or the near end inherits an appetite that has not been worked out yet.
+     */
+    fun hopTo(tile: TileIndex): TileIndex? = _hops[tile]
 
     /**
      * The tiles that may send material *to* [tile], ascending — a merge, where more than one.
@@ -213,6 +229,7 @@ class FlowGraph internal constructor(
             carrying: (TileIndex) -> Boolean = { false },
             appetites: Appetites = Appetites.BLIND,
             walls: Set<TileIndex> = emptySet(),
+            hops: Map<TileIndex, TileIndex> = emptyMap(),
         ): FlowGraph {
             if (tileSet.isEmpty()) return empty()
 
@@ -307,12 +324,19 @@ class FlowGraph internal constructor(
                 }
             }
 
+            // ⛔ **Kept even where the far end is off the network, and that is the point.** A span
+            // whose far end carries no track sets material down nowhere, so the appetite its near
+            // end inherits is the appetite of a tile nobody walks — none. Drop the pair and the near
+            // end reverts to an input port that takes anything for ever, which is the hole
+            // [hopTo] exists to close. Only the near end has to be somewhere the walk reaches.
+            val usable = hops.filterKeys { it in tileSet }
             return FlowGraph(
                 allowed,
                 tileSet,
                 sinks.filterTo(mutableSetOf()) { it in tileSet },
-                walkOrder(allowed, tileSet, sinks, grid),
+                walkOrder(allowed, tileSet, sinks, usable, grid),
                 feedersOf(allowed, tileSet, grid),
+                usable,
                 grid,
             )
         }
@@ -644,7 +668,13 @@ class FlowGraph internal constructor(
          * A loop has no topological order at all, and that is not a failure — its tiles come last,
          * in tile order, and `arrived` is what keeps a packet on a cycle to one tile per advance.
          */
-        private fun walkOrder(allowed: ByteArray, tileSet: Set<TileIndex>, sinks: Set<TileIndex>, grid: Grid): List<TileIndex> {
+        private fun walkOrder(
+            allowed: ByteArray,
+            tileSet: Set<TileIndex>,
+            sinks: Set<TileIndex>,
+            hops: Map<TileIndex, TileIndex>,
+            grid: Grid,
+        ): List<TileIndex> {
             val remaining = HashMap<TileIndex, Int>()
             val feeders = HashMap<TileIndex, MutableList<TileIndex>>()
             for (tile in tileSet) {
@@ -655,6 +685,17 @@ class FlowGraph internal constructor(
                     if (next == TileIndex.NONE || next !in tileSet) continue
                     outgoing++
                     feeders.getOrPut(next) { mutableListOf() }.add(tile)
+                }
+                // A span is somewhere this tile sends material, so it sorts after its own far end
+                // exactly as it would after a neighbour.
+                //
+                // ⚠️ **Only when the far end is on the network.** A span that sets material down on
+                // bare deck has nothing to be ordered against, and an edge to a tile no wave will
+                // ever place would strand the near end in the cycle fallback — correct, but by
+                // accident, and at the cost of the ordering this edge exists to buy.
+                hops[tile]?.takeIf { it in tileSet }?.let { far ->
+                    outgoing++
+                    feeders.getOrPut(far) { mutableListOf() }.add(tile)
                 }
                 remaining[tile] = outgoing
             }
@@ -934,7 +975,7 @@ class FlowGraph internal constructor(
         }
 
         private fun empty(): FlowGraph =
-            FlowGraph(ByteArray(0), emptySet(), emptySet(), emptyList(), emptyMap(), Grid(0, 0))
+            FlowGraph(ByteArray(0), emptySet(), emptySet(), emptyList(), emptyMap(), emptyMap(), Grid(0, 0))
     }
 }
 

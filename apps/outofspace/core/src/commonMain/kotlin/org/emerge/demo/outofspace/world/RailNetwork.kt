@@ -2,6 +2,7 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 
@@ -132,6 +133,46 @@ fun railMachineGhosts(
         val fed = constructionTileOf(grid, m)
         if (rails[fed.index] == null) continue
         if (deck.isGhost(tile)) out[fed] = m
+    }
+    return out
+}
+
+/**
+ * Where a span sets down what it took on: the input port of every standing bridge, to its output.
+ *
+ * ⛔ **This is not a route a packet may travel.** A lump crosses a bridge by being lifted off the
+ * track into a slot, shuffled along and put back down; nothing walks from one end to the other. What
+ * these pairs carry is **appetite**, in the opposite direction — see [FlowGraph.hopTo] for why the
+ * graph holds them at all, and [Whitelist.of] for what it does with them.
+ *
+ * ⚠️ **A ghost carries nothing.** An unbuilt span is a shell that cannot hold a gram, so its near
+ * end has no far side to speak for and the tile falls back to being an ordinary construction site
+ * with a bill. That is the same rule a warehouse's lock and a mill's appetite already follow, and
+ * for the same reason: a machine that does not exist yet has no appetite but its own.
+ *
+ * ⚠️ **Only the near end needs track, and the far end is named whether it has any or not.** A span
+ * with nothing to set material down on carries it nowhere, and the pair is what says so: the near
+ * end inherits the appetite of a tile that is not on the network, which is no appetite at all, and
+ * the span asks for nothing. Drop the pair instead and the near end falls back to being an ordinary
+ * input port — "anything, for ever" — which is the very hole this exists to close, kept alive for
+ * exactly the spans that lead nowhere.
+ */
+fun railHops(
+    grid: Grid,
+    rails: List<Segment?>,
+    deck: DeckArray,
+): Map<TileIndex, TileIndex> {
+    val out = HashMap<TileIndex, TileIndex>()
+    for (i in 0 until deck.size) {
+        val tile = TileIndex(i)
+        val m = deck[tile] ?: continue
+        if (m !is Bridge || m.center != tile) continue
+        if (deck.isGhost(tile)) continue
+        val ports = portsOf(grid, m, tile)
+        val from = ports.firstOrNull { it.kind == PortKind.Input }?.tile ?: continue
+        val to = ports.firstOrNull { it.kind == PortKind.Output }?.tile ?: continue
+        if (rails[from.index] == null) continue
+        out[from] = to
     }
     return out
 }

@@ -34,6 +34,7 @@ import org.emerge.demo.outofspace.world.FlowGraph
 import org.emerge.demo.outofspace.world.railAppetites
 import org.emerge.demo.outofspace.world.railTiles
 import org.emerge.demo.outofspace.world.railEnds
+import org.emerge.demo.outofspace.world.railHops
 import org.emerge.demo.outofspace.world.railMachineGhosts
 import org.emerge.demo.outofspace.world.railGhosts
 import org.emerge.demo.outofspace.world.conduitGhosts
@@ -4067,6 +4068,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 deck::materialOf,
             ) { rail.resourceAt(it) }
 
+            // Which spans carry appetite from one end to the other — see [railHops]. Derived in
+            // `RailNetwork` beside the sources and sinks, so that the harness and the reducer read
+            // one statement of what a bridge is on this network.
+            val hops = railHops(grid, rails, deck)
+
             val flow = FlowGraph.build(
                 tilesWithTrack,
                 sources,
@@ -4082,6 +4088,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // acceptance rows above make `stopsTraffic`, said once more where the edges are
                 // decided — a route drawn through a ghost rail is not a route. See [FlowGraph.build].
                 walls = ghosts,
+                hops = hops,
             )
 
             // Every lump in the flow, read off the layer **once**. The whitelist walk asks what is
@@ -4089,14 +4096,39 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // from a layer read there would allocate a mixture per tile per route per tick.
             val lumps = HashMap<TileIndex, Mixture>()
             for (tile in flow.order) rail.resourceAt(tile)?.let { lumps[tile] = it }
-            val loadOn: (TileIndex, Mixture?) -> Long = { t, bill ->
-                val lump = lumps[t]
-                when {
-                    lump == null -> 0L
-                    bill == null -> lump.total
-                    buildableFrom(bill, lump) -> lump.total
-                    else -> 0L
+
+            // ⛔ **What a span is carrying is material already on its way, and the walk above cannot
+            // see it.** A bridge keeps its load on the buffer layer while the walk weighs the rail,
+            // so a site past a span read as uncovered for the whole three steps a lump took to
+            // cross, and the tank behind it let go of another one on every one of them. The site
+            // was finished by the first; the rest came to rest in the corridor with nothing left
+            // able to eat them — the residue this whole pass exists to prevent, reached by the one
+            // route it did not weigh.
+            //
+            // Charged at the tile the span **took it on at**, which is the one that inherited the
+            // appetite it was sent against. All three slots, because all three are past the point
+            // of no return: what is aboard a bridge is going out the far end.
+            //
+            // ⚠️ **A list and not a total**, because [buildableFrom] is asked of a lump. Three slots
+            // may hold three different things, and summing them first would offer a site a blend
+            // that never existed.
+            val aboard = HashMap<TileIndex, MutableList<Mixture>>()
+            for (from in hops.keys) {
+                val owner = ports[from]?.firstOrNull { it.kind == PortKind.Input }?.owner ?: continue
+                val bridge = deck[owner] as? Bridge ?: continue
+                for (role in BufferRole.entries) {
+                    val store = bufferTile(grid, bridge, owner, role) ?: continue
+                    val held = buffers.resourceAt(store) ?: continue
+                    aboard.getOrPut(from) { mutableListOf() }.add(held)
                 }
+            }
+
+            val loadOn: (TileIndex, Mixture?) -> Long = { t, bill ->
+                fun usable(lump: Mixture): Long =
+                    if (bill == null || buildableFrom(bill, lump)) lump.total else 0L
+                var total = lumps[t]?.let { usable(it) } ?: 0L
+                aboard[t]?.let { for (held in it) total += usable(held) }
+                total
             }
 
             // ── The whitelist, and the pass that reads it ─────────────────────

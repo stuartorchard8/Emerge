@@ -532,7 +532,16 @@ class Whitelist private constructor(
                 // What the plug is owed, once, for every appetite here that is not the plug itself.
                 val plugged = if (plug == null) null else carried(null, plug, tile, loadOn)
 
-                if (own == null && tile in flow.sinks) any = true
+                // ⛔ **Unless it is the near end of a span.** "A sink that says nothing is a
+                // machine, and a machine takes anything for ever" is the right reading of every
+                // other input port and the wrong one of a bridge: a bridge is not where material
+                // ends up, it is a place material passes through, and what it should ask for is
+                // whatever lies on the other side. Read as a machine it told every corridor
+                // leading to it that its load was wanted whatever stood beyond — so a span was the
+                // one place on the network a source would pour into for no reason, and the
+                // corridor past it filled with lumps nothing could eat. See [FlowGraph.hopTo].
+                val hop = flow.hopTo(tile)
+                if (own == null && hop == null && tile in flow.sinks) any = true
                 if (own != null) {
                     for (a in own) {
                         // A site is never in its own way — no blocks for the plug's *own* demand,
@@ -562,7 +571,12 @@ class Whitelist private constructor(
                     }
                 }
 
-                for (next in flow.successorTiles(tile)) {
+                // Everything this tile can send to: its neighbours, and — where it is the near
+                // end of a span — the far end of that span. The two are inherited from in exactly
+                // the same way, because they are the same fact: material leaving here arrives
+                // there, and what is wanted there is what is worth sending here.
+                val onward = if (hop == null) flow.successorTiles(tile) else flow.successorTiles(tile) + hop
+                for (next in onward) {
                     val j = next.index
                     if (unlimited[j]) {
                         val blocks = carried(null, plug, tile, loadOn)
