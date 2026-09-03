@@ -84,17 +84,27 @@ val Species.atomsPerMolecule: Int
     get() = MINERALS[this]?.values?.sum() ?: (molarMass / atomicMass)
 
 /**
- * `2γ/(γ−1)` for this species — **4 monatomic, 7 diatomic, 8 polyatomic.**
+ * `2γ/(γ−1)` for this species — **5 monatomic, 7 diatomic, 8 polyatomic.**
  *
  * The adiabatic index itself is never wanted; every use of it in a rocket is this group, and stating
  * the group is what keeps the arithmetic in integers. γ = 5/3, 7/5 and 4/3 put `2γ/(γ−1)` at exactly
- * 4, 7 and 8 with nothing left over, so an exhaust velocity is an [org.emerge.demo.outofspace.num.isqrt]
+ * 5, 7 and 8 with nothing left over, so an exhaust velocity is an [org.emerge.demo.outofspace.num.isqrt]
  * of whole numbers and there is no fixed-point scale to calibrate. See `PLAN_fluid_thrusters.md` §3.
  *
  * γ falls out of how a molecule can hold energy: an atom has three ways to move and nothing else, a
  * dumbbell adds two ways to tumble, and anything bent or bigger adds the third. So this is a fact
  * about the *shape* of the molecule and correctly derived from its atom count rather than measured
  * per species — which also means it needs no entry when a species is added.
+ *
+ * ⚠️ **`f + 2` is the arithmetic to check this against, not `2γ/(γ−1)`.** They are the same number —
+ * `K = 2·Cp/R` and `Cp = ((f+2)/2)·R` — but one of them is three integers and the other is a
+ * division of two fractions that is easy to get wrong by hand. It was, once: 5 was written as 4,
+ * which is not a value `f + 2` can produce for any whole number of degrees of freedom.
+ *
+ * ⛔ **Mole-weighted, when a mixture needs one — and that is exact rather than an approximation.**
+ * `K = 2·Cp/R`, and a molar heat capacity is additive over moles, so the mixture's K is the
+ * mole-weighted mean of its species'. There is no averaging of γ anywhere, which is the other reason
+ * this group and not γ is what gets stored.
  *
  * ⚠️ **Three classes and no more, so it is exact at the ends and approximate in the middle.** Real
  * γ drifts with temperature as vibration wakes up, and a big polyatomic sits nearer 1.2 than 4/3 —
@@ -104,7 +114,7 @@ val Species.atomsPerMolecule: Int
  */
 val Species.adiabaticK: Int
     get() = when (atomsPerMolecule) {
-        1 -> 4
+        1 -> 5
         2 -> 7
         else -> 8
     }

@@ -83,14 +83,33 @@ class AtomicityTest {
     @Test
     fun `the three shapes give the three whole numbers`() {
         // The property the integer arithmetic rests on: 2γ/(γ−1) for γ = 5/3, 7/5 and 4/3 is exactly
-        // 4, 7 and 8. If this ever needed a fourth value it would need a fraction with it.
+        // 5, 7 and 8. If this ever needed a fourth value it would need a fraction with it.
+        //
+        // ⚠️ Stated as `f + 2` rather than as the expected values, because that is the *independent*
+        // route to the same number and the only one a reader can check without redoing a division of
+        // fractions. The monatomic case was written as 4 first time; `f + 2` cannot produce a 4.
         for ((species, atoms, formula) in expected) {
-            val k = when (atoms) {
-                1 -> 4
-                2 -> 7
-                else -> 8
+            val degreesOfFreedom = when (atoms) {
+                1 -> 3          // three ways to move, and nothing else
+                2 -> 5          // and two ways for a dumbbell to tumble
+                else -> 6       // and the third, once it is bent or bigger
             }
-            assertEquals(k, species.adiabaticK, "$formula has $atoms atom(s), so 2γ/(γ−1) is $k")
+            assertEquals(
+                degreesOfFreedom + 2, species.adiabaticK,
+                "$formula has $atoms atom(s) and $degreesOfFreedom degrees of freedom",
+            )
+        }
+    }
+
+    @Test
+    fun `and there is no shape that gives a four`() {
+        // The regression for the arithmetic slip itself. 4 would mean two degrees of freedom, which
+        // is not a molecule.
+        for (fluid in Fluid.ALL) {
+            assertTrue(
+                fluid.species.adiabaticK in intArrayOf(5, 7, 8),
+                "${fluid.species} has 2γ/(γ−1) = ${fluid.species.adiabaticK}",
+            )
         }
     }
 

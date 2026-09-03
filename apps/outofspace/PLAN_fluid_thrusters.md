@@ -88,15 +88,24 @@ Everything is already in the codebase except γ:
 
 ### The integer form is exact, which is the good part
 
-`2γ/(γ−1)` for those three γ is **4, 7 and 8**. Whole numbers. And with M in g/mol — which is what
+`2γ/(γ−1)` for those three γ is **5, 7 and 8** — equivalently `f + 2` for f degrees of freedom, which
+is the arithmetic to check it against. Whole numbers. And with M in g/mol — which is what
 `Species.molarMass` already holds — `R/M` in SI is `8314/M_g`. So:
 
 ```
-v_e(m/s) = isqrt( K · 8314 · T_kelvin / M_gPerMol )        K ∈ {4, 7, 8}
+v_e(m/s) = isqrt( K · 8314 · T_kelvin / M_gPerMol )        K ∈ {5, 7, 8}
 ```
 
 No scale constant, no fixed point, no `Frac`, nothing to calibrate. Worst case is `8 · 8314 · 10000 / 2`
 ≈ 3.3×10⁸, which is nowhere near `Long`.
+
+⚠️ **A mixture's K is the mole-weighted mean of its species', and that is exact.** `K = 2·Cp/R` and a
+molar heat capacity is additive over moles, so there is no averaging of γ anywhere — which is the
+second reason this group is what gets stored and γ itself never is.
+
+⛔ **`2γ/(γ−1)` was written as 4 for the monatomic case first time round** (`e6f44812`, corrected in
+`8f0a...`). `f + 2` cannot produce a 4, and that is now what the test asserts against: an expected
+value reached by the same division that produced the wrong one is not a check.
 
 ⚠️ **`tilesPerTick` must keep more resolution than it does.** At 780 m/s the current
 `v · 1000 / (TILE_MILLIMETRES · ticksPerSecond)` floors to 207 and throws away ~0.5%. Carry
@@ -108,7 +117,7 @@ milli-tiles per tick and divide once at the end — the same lesson `f02179dc` t
 |---|---|---|---|
 | CO₂, cold | 8 | 293 K | 0.67 km/s |
 | N₂, cold | 7 | 293 K | 0.78 km/s |
-| He, cold | 4 | 293 K | 1.56 km/s |
+| He, cold | 5 | 293 K | 1.74 km/s |
 | H₂, cold | 7 | 293 K | 2.92 km/s |
 | steam, burned | 8 | 3500 K | 3.60 km/s |
 | H₂, heated | 7 | 3000 K | 9.34 km/s |
