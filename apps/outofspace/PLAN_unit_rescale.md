@@ -334,14 +334,34 @@ measurement deserves the same suspicion.
 
 #### ⚠️ Correction 2: the temperature item is already satisfied, and the other one needs machinery
 
-- **Temperature — no change needed.** This section asks for `joules / capacity` to become
-  `joules × 1000 / (mass × c)`, on the grounds that at `Kₘ = 10⁶` a single mass unit of uranium has a
-  capacity below 1. That was true when this plan was written and **step 2 removed it**: holding
-  `Kₑ = 1000·Kₘ` (`Budget.ENERGY_PER_MASS`, guarded by `BudgetParityTest`) makes `capacity =
-  mass_units × specificHeat` exact at every scale, with no truncation and no sub-unit capacity.
-  Verified that every capacity in the game is extensive — `gasCapacityAt`, `RigidBody.capacity`,
-  `Body.capacity` all multiply and never pre-divide; `specificHeatOf`, the one intensive form, has no
-  callers. Rewriting these would add a divide and buy nothing.
+- **Temperature — ~~no change needed~~. ⛔ THIS WAS WRONG. Corrected 2026-09-03; see below.** This
+  section asks for `joules / capacity` to become `joules × 1000 / (mass × c)`, on the grounds that at
+  `Kₘ = 10⁶` a single mass unit of uranium has a capacity below 1. That was true when this plan was
+  written and **step 2 removed it**: holding `Kₑ = 1000·Kₘ` (`Budget.ENERGY_PER_MASS`, guarded by
+  `BudgetParityTest`) makes `capacity = mass_units × specificHeat` exact at every scale, with no
+  truncation and no sub-unit capacity. Verified that every capacity in the game is extensive —
+  `gasCapacityAt`, `RigidBody.capacity`, `Body.capacity` all multiply and never pre-divide;
+  `specificHeatOf`, the one intensive form, has no callers. Rewriting these would add a divide and
+  buy nothing.
+
+#### ⛔ Correction 2 was itself wrong, and the original prescription was right
+
+**The relation it rests on does not hold in this build.** `Kₑ = 1000·Kₘ` would make
+`Budget.CAPACITY_DIVISOR` equal to 1; measured, `Kₘ` is 10⁶ and `Kₑ` is 100, and the divisor is
+**10⁷** — the two are off by exactly it. `heatCapacityAt` therefore *did* pre-divide, and
+`Thermal.kt`'s own comment ("`CAPACITY_DIVISOR` is 1 at today's units") had gone stale alongside this
+paragraph. Two statements asserting the same false thing, which is how it went unlooked-at.
+
+What it cost: capacity floored to **zero** below ~9.6 mg of nitrogen, 0.7 mg of hydrogen, 22 mg of
+iron. Every `energy / capacity` in the game then took its `capacity <= 0` branch and answered a
+fabricated `AMBIENT_KELVIN` — **112,020 cell-ticks in one suite run**, and on a 16 K vessel a 277 K
+lie feeding `vapourMass`'s dome lookups and the pressure sweep.
+
+Fixed by doing what this section originally asked: `kelvinOf`/`energyAtKelvin` divide once, at the
+end, over an undivided `thermalMassAt`. Capacity survives only as a **weight** in the conduction
+solve, where it appears inside ratios and a node too thin to register has nothing to conduct anyway.
+`ThinMatterTemperatureTest` is the tripwire. See `reference_oos_orphan_energy` for the whole chain,
+which started at a construction site melting on delivery.
 
 - **`apportion` is NOT fixed, and cannot be by the method named here.** Both its rows are still red
   (safe k = 152 for a full storage). Splitting is provably a no-op: with `w ≤ sum`, the split on

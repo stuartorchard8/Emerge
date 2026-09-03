@@ -208,7 +208,7 @@ internal fun batchMass(reaction: Reaction): Long {
  */
 internal fun Reaction.heatFee(charge: Mixture): Long {
     val climb = (onsetKelvin - Temperature.AMBIENT_KELVIN).coerceAtLeast(0).toLong()
-    val warming = heatCapacityOf(charge) * climb
+    val warming = energyAtKelvin(thermalMassOf(charge), climb.toInt())
     return (warming + enthalpy(charge[principal]).coerceAtLeast(0L)) / ENERGY_PER_CREDIT
 }
 

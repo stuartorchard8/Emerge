@@ -127,13 +127,17 @@ fun settleCohesion(
     volumes: VolumeField? = null,
 ): Long {
     val tiles = cohesion.data.size
-    val capacities = heatCapacity(tiles, masses)
+    val thermalMasses = thermalMass(tiles, masses)
 
     var released = 0L
     for (i in 0 until tiles) {
         val tile = TileIndex(i)
-        val capacity = capacities[i]
-        if (capacity <= 0L) {
+        // ⛔ **Thermal mass, not capacity.** A capacity is pre-divided by `CAPACITY_DIVISOR`, so it
+        // reads zero for anything under a few milligrams — and this branch means *no matter at all*.
+        // Told otherwise, a thin cell was declared empty and had its cohesion silently zeroed, which
+        // is a real energy loss and one `released` never booked. See [kelvinOf].
+        val thermal = thermalMasses[i]
+        if (thermal <= 0L) {
             // No matter, so no heat and nothing to bind. Booking the stale cohesion away would mint
             // energy out of an empty tile.
             cohesion[tile] = 0L
@@ -146,7 +150,7 @@ fun settleCohesion(
         // ⚠️ **The cheap way out, and it is the overwhelmingly common case.** Dry air, or air far
         // above everything it holds, has no cohesion at any nearby temperature — one evaluation
         // says so and the tile is done.
-        val plain = if (total > 0L) total / capacity else 0L
+        val plain = if (total > 0L) kelvinOf(total, thermal).toLong() else 0L
         if (cohesion[tile] == 0L && cohesionAt(masses, tile, room, plain.toInt()) == 0L) continue
 
         // f(K) = capacity·K + cohesion(K), strictly increasing. f(0) = cohesion(0), which is the
@@ -156,16 +160,16 @@ fun settleCohesion(
         var hi = maxOf(0L, plain) + LATENT_HEADROOM_KELVIN
         while (lo < hi) {
             val mid = (lo + hi + 1L) / 2L
-            if (capacity * mid + cohesionAt(masses, tile, room, mid.toInt()) <= total) lo = mid else hi = mid - 1L
+            if (energyAtKelvin(thermal, mid.toInt()) + cohesionAt(masses, tile, room, mid.toInt()) <= total) lo = mid else hi = mid - 1L
         }
 
         // Taken as the *residue* rather than as `cohesionAt(lo)`, so the two halves sum to the total
         // exactly whatever the kelvin rounding did. Energy is conserved by construction here, which
         // is the property a settling pass must not get wrong.
-        val thermal = capacity * lo
-        energies[tile] = thermal
-        cohesion[tile] = total - thermal
-        released += thermal - was
+        val sensible = energyAtKelvin(thermal, lo.toInt())
+        energies[tile] = sensible
+        cohesion[tile] = total - sensible
+        released += sensible - was
     }
     return released
 }

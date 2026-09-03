@@ -142,7 +142,6 @@ import org.emerge.demo.outofspace.world.react
 import org.emerge.demo.outofspace.world.liftFrost
 import org.emerge.demo.outofspace.world.settleCohesion
 import org.emerge.demo.outofspace.world.settleCondensate
-import org.emerge.demo.outofspace.world.heatCapacity
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
@@ -154,6 +153,10 @@ import org.emerge.sim.core.ecs.PipelineProfiler
 import kotlin.math.min
 import kotlin.math.sign
 import kotlin.time.TimeSource
+import org.emerge.demo.outofspace.world.energyAtKelvin
+import org.emerge.demo.outofspace.world.thermalMassOf
+import org.emerge.demo.outofspace.world.thermalMassAt
+import org.emerge.demo.outofspace.world.thermalMass
 
 /** One tick: edits → sense → produce → process → eject → advance conduits → fluid → heat → motion.
  *
@@ -563,7 +566,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 bodies = bodies,
                 structure = structure,
                 airEnergy = w.airEnergy,
-                heatCapacity = heatCapacity(state.grid.size, w.masses),
+                thermalMass = thermalMass(state.grid.size, w.masses),
             )
             conductedRadiated = result.radiated
             conductedToAir = result.toAir
@@ -605,7 +608,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // ⚠️ Temperatures derived once and handed in. A temperature taken after a pass has
             // already changed the air is an answer about a different room, and that alone was
             // enough to make two orderings disagree — see `OxygenWellTest`.
-            val airKelvin = gasKelvin(w.airEnergy, heatCapacity(state.grid.size, w.masses))
+            val airKelvin = gasKelvin(w.airEnergy, w.masses)
             val cargo = listOf(w.rail.stuff, w.buffers.stuff)
             val inRooms = react(w.masses, w.airEnergy, airKelvin, cargo)
             // ⚠️ **The cargo layers are not given to the pipes' pass.** A pipe has no cargo in it,
@@ -749,8 +752,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // pressure block. They were hoisted above it while the two fired together, because a
             // capacity sweep and a division per tile are not free twice; now that they are a tick
             // apart, sharing them would mean diffusing by yesterday's temperatures.
-            val roomKelvin = gasKelvin(w.airEnergy, heatCapacity(state.grid.size, w.masses))
-            val pipeKelvin = gasKelvin(w.pipeEnergy, heatCapacity(state.grid.size, w.pipeMass))
+            val roomKelvin = gasKelvin(w.airEnergy, w.masses)
+            val pipeKelvin = gasKelvin(w.pipeEnergy, w.pipeMass)
             // With the temperatures, so the pass moves the vapour and leaves the frost and the
             // puddles where they are — see [diffuseFluid] and `PhaseTransportTest`.
             val ventSpeed = Flight.ventTilesPerTick(cfg.ticksPerSecond)
@@ -1596,7 +1599,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         var gaseousMass = 0L
         for (f in Fluid.ALL) gaseousMass += chunk[f.species]
         val solidMass = chunkMass - gaseousMass
-        val propellantEnergy = heatCapacityAt(parcel, TileIndex(0)) * Temperature.AMBIENT_KELVIN
+        val propellantEnergy = energyAtKelvin(thermalMassAt(parcel, TileIndex(0)), Temperature.AMBIENT_KELVIN)
 
         // Everything standing in the plume, taken with it. A jet does not thread between the gas in
         // a corridor; it entrains it, which is why the whole path is walked and not just its ends.
@@ -2658,7 +2661,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // The heat comes in with the gas, at the temperature everything else here is. Derived
             // from the mass rather than defaulted to zero, which is [AirField.of]'s rule: gas that
             // arrived with no energy is gas at absolute zero, and it stops behaving like a gas.
-            val energy = heatCapacityAt(parcel, TileIndex(0)) * Temperature.AMBIENT_KELVIN
+            val energy = energyAtKelvin(thermalMassAt(parcel, TileIndex(0)), Temperature.AMBIENT_KELVIN)
             airEnergy[tile] += energy
             injectedAirMass += added
             injectedAirEnergy += energy
@@ -3861,7 +3864,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (cost > credits) return null
 
             val cold = Mixture.of(species to mass, energy = 0L)
-            val bought = Mixture.of(species to mass, energy = heatCapacityOf(cold) * Temperature.AMBIENT_KELVIN)
+            val bought = Mixture.of(species to mass, energy = energyAtKelvin(thermalMassOf(cold), Temperature.AMBIENT_KELVIN))
             if (!rail.loadOnto(onto, bought)) return null
             // A purchase is a source like any other: two mouths buying for the same site would
             // otherwise each buy the whole of what it is short of, and the second packet is bought

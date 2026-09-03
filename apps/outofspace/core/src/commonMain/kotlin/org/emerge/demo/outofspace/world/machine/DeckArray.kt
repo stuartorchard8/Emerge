@@ -9,6 +9,7 @@ import org.emerge.demo.outofspace.world.builtPermille
 import org.emerge.demo.outofspace.world.holdsFullBill
 import org.emerge.demo.outofspace.world.machineBillOfMaterials
 import org.emerge.demo.outofspace.world.tileBillOfMaterials
+import org.emerge.demo.outofspace.world.energyAtKelvin
 
 /**
  * The deck layer: which machine stands on each tile, and — in [stuff] — the matter and energy that
@@ -128,7 +129,7 @@ class DeckArray(
             // temperature", and the only way to state it without a second table that can drift from
             // the first is to ask what is actually here.
             for (s in Species.ALL) stuff[tile, s] = bill[s]
-            stuff.setEnergy(tile, stuff.heatCapacityAt(tile) * Temperature.AMBIENT_KELVIN)
+            stuff.setEnergy(tile, energyAtKelvin(stuff.thermalMassAt(tile), Temperature.AMBIENT_KELVIN))
         }
     }
 

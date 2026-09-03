@@ -149,10 +149,20 @@ private fun capacityPerTileUncached(mixture: Mixture): Long {
  * checks that they do — a divergence would mean a machine's built temperature and its running
  * temperature came from different physics.
  */
-fun heatCapacityOf(mixture: Mixture): Long {
+fun heatCapacityOf(mixture: Mixture): Long = thermalMassOf(mixture) / Budget.CAPACITY_DIVISOR
+
+/**
+ * `Σ mass × specificHeat` for [mixture], **undivided** — the [Mixture] twin of
+ * [org.emerge.demo.outofspace.world.thermalMassAt], and what [energyAtKelvin] and [kelvinOf] take.
+ *
+ * ⛔ Use this, not [heatCapacityOf], whenever the answer is about to be multiplied by a temperature
+ * or divided into an energy. [heatCapacityOf] has already thrown away everything below
+ * `CAPACITY_DIVISOR`, which for a light enough mixture is all of it.
+ */
+fun thermalMassOf(mixture: Mixture): Long {
     var sum = 0L
     for (s in Species.ALL) sum += mixture[s] * s.specificHeat
-    return sum / Budget.CAPACITY_DIVISOR
+    return sum
 }
 
 /** Millijoules per gram per kelvin: what [mixture] costs to warm, averaged by mass. */

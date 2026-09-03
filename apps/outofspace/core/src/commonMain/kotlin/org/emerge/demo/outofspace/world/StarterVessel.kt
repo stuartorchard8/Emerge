@@ -283,7 +283,7 @@ private fun BufferLayer.withStartingIron(grid: Grid, deck: DeckArray): BufferLay
     // ⚠️ At **ambient**, not at zero energy. Ten tonnes of iron at absolute zero is not a stock of
     // building material, it is a heat sink the size of the ship, and it would suck the vessel cold
     // through the first machine that touched it.
-    val warm = Mixture.of(Species.Iron to mass, energy = heatCapacityOf(cold) * Temperature.AMBIENT_KELVIN)
+    val warm = Mixture.of(Species.Iron to mass, energy = energyAtKelvin(thermalMassOf(cold), Temperature.AMBIENT_KELVIN))
     it.put(store, warm)
 }
 

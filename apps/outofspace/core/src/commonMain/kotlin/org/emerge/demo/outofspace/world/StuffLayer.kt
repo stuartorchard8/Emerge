@@ -125,11 +125,7 @@ class StuffLayer private constructor(
      * by a reaction gets the right capacity with no code written for it. It replaces a per-kind
      * constant, which could not.
      */
-    fun heatCapacityAt(tile: TileIndex): Long {
-        var sum = 0L
-        forEachSpecies(tile) { s, mass -> sum += mass * s.specificHeat }
-        return sum / Budget.CAPACITY_DIVISOR
-    }
+    fun heatCapacityAt(tile: TileIndex): Long = thermalMassAt(tile) / Budget.CAPACITY_DIVISOR
 
     /**
      * **Which species the matter at [tile] mostly is** — the one that names what this tile is *made
@@ -188,9 +184,16 @@ class StuffLayer private constructor(
      * How hot the stuff at [tile] is, in kelvin. Matterless tiles read as ambient, for the reason
      * [org.emerge.demo.outofspace.world.gasKelvin] documents.
      */
-    fun kelvinAt(tile: TileIndex): Int {
-        val capacity = heatCapacityAt(tile)
-        return if (capacity <= 0L) Temperature.AMBIENT_KELVIN else (energyAt(tile) / capacity).toInt()
+    fun kelvinAt(tile: TileIndex): Int = kelvinOf(energyAt(tile), thermalMassAt(tile))
+
+    /**
+     * `Σ mass × specificHeat` at [tile], **undivided** — the layer's twin of
+     * [org.emerge.demo.outofspace.world.thermalMassAt], and what [kelvinAt] is formed from.
+     */
+    fun thermalMassAt(tile: TileIndex): Long {
+        var sum = 0L
+        forEachSpecies(tile) { s, mass -> sum += mass * s.specificHeat }
+        return sum
     }
 
     // ── Energy ───────────────────────────────────────────────────────────────

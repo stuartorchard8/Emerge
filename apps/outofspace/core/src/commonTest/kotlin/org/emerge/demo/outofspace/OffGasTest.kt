@@ -11,6 +11,8 @@ import org.emerge.demo.outofspace.world.offGas
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.thermalMassAt
+import org.emerge.demo.outofspace.world.energyAtKelvin
 
 /**
  * Volatiles leaving the matter carrying them — the release half of `offGas`, on its own.
@@ -31,7 +33,7 @@ class OffGasTest {
     private fun layerWith(vararg stuff: Pair<Species, Long>, kelvin: Int): StuffLayer {
         val layer = StuffLayer.empty(tiles)
         for ((species, mass) in stuff) layer[tile, species] = mass
-        layer.setEnergy(tile, layer.heatCapacityAt(tile) * kelvin)
+        layer.setEnergy(tile, energyAtKelvin(layer.thermalMassAt(tile), kelvin))
         return layer
     }
 
@@ -200,7 +202,7 @@ class OffGasTest {
             var out = 0L
             repeat(8) {
                 out += offGas(layer, air, null, inTheOpen).toGasMass
-                if (!withLatent) layer.setEnergy(tile, layer.heatCapacityAt(tile) * 400)
+                if (!withLatent) layer.setEnergy(tile, energyAtKelvin(layer.thermalMassAt(tile), 400))
                 // The room is emptied each pass, so saturation is never what limits this — the only
                 // difference between the two runs is whether the lump was allowed to get colder.
                 for (f in Fluid.ALL) air[tile, f] = 0L

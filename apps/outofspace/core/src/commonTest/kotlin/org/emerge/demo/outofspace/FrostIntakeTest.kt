@@ -16,7 +16,6 @@ import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.cohesionOf
 import org.emerge.demo.outofspace.world.gasKelvin
-import org.emerge.demo.outofspace.world.heatCapacity
 import org.emerge.demo.outofspace.world.heatCapacityAt
 import org.emerge.demo.outofspace.world.liftFrost
 import org.emerge.demo.outofspace.world.machine.Extractor
@@ -63,7 +62,7 @@ class FrostIntakeTest {
         for (tile in at) for ((fluid, mass) in what) air.add(tile, fluid, mass)
         val energy = EnergyArray(grid.size)
         for (tile in grid.tiles) energy[tile] = heatCapacityAt(air, tile) * kelvin
-        return Triple(air, energy, cohesionOf(air, gasKelvin(energy, heatCapacity(grid.size, air))))
+        return Triple(air, energy, cohesionOf(air, gasKelvin(energy, air)))
     }
 
     private fun airTotal(air: MassArray): Long {
@@ -157,7 +156,7 @@ class FrostIntakeTest {
         // note on `a settlement is not the yardstick` below.
         val at = plate[1]
         val (air, energy, cohesion) = room(Fluid.Water to 20L * kg, Fluid.Nitrogen to 1L * kg, kelvin = 200)
-        val kelvin = gasKelvin(energy, heatCapacity(grid.size, air))[at.index]
+        val kelvin = gasKelvin(energy, air)[at.index]
 
         val lifted = liftFrost(plate, air, energy, cohesion)
 
@@ -183,7 +182,7 @@ class FrostIntakeTest {
         val lifted = liftFrost(plate, air, energy, cohesion)
 
         assertTrue(lifted.total > 0L, "nothing was lifted, so nothing was proved")
-        val after = gasKelvin(energy, heatCapacity(grid.size, air))[at.index]
+        val after = gasKelvin(energy, air)[at.index]
         assertTrue(after in 199..201, "the room went from 200K to ${after}K just by being swept")
     }
 

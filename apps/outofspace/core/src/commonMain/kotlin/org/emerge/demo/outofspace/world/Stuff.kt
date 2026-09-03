@@ -30,7 +30,7 @@ class Stuff(
      * what does.
      */
     private val cohesion: EnergyArray = cohesionOf(
-        masses, gasKelvin(energies, heatCapacity(energies.data.size, masses)),
+        masses, gasKelvin(energies, masses),
     ),
 ) {
 
@@ -79,10 +79,7 @@ class Stuff(
      * How hot the stuff in a tile is, in kelvin. A tile with no stuff reads as ambient — see [gasKelvin]
      * for why that is the right placeholder for an absent quantity rather than a dodge.
      */
-    fun kelvinAt(tile: TileIndex): Int {
-        val capacity = heatCapacityAt(masses, tile)
-        return if (capacity <= 0L) Temperature.AMBIENT_KELVIN else (energies[tile] / capacity).toInt()
-    }
+    fun kelvinAt(tile: TileIndex): Int = kelvinOf(energies[tile], thermalMassAt(masses, tile))
 
     /** Total mass in a tile — its density, since every tile is the same volume. */
     fun densityAt(tile: TileIndex): Long {

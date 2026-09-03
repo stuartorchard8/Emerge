@@ -8,6 +8,8 @@ import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
 import org.emerge.demo.outofspace.world.reach
+import org.emerge.demo.outofspace.world.kelvinOf
+import org.emerge.demo.outofspace.world.energyAtKelvin
 
 /**
  * A machine on a tile. Immutable — the reducer builds new ones rather than mutating, so a snapshot
@@ -113,15 +115,18 @@ fun DeckMachine.temperatureKelvin(grid: Grid, deck: StuffLayer): Int {
     // reaction changes what a tile is made of, which is exactly when the stored answer is the right
     // one and the constant is stale.
     val tiles = tiles(grid)
-    val capacity = tiles.sumOf { deck.heatCapacityAt(it) }
+    // ⚠️ **Thermal mass, summed before anything is divided** — see [kelvinOf]. Summing per-tile
+    // *capacities* rounds each one down first, and for a machine light enough that is every one of
+    // them: the mean temperature of a thing made of nothing measurable came back as a constant.
+    val thermal = tiles.sumOf { deck.thermalMassAt(it) }
     val totalEnergy = tiles.sumOf { deck.energyAt(it) }
-    return if (capacity <= 0L) Temperature.SPACE_KELVIN else (totalEnergy / capacity).toInt()
+    return if (thermal <= 0L) Temperature.SPACE_KELVIN else kelvinOf(totalEnergy, thermal)
 }
 
 /** The same machine with every one of its tiles at [kelvin] — how a uniform body is stated. */
 fun DeckMachine.setTemperature(kelvin: Int, grid: Grid, deck: StuffLayer) {
     val tiles = tiles(grid)
-    setEnergy(LongArray(tiles.size) { deck.heatCapacityAt(tiles[it]) * kelvin }, grid, deck)
+    setEnergy(LongArray(tiles.size) { energyAtKelvin(deck.thermalMassAt(tiles[it]), kelvin) }, grid, deck)
 }
 
 /*

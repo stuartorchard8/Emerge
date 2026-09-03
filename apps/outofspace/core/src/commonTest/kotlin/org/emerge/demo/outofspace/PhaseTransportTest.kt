@@ -11,7 +11,6 @@ import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.MassIndex
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.diffuseFluid
-import org.emerge.demo.outofspace.world.heatCapacity
 import org.emerge.demo.outofspace.world.heatCapacityAt
 import org.emerge.demo.outofspace.world.settleCondensate
 import org.emerge.demo.outofspace.world.MassDistribution
@@ -180,7 +179,7 @@ class PhaseTransportTest {
     // ── But it falls, if there is a down for it to fall ─────────────────────
 
     private fun kelvinOf(masses: MassArray, energies: EnergyArray): IntArray =
-        gasKelvin(energies, heatCapacity(grid.size, masses))
+        gasKelvin(energies, masses)
 
     private fun settle(masses: MassArray, energies: EnergyArray, down: Frac2, passes: Int, spin: Long = 0L) {
         repeat(passes) {
@@ -294,7 +293,7 @@ class PhaseTransportTest {
             repeat(20) {
                 settleCondensate(
                     tallEdges, sealedTall(), masses, energies,
-                    gasKelvin(energies, heatCapacity(tall.size, masses)),
+                    gasKelvin(energies, masses),
                     Frac2(Frac(1L, 1), Frac(0L)), spin = 0L,
                     about = MassDistribution(mass = 1L, comMilliX = 2_500L, comMilliY = 1_500L, gyrationSq = 1L),
                 )

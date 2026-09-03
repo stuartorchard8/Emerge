@@ -43,7 +43,7 @@ class TrackLayers private constructor(private val layers: Array<StuffLayer>) {
         require(!stuff.occupies(tile)) { "$conduit already holds stuff at $tile" }
         val bill = conduitBillOfMaterials(conduit, species)
         for (s in Species.ALL) stuff[tile, s] = bill[s]
-        val energy = stuff.heatCapacityAt(tile) * Temperature.AMBIENT_KELVIN
+        val energy = energyAtKelvin(stuff.thermalMassAt(tile), Temperature.AMBIENT_KELVIN)
         stuff.setEnergy(tile, energy)
         return energy
     }

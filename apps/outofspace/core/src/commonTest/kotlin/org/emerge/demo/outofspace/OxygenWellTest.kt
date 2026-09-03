@@ -139,7 +139,7 @@ class OxygenWellTest {
         val b = world(oxygen = 2 * kg, methane = 50 * kg, roomKelvin = 1200, 50 * kg to 1200)
 
         react(a.air, a.energy, null, a.layers)
-        val kelvin = IntArray(tiles) { org.emerge.demo.outofspace.world.gasKelvin(b.energy, org.emerge.demo.outofspace.world.heatCapacity(tiles, b.air))[it] }
+        val kelvin = IntArray(tiles) { org.emerge.demo.outofspace.world.gasKelvin(b.energy, b.air)[it] }
         react(b.air, b.energy, kelvin, b.layers)
 
         assertEquals(a.air[tile, Fluid.Methane], b.air[tile, Fluid.Methane])

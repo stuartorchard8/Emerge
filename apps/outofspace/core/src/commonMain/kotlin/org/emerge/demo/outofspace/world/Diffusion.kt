@@ -252,7 +252,7 @@ fun diffuseFluid(
     // that silently moved ice because an argument was omitted is exactly the kind of hole that
     // would go unnoticed for a year. Absent energies there is genuinely nothing to derive from, and
     // that is the only case that gets the old behaviour — which is what the mass-only tests want.
-    val temperature = kelvin ?: energies?.let { gasKelvin(it, heatCapacity(tiles, masses)) }
+    val temperature = kelvin ?: energies?.let { gasKelvin(it, masses) }
 
     // One tile's worth of the outside, as energy — computed once rather than per face per species.
     val ambientEnergyPerTile: Long =

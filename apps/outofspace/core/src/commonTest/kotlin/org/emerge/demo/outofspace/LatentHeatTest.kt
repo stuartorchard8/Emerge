@@ -8,12 +8,13 @@ import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.cohesionOf
 import org.emerge.demo.outofspace.world.gasKelvin
-import org.emerge.demo.outofspace.world.heatCapacity
 import org.emerge.demo.outofspace.world.heatCapacityAt
 import org.emerge.demo.outofspace.world.settleCohesion
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.thermalMassAt
+import org.emerge.demo.outofspace.world.energyAtKelvin
 
 /**
  * **Condensing gives back what boiling took.**
@@ -38,8 +39,8 @@ class LatentHeatTest {
         val masses = MassArray(tiles)
         masses.add(tile, Fluid.Water, 1L * kg)
         val energies = EnergyArray(tiles)
-        energies[tile] = heatCapacityAt(masses, tile) * kelvin
-        val cohesion = cohesionOf(masses, gasKelvin(energies, heatCapacity(tiles, masses)))
+        energies[tile] = energyAtKelvin(thermalMassAt(masses, tile), kelvin)
+        val cohesion = cohesionOf(masses, gasKelvin(energies, masses))
         return Triple(masses, energies, cohesion)
     }
 
@@ -47,7 +48,7 @@ class LatentHeatTest {
     private val FLOOR_KELVIN = 60
 
     private fun kelvinOf(masses: MassArray, energies: EnergyArray): Int =
-        gasKelvin(energies, heatCapacity(tiles, masses))[0]
+        gasKelvin(energies, masses)[0]
 
     @Test
     fun `the cooling curve has a plateau where the water condenses`() {

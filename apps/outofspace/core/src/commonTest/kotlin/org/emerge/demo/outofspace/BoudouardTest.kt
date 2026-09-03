@@ -12,6 +12,8 @@ import org.emerge.demo.outofspace.world.react
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.thermalMassAt
+import org.emerge.demo.outofspace.world.energyAtKelvin
 
 /**
  * **A reagent in each store** — the case that proves increment 4 of `PLAN_unified_reactions.md`.
@@ -48,12 +50,12 @@ class BoudouardTest {
         val air = MassArray(tiles)
         if (dioxide > 0L) air.add(tile, Fluid.CarbonDioxide, dioxide)
         val energy = EnergyArray(tiles)
-        energy[tile] = heatCapacityAt(air, tile) * kelvin
+        energy[tile] = energyAtKelvin(thermalMassAt(air, tile), kelvin)
 
         val belt = StuffLayer.empty(tiles)
         if (carbon > 0L) {
             belt.add(tile, Species.Carbon, carbon)
-            belt.setEnergy(tile, belt.heatCapacityAt(tile) * kelvin)
+            belt.setEnergy(tile, energyAtKelvin(belt.thermalMassAt(tile), kelvin))
         }
         return Room(air, energy, belt)
     }

@@ -11,7 +11,7 @@ import org.emerge.demo.outofspace.world.EdgeGrid
 import org.emerge.demo.outofspace.world.MassIndex
 import org.emerge.demo.outofspace.world.StructureMap
 import org.emerge.demo.outofspace.world.diffuseFluid
-import org.emerge.demo.outofspace.world.heatCapacity
+import org.emerge.demo.outofspace.world.thermalMass
 import org.emerge.demo.outofspace.world.gasKelvin
 import org.emerge.demo.outofspace.world.massPerTileOf
 import org.emerge.demo.outofspace.world.starterVessel
@@ -86,10 +86,9 @@ object OutofspaceBench {
         }
         share("diffuseFluid (air)", diffuse, innerReps, tickNanos, ticks)
 
-        val capacity = heatCapacity(tiles, mass)
-        val kelvin = gasKelvin(energy, capacity)
+        val kelvin = gasKelvin(energy, mass)
         share("tilePressure", time(innerReps) { tilePressure(tiles, mass, kelvin) }, innerReps, tickNanos, ticks)
-        share("gasCapacity", time(innerReps) { heatCapacity(tiles, mass) }, innerReps, tickNanos, ticks)
+        share("gasCapacity", time(innerReps) { thermalMass(tiles, mass) }, innerReps, tickNanos, ticks)
         share("tileMass", time(innerReps) { tileMass(tiles, mass) }, innerReps, tickNanos, ticks)
 
         // ── The same sweeps, with every species actually present ──
@@ -112,9 +111,9 @@ object OutofspaceBench {
         share("diffuseFluid (air)", time(innerReps) {
             diffuseFluid(edges, apertures, full.copyOf(), fullEnergy.copyOf())
         }, innerReps, tickNanos, ticks)
-        val fullKelvin = gasKelvin(fullEnergy, heatCapacity(tiles, full))
+        val fullKelvin = gasKelvin(fullEnergy, full)
         share("tilePressure", time(innerReps) { tilePressure(tiles, full, fullKelvin) }, innerReps, tickNanos, ticks)
-        share("gasCapacity", time(innerReps) { heatCapacity(tiles, full) }, innerReps, tickNanos, ticks)
+        share("gasCapacity", time(innerReps) { thermalMass(tiles, full) }, innerReps, tickNanos, ticks)
         share("tileMass", time(innerReps) { tileMass(tiles, full) }, innerReps, tickNanos, ticks)
 
         println()

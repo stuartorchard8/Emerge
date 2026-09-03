@@ -33,7 +33,7 @@ fun stepSolidHeat(
     bodies: List<Body>,
     structure: StructureMap,
     airEnergy: EnergyArray,
-    heatCapacity: LongArray,
+    thermalMass: LongArray,
 ): SolidHeatStep {
     val bodyCount = bodies.size
     val tileCount = grid.size
@@ -48,11 +48,14 @@ fun stepSolidHeat(
         kelvin[b] = bodies[b].kelvin
     }
     for (i in 0 until tileCount) {
-        val c = heatCapacity[i]
         val tile = TileIndex(i)
-        capacity[bodyCount + i] = c
-        kelvin[bodyCount + i] =
-            if (c <= 0L) Temperature.AMBIENT_KELVIN else (airEnergy[tile] / c).toInt()
+        // ⚠️ **Two different quantities out of one.** The solver wants a *weight*, and wants it in
+        // the same units as [Body.capacity] — so the divisor stays here, where a node too thin to
+        // register is a node with nothing worth conducting and is skipped below anyway. The
+        // *temperature* must not be formed that way: see [kelvinOf], and [heatCapacityAt] for what
+        // pre-dividing did to thin gas.
+        capacity[bodyCount + i] = thermalMass[i] / Budget.CAPACITY_DIVISOR
+        kelvin[bodyCount + i] = kelvinOf(airEnergy[tile], thermalMass[i])
     }
 
     val tiles = TileBodies(grid.size, bodies)

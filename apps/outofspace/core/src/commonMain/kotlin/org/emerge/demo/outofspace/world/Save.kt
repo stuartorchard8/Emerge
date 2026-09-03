@@ -428,7 +428,7 @@ object Save {
      * default.
      */
     private fun laidDeckEnergy(deck: DeckArray, m: DeckMachine): Long =
-        heatCapacityOf(tileBillOfMaterials(m.kind, deck.materialOf(m))) * Temperature.AMBIENT_KELVIN
+        energyAtKelvin(thermalMassOf(tileBillOfMaterials(m.kind, deck.materialOf(m))), Temperature.AMBIENT_KELVIN)
 
     /**
      * The deck's **matter**, one `deckstuff tile <mixture>` line per tile whose casing is no longer
@@ -708,7 +708,7 @@ object Save {
         // and omits the line, after which the loader lays a full length of metal and seeds a full
         // length's heat onto a site holding nothing. See [laidDeckEnergy] — same rule, same trap,
         // and this is the half that looked correct because it is right for every finished tile.
-        if (energy != heatCapacityOf(conduitBillOfMaterials(s.conduit, s.material)) * Temperature.AMBIENT_KELVIN) {
+        if (energy != energyAtKelvin(thermalMassOf(conduitBillOfMaterials(s.conduit, s.material)), Temperature.AMBIENT_KELVIN)) {
             f.append(" k=").append(energy)
         }
         return f.toString()

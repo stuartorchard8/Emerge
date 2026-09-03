@@ -314,7 +314,7 @@ fun react(
     layers: List<StuffLayer> = emptyList(),
 ): ChemistryStep {
     val tiles = air.data.size / Fluid.COUNT
-    val temperature = kelvin ?: gasKelvin(airEnergy, heatCapacity(tiles, air))
+    val temperature = kelvin ?: gasKelvin(airEnergy, air)
 
     // Hoisted for the whole sweep rather than per tile — [oxidise]'s reason exactly.
     val allowed = LongArray(WIDEST_REACTION)
