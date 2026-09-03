@@ -95,15 +95,19 @@ class TileEnergy private constructor(private val perTile: LongArray) {
 /**
  * Machine input buffers hold this much before they stop accepting.
  *
- * **Derivation**: four tonnes — **32 ticks** of a 125 kg/tick machine's throughput, so a machine can
- * run for a good few seconds on a full buffer while its feed is interrupted.
+ * **Derivation**: two belt-loads — and the two is a **floor**, not a preference. A concentrator
+ * begins a batch by lifting [Concentrator.CHARGE_MASS] out of this buffer in one piece and does
+ * nothing whatever when it comes up short, while `acceptInto` fills the buffer to here and no
+ * further. So a buffer shallower than a charge is not a slower concentrator, it is one that never
+ * runs: measured at one belt-load, the starter plant's gauges read a flat zero and its refinery line
+ * banked nothing, permanently. `CHARGE_MASS` is two belt-loads, so this is two belt-loads.
  *
- * ⚠️ Sized in *ticks of throughput*, not in belt-loads, and that distinction has already bitten
- * once. Written as `4 × PACKET_MASS` it silently shrank tenfold when the belt-load went from a
- * tonne to 100 kg, leaving every machine with two ticks of buffer — enough that an extractor
- * stalled before its throttle could make any difference, which is a behaviour change nobody asked
- * for. A buffer's job is to decouple a machine from its supply *for a while*; the unit of "a while"
- * is ticks.
+ * ⚠️ **This was four tonnes, sized in *ticks of throughput*** — and the note here argued at length
+ * against ever writing it as a multiple of `PACKET_MASS`, because doing so had once let it shrink
+ * tenfold when the belt-load did, stalling an extractor before its throttle could make any
+ * difference. **That argument has expired: the extractor has no throttle any more**, the rail meters
+ * it. The charge above is what constrains the depth now, and it is the harder constraint of the two
+ * — it does not degrade a machine, it deadlocks one.
  */
 val MACHINE_BUFFER_CAP = 2L * PACKET_MASS
 
@@ -115,7 +119,7 @@ val MACHINE_BUFFER_CAP = 2L * PACKET_MASS
  * back up into the input and then up the belt behind it, which is the same way every other blockage
  * in the game behaves: visibly, and starting at the thing that is actually stuck.
  *
- * **Derivation**: the same four tonnes as [MACHINE_BUFFER_CAP], and deliberately equal to it — a
+ * **Derivation**: the same two belt-loads as [MACHINE_BUFFER_CAP], and deliberately equal to it — a
  * machine that can hoard more output than input would drain its feed before it stalled.
  */
 val MACHINE_OUTPUT_CAP = 2L * PACKET_MASS
@@ -125,18 +129,20 @@ val MACHINE_OUTPUT_CAP = 2L * PACKET_MASS
  * its tile in one tick at full activation.
  *
  * **Derived from what it is for**: a *full* chamber — [MACHINE_BUFFER_CAP] of rock at a
- * representative specific heat — climbing [HEATER_KELVIN_PER_TICK] kelvin a tick. So four tonnes go
- * from ambient to a decomposition temperature in something under ten seconds of play, and a lighter
- * charge is capped by its own shortfall long before it gets there and simply arrives sooner. A
- * heavier charge taking longer is behaviour the old fixed `ticksPerAction` could not express at all.
+ * representative specific heat — climbing [HEATER_KELVIN_PER_TICK] kelvin a tick. So a chamberful
+ * goes from ambient to a decomposition temperature in something under ten seconds of play, and a
+ * lighter charge is capped by its own shortfall long before it gets there and simply arrives sooner.
+ * ⚠️ **The seconds are what is fixed, not the tonnage**: this is a product of [MACHINE_BUFFER_CAP],
+ * so shrinking the chamber shrinks the element with it and the climb rate does not move. A heavier
+ * charge taking longer is behaviour the old fixed `ticksPerAction` could not express at all.
  *
  * The derivation is only honest because the element heats **the charge** — see [Work.heatBuffer].
  * An element modelled as a jacket around the chamber would put its energy into nine tiles of
  * firebrick that outweigh a chamberful of rock by something like fifty to one, and a number derived
  * against the charge would be a sixth of what such a machine needed.
  *
- * ⚠️ **The game does not agree with the world about time**, and this is where that shows: four
- * tonnes of rock to 900 K is 3.2 GJ, which a real industrial element delivers over hours rather than
+ * ⚠️ **The game does not agree with the world about time**, and this is where that shows: a chamber
+ * of rock to 900 K is an amount of energy a real industrial element delivers over hours rather than
  * over the seconds this is sized for. [HEATER_KELVIN_PER_TICK] is the dial, and it is expected to
  * move.
  */

@@ -9,6 +9,7 @@ import org.emerge.demo.outofspace.chem.TILE_LITRES
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.MassArray
+import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.machine.MACHINE_OUTPUT_CAP
@@ -48,19 +49,27 @@ class BudgetParityTest {
     fun `every derived constant still means the quantity it meant before the audit`() {
         // ── Logistics: the packet is the quantum, everything else is a count of them ──
         assertEquals(100_000L, Capacity.PACKET_MASS.grams, "a packet is 100 kg")
-        // Buffers are sized in TICKS OF THROUGHPUT, not in belt-loads — see MACHINE_BUFFER_CAP for
-        // the bug that taught the difference. So they are asserted as masses, independent of packets.
-        assertEquals(4_000_000L, MACHINE_BUFFER_CAP.grams, "input buffer is four tonnes")
-        assertEquals(4_000_000L, MACHINE_OUTPUT_CAP.grams, "output buffer is four tonnes")
+        // ⚠️ Buffers are counted in BELT-LOADS again. They were stated here in tonnes because they
+        // were sized in ticks of throughput, and the constant that wanted that depth — an extractor
+        // throttle — no longer exists. What sizes them now is asserted just below. Still stated as a
+        // mass, because a mass is what a parity test can check.
+        assertEquals(200_000L, MACHINE_BUFFER_CAP.grams, "input buffer is two hundred kilograms")
+        assertEquals(200_000L, MACHINE_OUTPUT_CAP.grams, "output buffer is two hundred kilograms")
         assertEquals(20_000_000L, Storage.CAP.grams, "storage is twenty tonnes")
         assertEquals(5_000_000L, Extractor.BUFFER_CAP.grams, "extractor buffer is five tonnes")
 
         // The relationships that actually matter, stated as the ratios they are.
-        // Against the belt-load rather than against a machine: the buffer is sized in ticks of a
-        // producer running flat out, and flat out *is* one belt-load a tick (see below). It used to
-        // be stated through the vaporizer's rate, which was that same constant wearing a machine's
-        // name; that machine is gone and the relationship it stood for is not.
-        assertEquals(40L, MACHINE_BUFFER_CAP / Capacity.PACKET_MASS, "40 ticks of buffer")
+        assertEquals(2L, MACHINE_BUFFER_CAP / Capacity.PACKET_MASS, "two belt-loads of buffer")
+        // ⛔ **The floor under that two, and the reason it cannot go to one.** `acceptInto` fills a
+        // working machine's input to MACHINE_BUFFER_CAP and not a gram beyond, while `Work.refine`
+        // opens a batch with `takeAtLeast(CHARGE_MASS)` and returns the machine untouched when it
+        // comes up short. A buffer shallower than a charge is therefore not a slower concentrator
+        // but one that never runs, and it fails silently: measured at one belt-load, the starter
+        // plant's gauges read a flat zero and the refinery line banked nothing at all.
+        assertTrue(
+            MACHINE_BUFFER_CAP >= Concentrator.CHARGE_MASS,
+            "a concentrator can never fill a charge: ${Concentrator.CHARGE_MASS} wanted, ${MACHINE_BUFFER_CAP} held",
+        )
         // ⚠️ The extractor has no rate of its own any more — its two stores became one and the rail
         // sets its throughput — so its buffer is sized in belt-loads rather than in ticks.
         assertEquals(50L, Extractor.BUFFER_CAP / Capacity.PACKET_MASS, "fifty belt-loads of buffer")
