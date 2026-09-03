@@ -118,10 +118,26 @@ object Sas {
      *
      * ⚠️ **Not a tuning nicety — without it SAS never stops burning.** A proportional controller
      * asks for a little thrust at a little error for ever, and "a little thrust" out of a rocket is
-     * still propellant leaving the ship. A fiftieth of full authority is about one revolution per
-     * forty minutes, which no player will ever see and no lever arm can chase to zero anyway.
+     * still propellant leaving the ship.
+     *
+     * **Derived rather than chosen: it is the controller's own resolution.** [correction] asks for
+     * `magnitude × FlightIntent.FULL / FULL_AUTHORITY` permille, so below
+     * `FULL_AUTHORITY / FlightIntent.FULL` that quotient truncates to zero and the autopilot is
+     * asking for nothing whatever the deadband says. Setting the two equal is the tightest deadband
+     * that means anything — one that lets go exactly when it runs out of things to ask for, instead
+     * of well before.
+     *
+     * ⚠️ **Was a fiftieth of full authority**, and that left a settled ship turning once every five
+     * and a half minutes — slow, but visibly not stopped, and it was noticed in play. A twentieth of
+     * that is a residual of about one revolution every two hours, for 3% more propellant and roughly
+     * twice as long to settle.
+     *
+     * ⛔ **Tightening it past this buys nothing at all.** Measured at a five-thousandth, the ship
+     * never reaches the band: the permille truncates to zero first, so it stops where it is with the
+     * autopilot still nominally chasing it. A deadband under the resolution is not a stricter rule,
+     * it is a rule that stops being applied.
      */
-    val DEADBAND: Long = FULL_AUTHORITY / 50L
+    val DEADBAND: Long = FULL_AUTHORITY / FlightIntent.FULL
 
     /** How hard to lean on the stick against a ship turning at [angVel]: opposite, and proportional. */
     fun correction(angVel: Long): Int {

@@ -255,6 +255,21 @@ class FlightControlTest {
     }
 
     /**
+     * How long this ship is given to null its spin before the attempt counts as failed.
+     *
+     * ⚠️ **A ceiling, not a measurement.** Measured settling on this fixture is **1714 ticks**: it
+     * was 131 when a motor threw `PACKET_MASS / 30` a tick and the deadband was a fiftieth of full
+     * authority, 878 when the motors were cut to `/200`, and 1714 once [Sas.DEADBAND] tightened to
+     * the controller's own resolution so that a settled ship is actually still. Three moves in a row
+     * is why the ceiling is generous — the next motor tune should not need a test edit as well.
+     *
+     * ⚠️ Generous is affordable **only because the loop stops at the answer** rather than running
+     * the budget out. Stepped flat, this is the slowest test in the module and over the five-second
+     * rule on its own.
+     */
+    private val SETTLE_BUDGET = 4000
+
+    /**
      * End to end: a ship left spinning is brought to a stop and then let alone.
      *
      * Both halves matter. A controller that stops the spin and goes on burning is worse than none —
@@ -269,9 +284,13 @@ class FlightControlTest {
         controller.mode = Mode.Flight
 
         val opening = abs(controller.state.angVel)
-        repeat(200) { controller.stepOnce() }
+        var settledAt = 0
+        for (tick in 1..SETTLE_BUDGET) {
+            controller.stepOnce()
+            if (abs(controller.state.angVel) <= Sas.DEADBAND) { settledAt = tick; break }
+        }
         val settled = abs(controller.state.angVel)
-        assertTrue(settled <= Sas.DEADBAND, "it was still turning at $settled, having started at $opening")
+        assertTrue(settledAt > 0, "after $SETTLE_BUDGET ticks it was still turning at $settled, having started at $opening")
         // Into the deadband and not *past* it: a controller that overshot would be swinging the ship
         // back and forth and burning propellant at both ends of every swing.
         assertTrue(settled < opening, "it did not slow down at all")
