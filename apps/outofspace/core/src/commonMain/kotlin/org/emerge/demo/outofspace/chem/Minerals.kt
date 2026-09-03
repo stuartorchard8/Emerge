@@ -65,6 +65,51 @@ val ATOMIC_MASS: Map<Species, Int> = mapOf(
 val Species.atomicMass: Int get() = ATOMIC_MASS[this] ?: molarMass
 
 /**
+ * How many atoms are in one molecule of this — 1 for a metal, 2 for the diatomic gases, 3 for water.
+ *
+ * Derived from the two tables that already exist rather than stated, which is [MINERALS]' whole
+ * argument: a compound counts the atoms in its formula, and an element divides the mass of the
+ * molecule [Species.molarMass] describes by the mass of one atom. Nothing new has to be maintained,
+ * and a species cannot acquire a formula and keep a stale atom count.
+ *
+ * ⚠️ **It answers for the molecule the game's molar mass describes, which is not always the one
+ * chemistry would name.** `Species.Sulfur` weighs 32 — one atom — so this says monatomic, where real
+ * sulfur vapour is S₈ near its boiling point and S₂ when hot. That is the same trade [ATOMIC_MASS]
+ * makes for chlorine at 35: wrong against a textbook, right against itself, and self-consistency is
+ * the property that matters because `millimolesOf` reads that same 32 when it works out what a
+ * roomful of sulfur vapour presses at. Fixing it means giving sulfur a *molecular* molar mass, which
+ * is a change to the mass ledger and not to this function.
+ */
+val Species.atomsPerMolecule: Int
+    get() = MINERALS[this]?.values?.sum() ?: (molarMass / atomicMass)
+
+/**
+ * `2γ/(γ−1)` for this species — **4 monatomic, 7 diatomic, 8 polyatomic.**
+ *
+ * The adiabatic index itself is never wanted; every use of it in a rocket is this group, and stating
+ * the group is what keeps the arithmetic in integers. γ = 5/3, 7/5 and 4/3 put `2γ/(γ−1)` at exactly
+ * 4, 7 and 8 with nothing left over, so an exhaust velocity is an [org.emerge.demo.outofspace.num.isqrt]
+ * of whole numbers and there is no fixed-point scale to calibrate. See `PLAN_fluid_thrusters.md` §3.
+ *
+ * γ falls out of how a molecule can hold energy: an atom has three ways to move and nothing else, a
+ * dumbbell adds two ways to tumble, and anything bent or bigger adds the third. So this is a fact
+ * about the *shape* of the molecule and correctly derived from its atom count rather than measured
+ * per species — which also means it needs no entry when a species is added.
+ *
+ * ⚠️ **Three classes and no more, so it is exact at the ends and approximate in the middle.** Real
+ * γ drifts with temperature as vibration wakes up, and a big polyatomic sits nearer 1.2 than 4/3 —
+ * hydrolox at 3500 K really runs about 1.2, which this reads as 4/3 and so under-reads its exhaust
+ * velocity by around a fifth. Deliberate: the alternative is a measured table per species per
+ * temperature, and the whole span of this term is a factor of √2 in the answer.
+ */
+val Species.adiabaticK: Int
+    get() = when (atomsPerMolecule) {
+        1 -> 4
+        2 -> 7
+        else -> 8
+    }
+
+/**
  * Mineral → the elements in one formula unit, by atom count.
  *
  * Only minerals appear as keys. An element is not made of anything, and an ice is listed because it

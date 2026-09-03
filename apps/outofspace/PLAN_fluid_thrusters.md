@@ -165,9 +165,8 @@ Four of these are silent if missed.
 
 Each ends at a green gate. Commit directly to main, one focused commit per step.
 
-1. **γ from atomicity.** `Species.adiabaticK: Int` derived over `MINERALS` atom counts, returning 4,
-   7 or 8. Nothing reads it. Gate: a test asserting the three classes against a hand-checked list,
-   and that every `Fluid` has one.
+1. ✅ **DONE — γ from atomicity.** `Species.adiabaticK` derived over `MINERALS` atom counts,
+   returning 4, 7 or 8. Nothing reads it yet.
 2. **`exhaustVelocity(mass, energy)` as a pure function**, over a parcel. Gate: the §3 table
    reproduced to ±2%, plus the degenerate cases — no mass, no energy, one species, a mixture.
    ⚠️ This is where a wrong answer is cheapest to find; do not fold it into the tick.
@@ -187,19 +186,22 @@ Each ends at a green gate. Commit directly to main, one focused commit per step.
 6. **Panel + save bump.** Chamber pressure, propellant, v_e, ṁ on the inspector. ⛔ **Not done until
    screenshotted** — three economy bugs were found that way and none by a test.
 
-## 7. Open questions — Stu's call
+## 7. Answered — Stu, 2026-09-03
 
-1. ~~Does a thruster keep its rail port?~~ — **answered: no.** See §2.1.
-2. **Does the bell mean anything?** §3 assumes infinite expansion, i.e. every nozzle is a perfect
-   vacuum nozzle. Defensible, and it keeps the maths integer — but it means the second tile of the
-   footprint is decoration. Making throat area a setting is the obvious knob if you want a design
-   decision there.
-3. **Where does propellant come from?** Today the only injector is a pump, and a pump draws from a
-   **room**. So the loop is solid → furnace → *ship's atmosphere* → pump → pipe, which works with no
-   new machinery but makes the deck you breathe the mixing vessel. Recommend shipping that and
-   seeing whether it reads as charming or as a chore before adding a pipe *output* port to anything.
-4. **Is there a tank?** A pipe cell is an eighth of a tile; a network is currently the only vessel.
-   Recommend network-as-tank first — it needs nothing, and `PIPE_VOLUME` is already the dial.
+All four are settled. Kept as a record of what was decided against, not as work.
+
+1. ~~Does a thruster keep its rail port?~~ — **no.** See §2.1.
+2. ~~Does the bell mean anything?~~ — **every nozzle is a perfect vacuum nozzle today.** Selectable
+   nozzle shape is deferred until there is non-vacuum flight to select it *for*; until a ship flies
+   somewhere with a back-pressure, expansion ratio is a dial with one correct setting. This is what
+   lets §3 drop the `1 − (p_e/p_c)^((γ−1)/γ)` term and stay in integers.
+3. ~~Where does propellant come from?~~ — **hydrogen off-gassed by captured asteroids**, caught by a
+   pump in the bay. It is already produced, already vented to space when the doors reopen, and it is
+   the best propellant in the game by §3. ⚠️ **So the first real propellant loop needs no new
+   production machinery at all** — a pump, a run of pipe, and a motor. The furnace-to-atmosphere path
+   stays available and unbuilt; nobody has to be told to boil ice.
+4. ~~Is there a tank?~~ — **the pipe network is the tank.** Build a bigger one. `PIPE_VOLUME` is the
+   dial if a run turns out to hold too little to be worth plumbing.
 
 ## 8. Explicitly not doing
 
