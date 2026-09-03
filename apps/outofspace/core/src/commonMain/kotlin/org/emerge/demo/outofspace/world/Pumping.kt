@@ -36,14 +36,20 @@ fun applyPumps(
         val roomMoles = millimolesOf(roomMass, demand.from)
         if (roomMoles <= 0L) continue
 
-        val roomCapacity = pressureCapacity(VolumeField.FULL, kelvinAt(roomMass, roomEnergy, demand.from))
-        val pipeCapacity =
-            pressureCapacity(pipeVolumes.at(demand.into), kelvinAt(pipeMass, pipeEnergy, demand.into))
         val pipeMoles = millimolesOf(pipeMass, demand.into)
 
         // Stalled: the pipe is already holding this pump's limit. Compared as a cross-multiplication
         // rather than by forming two pressures, so a thin cell cannot round its way past the check.
-        if (pipeMoles * roomCapacity >= Pump.STALL_RATIO * roomMoles * pipeCapacity) continue
+        //
+        // ⚠️ **Volumes, not pressure capacities** — the same change [exchangeLayers] carries, and it
+        // has to be the same or a pump and a valve on one tile would disagree about which way gas
+        // ought to go. Both sides were weighed at their own temperature, which meant asking an empty
+        // pipe how hot it was and being told a fabricated ambient. Weighing them at the temperature
+        // of the mixture they are about to become puts one common `T` on both sides of this
+        // comparison, where it cancels outright.
+        val roomVolume = VolumeField.FULL.toLong()
+        val pipeVolume = pipeVolumes.at(demand.into).toLong()
+        if (pipeMoles * roomVolume >= Pump.STALL_RATIO * roomMoles * pipeVolume) continue
 
         // Never more than the room actually has. A pump on a nearly empty deck slows down and stops,
         // which is the honest behaviour and also stops the share below exceeding one.

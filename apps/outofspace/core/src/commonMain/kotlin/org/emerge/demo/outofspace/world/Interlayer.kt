@@ -42,13 +42,37 @@ fun exchangeLayers(
         val pipeMoles = millimolesOf(pipeMass, tile)
         if (roomMoles == 0L && pipeMoles == 0L) continue
 
-        val roomCapacity = pressureCapacity(VolumeField.FULL, kelvinAt(roomMass, roomEnergy, tile))
-        val pipeCapacity = pressureCapacity(pipeVolumes.at(tile), kelvinAt(pipeMass, pipeEnergy, tile))
-
         // The room's share at a common pressure, and how far it is from it. Positive means the room
         // is holding more than its share and gas moves into the pipe.
-        val total = roomCapacity + pipeCapacity
-        val surplus = (roomMoles * pipeCapacity - pipeMoles * roomCapacity) / total
+        //
+        // ### Why there is no temperature here any more
+        //
+        // Each side used to be weighed at **its own** temperature, which meant asking an *empty*
+        // side how hot it was — and the answer was [Temperature.AMBIENT_KELVIN], a number nobody
+        // measured, describing gas that is not there. On a ship running at 16 K that is wrong by a
+        // factor of eighteen, and it was setting how eagerly gas moved into empty pipework.
+        //
+        // The two cells are about to mix, so the honest temperature is the *mixture's*:
+        // `(E_room + E_pipe) / (C_room + C_pipe)`, which needs no assumption about a vacuum because
+        // an empty side contributes zero to both terms and the occupied side simply gets the whole
+        // say. It is also well defined exactly when this loop reaches it — the moles check above is
+        // already the guarantee that at least one side has gas.
+        //
+        // ⚠️ **And then it cancels.** Put one common `T` into `volume × 293 / T` on both sides and
+        // it divides out of the surplus completely, leaving pure volume share. So the mixture
+        // temperature is the *reasoning*, not the code: the assumption is gone rather than replaced,
+        // `pressureCapacity` and this file's `kelvinAt` go with it, and two floored divisions leave
+        // the hot loop.
+        //
+        // ⛔ **What this gives up, knowingly** (Stu's call): real gas at equal pressure puts more
+        // moles on the colder side, `n/V ∝ 1/T`, and a common temperature drops that — a cryogenic
+        // pipe run no longer draws gas the way it physically would. The asymmetry was not being
+        // modelled *correctly* before either, since it was computed off a fabricated 293 K for any
+        // empty cell. Bringing it back means deriving it from something measured, not restoring
+        // this.
+        val roomVolume = VolumeField.FULL.toLong()
+        val pipeVolume = pipeVolumes.at(tile).toLong()
+        val surplus = (roomMoles * pipeVolume - pipeMoles * roomVolume) / (roomVolume + pipeVolume)
         if (surplus == 0L) continue
 
         // Throttled by how wide the way is, which is what makes a part-open valve a part-open valve.
@@ -138,15 +162,16 @@ internal fun handOver(
     return Moved(mass, energy)
 }
 
-/**
- * Moles per unit of pressure (volume/temperature). Scaled for comfortable integers.
+/*
+ * ⛔ **`pressureCapacity` and this file's `kelvinAt` are gone, and their absence is the point.**
+ *
+ * They were the last two places in the game that asked an *empty* cell for a temperature and got a
+ * number back — `AMBIENT_KELVIN`, standing in for gas that is not there. Nothing consumes such an
+ * answer now: the room/pipe exchange and the pump both weigh the two cells at the temperature of the
+ * mixture they are about to become, which cancels, and every other `kelvinAt` in the codebase is
+ * either guarded by a capacity check before it is read (`SolidHeat`) or feeds a readout.
+ *
+ * ⚠️ So do not reintroduce a helper that answers "how hot is this vacuum". If a future model wants
+ * the cold-side-holds-more-moles asymmetry back, it has to come from a temperature something
+ * actually measured — see the note in [exchangeLayers].
  */
-internal fun pressureCapacity(volume: Int, kelvin: Int): Long =
-    volume.toLong() * Temperature.AMBIENT_KELVIN / maxOf(kelvin, 1)
-
-/** Cell gas temperature. No gas → ambient (same convention as [gasKelvin]). */
-internal fun kelvinAt(mass: MassArray, gasEnergy: EnergyArray?, tile: TileIndex): Int {
-    if (gasEnergy == null) return Temperature.AMBIENT_KELVIN
-    val capacity = heatCapacityAt(mass, tile)
-    return if (capacity <= 0L) Temperature.AMBIENT_KELVIN else (gasEnergy[tile] / capacity).toInt()
-}
