@@ -10,6 +10,10 @@ import org.emerge.demo.outofspace.num.isqrt
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
+import org.emerge.demo.outofspace.world.PIPE_VOLUME
+import org.emerge.demo.outofspace.world.Stuff
+import org.emerge.demo.outofspace.world.Temperature
+import org.emerge.demo.outofspace.world.VolumeField
 import org.emerge.demo.outofspace.world.kelvinOf
 import org.emerge.demo.outofspace.world.millimolesOf
 import org.emerge.demo.outofspace.world.thermalMassOf
@@ -40,8 +44,9 @@ import org.emerge.demo.outofspace.world.Wiring
  *
  * ### Where the thrust comes from, and where it does not
  *
- * Firing throws [Capacity.PACKET_MASS]-scale propellant out of the exit face at
- * [EXHAUST_METRES_PER_SECOND]. The momentum that leaves is booked to `exhaustMomentum` and the
+ * Firing throws whatever gas is in the pipe cell under the chamber out of the exit face at the
+ * speed that gas is worth — see [exhaustVelocity]. The momentum that leaves is booked to
+ * `exhaustMomentum` and the
  * negative of it goes to the ship, so this adds **no new term** to the momentum ledger: it is the
  * same `+p` overboard / `−p` aboard pair that a venting breach already is, and
  * `vesselImpulse + exhaust + bodies + vented − debug == 0` still holds
@@ -62,12 +67,15 @@ import org.emerge.demo.outofspace.world.Wiring
 data class Thruster(
     override val center: TileIndex,
     override val facing: Direction,
-    /** Propellant waiting to be thrown. Solid, arriving by rail, exactly as a smelter's feed does. */
-    val carry: Long = 0L,
     /**
-     * Propellant thrown per tick at full activation.
+     * The fraction of a unit of propellant left over from last tick's throttling — see `throttled`.
+     *
+     * ⛔ **Not a store, and there is no store.** A motor's chamber is the pipe cell it stands on:
+     * it burns what the plumbing has put under it this tick and holds nothing of its own. See
+     * `PLAN_fluid_thrusters.md` §8 — a machine buffer cannot hold a fluid, because `offGas` empties
+     * every fluid out of the buffer layer and into the room around it, correctly.
      */
-    val massPerTick: Long = Capacity.PACKET_MASS / 200L,
+    val carry: Long = 0L,
     /**
      * Where this motor takes its orders from. Flight controls by default — see [ThrusterControl].
      */
@@ -107,19 +115,29 @@ data class Thruster(
     companion object {
 
         /**
-         * **The dial.** How fast exhaust leaves the nozzle, in metres per second.
+         * **The dial.** How hard a motor pushes at one atmosphere of chamber pressure, as an impulse
+         * per tick at full throttle.
          *
-         * 3 km/s is a chemical rocket — a little better than hydrolox, a little worse than the best
-         * thing anybody has flown. It is stated in metres per second and not in the grid's own units
-         * because that is the number an engineer would quote and the number worth arguing about;
-         * [tilesPerTick] turns it into the units the ledger counts in, and doing that conversion in
-         * one place is what stops "the engine got weaker" the next time the tick rate moves.
+         * ### Why thrust is the dial and mass flow is not
          *
-         * Everything about the machine scales off this: thrust is linear in it and the heat a
-         * blocked motor dumps is **quadratic**, so doubling it doubles the push and quadruples the
-         * damage done by pointing it at your own wall.
+         * Choked flow through a throat is `ṁ ≈ C·p_c/v_e` once the two factors that barely move
+         * across the range of γ are folded into `C` — so `thrust = ṁ·v_e ≈ C·p_c`, and **the push
+         * barely depends on what the propellant is.** What the propellant decides is how much of it
+         * that push costs, which spans a factor of fourteen (see [exhaustVelocity]). Stating thrust
+         * here and deriving the mass flow from it is what puts that trade in the game: switching to
+         * hydrogen does not make a ship shove harder, it makes the shoving last four times longer.
+         *
+         * ⚠️ **Calibrated to leave the old engine where it was.** The flat model threw
+         * `PACKET_MASS/200` a tick at 3 km/s, which is this number — so a motor with a full
+         * atmosphere in its chamber pushes exactly as hard as every motor did before propellant
+         * meant anything.
+         *
+         * ⛔ **A motor will almost never see a full atmosphere**, and that is the mechanic rather
+         * than a miscalibration. The chamber is a pipe cell an eighth of a tile across, refilled by
+         * diffusion from whatever the player plumbed to it — so real thrust is a fraction of this,
+         * set by the plumbing. See `PLAN_fluid_thrusters.md` §4.
          */
-        const val EXHAUST_METRES_PER_SECOND: Long = 3000L
+        const val THRUST_PER_ATMOSPHERE: Long = 25_000_000_000L
 
         /**
          * How wide a tile is, in millimetres.
@@ -131,15 +149,20 @@ data class Thruster(
         const val TILE_MILLIMETRES: Long = 940L
 
         /**
-         * The exhaust velocity in the unit momentum is counted in: tiles per tick.
+         * An exhaust velocity in the unit momentum is counted in: **milli**-tiles per tick.
          *
-         * `m/s ÷ (metres per tile × ticks per second)`. At 3 km/s, a 0.94 m tile and four ticks a
-         * second this is about 800 tiles a tick — an absurd-looking number that is simply what a
-         * rocket is next to a room, and never a velocity anything is integrated at. It is a
-         * multiplier on a mass to get an impulse and nothing moves at it.
+         * `m/s ÷ (metres per tile × ticks per second)`, times a thousand. At 3 km/s, a 0.94 m tile
+         * and 64 ticks a second this is about 50,000 — fifty tiles a tick, an absurd-looking number
+         * that is simply what a rocket is next to a room, and never a velocity anything is
+         * integrated at. It is a multiplier on a mass to get an impulse and nothing moves at it.
+         *
+         * ⚠️ **Milli-tiles, because whole tiles threw away half a per cent of a slow propellant.**
+         * Cold nitrogen is 780 m/s, which floors to 13 tiles a tick — and the error is worst exactly
+         * where the game is most interesting, at the cheap end of the propellant range. Divide once,
+         * at the end, which is the lesson `f02179dc` taught `kelvinOf`.
          */
-        fun tilesPerTick(ticksPerSecond: Int): Long =
-            EXHAUST_METRES_PER_SECOND * 1_000L / (TILE_MILLIMETRES * ticksPerSecond)
+        fun milliTilesPerTick(metresPerSecond: Long, ticksPerSecond: Int): Long =
+            metresPerSecond * 1_000_000L / (TILE_MILLIMETRES * ticksPerSecond)
 
         /**
          * **R × 1000, in the units this file's arithmetic wants.**
@@ -217,19 +240,41 @@ data class Thruster(
         }
 
         /**
-         * The kinetic energy carried by [mass] of exhaust: `½mv²`, in the game's energy unit.
+         * **How many millimoles a full tile of ordinary air holds** — the denominator a chamber's
+         * pressure is read against.
          *
-         * Worked in SI and converted at the end, because `v²` in tiles-per-tick would need the
-         * conversion applied twice and the second one is exactly the sort of thing that goes
-         * missing. Through [scaledRatio] so the mass-over-a-kilogram ratio is taken before the
-         * scale is applied rather than after: `mass × v²` for a kilogram of propellant is 9e15
-         * before any unit conversion, and the headroom above that is not worth relying on.
+         * ⛔ **Ideal, not [org.emerge.demo.outofspace.world.AMBIENT_PRESSURE].** That constant goes
+         * through Peng-Robinson, and nothing in the tick calls `tilePressure` any more precisely
+         * because those sweeps were among the most expensive things the sim did. A chamber ratio
+         * wants a cheap reference on the same law as its numerator, and both sides here are
+         * `moles × kelvin / volume`, where the law cancels.
          */
-        fun kineticEnergy(mass: Long): Long = scaledRatio(
-            mass,
-            Budget.KILOGRAM,
-            Budget.JOULE * EXHAUST_METRES_PER_SECOND * EXHAUST_METRES_PER_SECOND / 2L,
+        /**
+         * **How hard a motor with this much gas at this temperature under it pushes**, as an impulse
+         * per tick at full throttle.
+         *
+         * `THRUST_PER_ATMOSPHERE × p_c`, with the chamber's pressure read as `moles × kelvin /
+         * volume` against a full tile of ordinary air and cross-multiplied so neither side has to
+         * form a pressure — [org.emerge.demo.outofspace.world.applyPumps]' shape, for its reason.
+         *
+         * ⛔ **One home, because two callers need the same answer and disagreeing would fly the ship
+         * crooked.** The motor spends this to work out how much propellant to throw; the flight
+         * solver reads it to balance one engine against another. If the balance were struck on a
+         * different number from the one the engine then delivers, a ship would turn while being told
+         * to go straight — which is `Gauge.lastMass`'s lesson and `flightPlan`'s own note about its
+         * guards matching the machine loop's.
+         */
+        fun chamberThrust(millimoles: Long, kelvin: Int): Long = scaledRatio(
+            millimoles * kelvin,
+            AMBIENT_MILLIMOLES_PER_TILE * Temperature.AMBIENT_KELVIN.toLong(),
+            THRUST_PER_ATMOSPHERE * VolumeField.FULL / PIPE_VOLUME,
         )
+
+        val AMBIENT_MILLIMOLES_PER_TILE: Long = run {
+            var sum = 0L
+            for (s in Species.ALL) sum += millimolesOf(Stuff.AMBIENT_AIR[s], s)
+            sum
+        }
     }
 }
 

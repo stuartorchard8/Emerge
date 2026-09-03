@@ -616,7 +616,6 @@ object Save {
             // [exhaustPath]; the propellant is a store, written by the role loop below.
             is Thruster -> {
                 put("carry", m.carry.toString())
-                put("rate", m.massPerTick.toString())
                 // Omitted at the default, like the wiring below it: the file shows the choices
                 // somebody actually made. ⚠️ A file written before the flight controls existed has
                 // no key here and so loads FLIGHT, which is the intended migration — see
@@ -868,6 +867,9 @@ object Save {
         val trackStuff = HashMap<Pair<Int, Int>, Mixture>()
         // Thrusters out of a file older than [THRUSTER_BELL_VERSION], and the lines that describe
         // them, held aside until every other machine is standing — see [standMigratedThrusters].
+        // Propellant out of a file written when a motor had a store — see [readDeckMachine]. It has
+        // left the world, so the cargo baseline is re-anchored by it exactly as a dropped motor's is.
+        var droppedPropellant = 0L
         val legacyThrusters = LinkedHashMap<TileIndex, Thruster>()
         val legacyThrusterCasing = HashMap<TileIndex, Mixture>()
         val legacyThrusterEnergy = HashMap<TileIndex, Long>()
@@ -1010,7 +1012,7 @@ object Save {
                 "deckmachine" -> {
                     val t = tile(1)
                     if (deck[t] != null || t in legacyThrusters) fail("two machines at tile $t")
-                    val dm = readDeckMachine(tokens.drop(2), version, t, grid, buffers, scale, energyScale, ::fail)
+                    val dm = readDeckMachine(tokens.drop(2), version, t, grid, buffers, scale, energyScale, ::fail) { droppedPropellant += it }
                     // Read off the raw tokens rather than through the machine, because the mark is a
                     // fact about the vessel and not about the machine — see [VesselState.scrapping].
                     val marked = tokens.any { it == "scrapping=1" }
@@ -1061,7 +1063,7 @@ object Save {
                 "bridge" -> {
                     val t = tile(1)
                     if (deck[t] != null) fail("two machines at tile $t")
-                    val dm = readDeckMachine(tokens.drop(2), version, t, grid, buffers, scale, energyScale, ::fail)
+                    val dm = readDeckMachine(tokens.drop(2), version, t, grid, buffers, scale, energyScale, ::fail) { droppedPropellant += it }
                     deck.stand(dm, withCasing = true, material = materialBefore(dm.kind))
                 }
                 "diverter" -> diverters[tile(1)] = long(2).toInt()
@@ -1362,7 +1364,7 @@ object Save {
             // Re-anchored by whatever a dropped motor took overboard with it — see
             // [ThrusterMigration]. Zero for every file that has no such motor, which is all of them
             // from [THRUSTER_BELL_VERSION] on.
-            baselineCargoMass = (baselineCargo ?: 0L) - thrusters.cargo,
+            baselineCargoMass = (baselineCargo ?: 0L) - thrusters.cargo - droppedPropellant,
             // Whatever the file said; a file that predates the field gets the migration below.
             reconciledMass = reconciled ?: 0L,
             insertedEnergy = inserted,
@@ -1591,6 +1593,7 @@ object Save {
         scale: Rescale,
         energyScale: Rescale,
         fail: (String) -> Nothing,
+        onDroppedCargo: (Long) -> Unit = {},
     ): DeckMachine {
         val kindName = tokens.firstOrNull() ?: fail("expected a machine kind")
         // A v9 world's `Miner` loads as the [Extractor] that replaced it: same buffer, same port,
@@ -1751,6 +1754,7 @@ object Save {
         scale: Rescale,
         energyScale: Rescale,
         fail: (String) -> Nothing,
+        onDroppedCargo: (Long) -> Unit = {},
     ): DeckMachine {
         val kindName = tokens.firstOrNull() ?: fail("expected a machine kind")
         // The mineral vaporizer is gone (see PLAN_ambient_chemistry.md): it put whatever it was
@@ -1876,7 +1880,6 @@ object Save {
                 tile,
                 facing = facing(),
                 carry = massNum("carry", 0L),
-                massPerTick = rate(Thruster(tile, Direction.Right).massPerTick),
                 control = f["control"]?.let { name ->
                     ThrusterControl.ALL.firstOrNull { it.name == name } ?: fail("unknown thruster control '$name'")
                 } ?: ThrusterControl.Flight,
@@ -1913,6 +1916,12 @@ object Save {
             val store = bufferTile(grid, machine, tile, role) ?: continue
             buffers.put(store, res(storeKey(machine, role)))
         }
+        // ⛔ **A motor's propellant, from a file written when a motor had a store.** It keeps none
+        // now — its chamber is the pipe cell it stands on — so what the file describes has nowhere
+        // to go and is dropped. **Reported, not swallowed**: every gram that leaves the world has to
+        // be told to the ledger, or `massBalance` reads a leak for ever and everyone learns to
+        // ignore it. Booked exactly as a bell-less motor's cargo is, by re-anchoring the baseline.
+        if (machine is Thruster) res(storeKey(machine, BufferRole.Input))?.let { onDroppedCargo(it.total) }
         return machine.withWiring(wiring)
     }
 

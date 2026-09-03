@@ -41,7 +41,6 @@ data class MachineSettings(
     val dwellTicks: Setting<Int>,
     val ticksPerAction: Setting<Int>,
     val efficiencyPermille: Setting<Int>,
-    val massPerTick: Setting<Long>,
     val control: Setting<ThrusterControl>,
 ) {
     override fun toString(): String = buildString {
@@ -54,7 +53,6 @@ data class MachineSettings(
         append(',').append("dwell=").append(if (dwellTicks is Setting.Present) dwellTicks.value else dwellTicks)
         append(',').append("tpa=").append(if (ticksPerAction is Setting.Present) ticksPerAction.value else ticksPerAction)
         append(',').append("eff=").append(if (efficiencyPermille is Setting.Present) efficiencyPermille.value else efficiencyPermille)
-        append(',').append("mpt=").append(if (massPerTick is Setting.Present) massPerTick.value else massPerTick)
         append(',').append("control=").append(if (control is Setting.Present) control.value else control)
         append(']')
     }
@@ -112,10 +110,6 @@ fun DeckMachine.toMachineSettings(): MachineSettings = MachineSettings(
         is Concentrator -> Setting.Present(efficiencyPermille)
         else -> Setting.Absent
     },
-    massPerTick = when (this) {
-        is Thruster -> Setting.Present(massPerTick)
-        else -> Setting.Absent
-    },
     control = when (this) {
         is Thruster -> Setting.Present(control)
         else -> Setting.Absent
@@ -168,7 +162,6 @@ fun DeckMachine.withSettings(settings: MachineSettings): DeckMachine {
             var result = base
             if (settings.wiring is Setting.Present) result = result.copy(wiring = settings.wiring.value)
             if (settings.facing is Setting.Present) result = result.copy(facing = settings.facing.value)
-            if (settings.massPerTick is Setting.Present) result = result.copy(massPerTick = settings.massPerTick.value)
             if (settings.control is Setting.Present) result = result.copy(control = settings.control.value)
             result
         }

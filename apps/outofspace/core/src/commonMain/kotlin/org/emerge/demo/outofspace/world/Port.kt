@@ -76,12 +76,20 @@ private fun localPorts(machine: DeckMachine): List<LocalPort> {
 
         is Extractor -> listOf(LocalPort(r, 0, Direction.Right, PortKind.Output))
 
-        // Propellant in at the chamber, which is the tile the machine is stored at — a rail is
-        // threaded underneath it exactly as it is under an extractor. Not at `-r`, which would be the
-        // tile *behind* the motor: a thruster is one tile wide, so its reach is zero and its port is
-        // its anchor. The exhaust leaves out of the bell and is not a port: nothing on a belt is
-        // going to catch it.
-        is Thruster -> listOf(LocalPort(0, 0, Direction.Left, PortKind.Input))
+        // ⛔ **No ports at all: a motor drinks, it is not fed.** Propellant is a fluid out of the
+        // pipe cell under the chamber, and a pipe is not a port — the same arrangement a pump and a
+        // valve have, and for the same reason. A belt arriving at a motor has nothing to hand over,
+        // so the rail network routes around it.
+        //
+        // It is still *buildable*: [constructionPortOf] gives every ghost a rail port at its centre
+        // whatever its kind, so a motor is built by track exactly as it always was and only stops
+        // having an opening once it is finished. Ports are derived from the kind and never written
+        // to disk, so a motor in an old save loses its port on load with nothing to migrate.
+        //
+        // This is also what answers the standing question about a thruster fed gravel: nothing can
+        // hand it gravel, so there is no acceptance rule to write. See `PLAN_fluid_thrusters.md`
+        // §2.1.
+        is Thruster -> emptyList()
 
 
         // In at the back, concentrate out the front, tailings out of the floor.

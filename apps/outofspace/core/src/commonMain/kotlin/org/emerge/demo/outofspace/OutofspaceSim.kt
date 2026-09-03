@@ -130,6 +130,10 @@ import org.emerge.demo.outofspace.world.PumpDemand
 import org.emerge.demo.outofspace.world.TileArray
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.airlockOpenness
+import org.emerge.demo.outofspace.world.millimolesOf
+import org.emerge.demo.outofspace.world.kelvinOf
+import org.emerge.demo.outofspace.world.VolumeField
+import org.emerge.demo.outofspace.world.PIPE_VOLUME
 import org.emerge.demo.outofspace.world.applyPumps
 import org.emerge.demo.outofspace.world.exchangeLayers
 import org.emerge.demo.outofspace.world.pipeApertures
@@ -1513,6 +1517,22 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
      * repeated rather than shared because the loop's version also has to *do* something with every
      * other kind of machine, and hoisting a predicate out of it would leave the two apart anyway.
      */
+    /**
+     * What the motor at [tile] can push with right now, from the gas in the pipe cell under it.
+     *
+     * ⚠️ **Thrust, not mass flow, and the difference is a ship that turns while flying straight.**
+     * The balance used to weight each motor by `massPerTick`, which was a fair proxy while every
+     * engine threw the same stuff at the same speed. It is not one any more: a hydrogen motor throws
+     * a quarter the mass of a nitrogen one for the same push, so weighting by mass would throttle
+     * back the engine that was pushing hardest. See `PLAN_fluid_thrusters.md` §5.1.
+     */
+    private fun Work.chamberPush(tile: TileIndex): Long {
+        var moles = 0L
+        pipeMass.forEachFluid(tile) { f, mass -> moles += millimolesOf(mass, f.species) }
+        if (moles <= 0L) return 0L
+        return Thruster.chamberThrust(moles, kelvinOf(pipeEnergy[tile], thermalMassAt(pipeMass, tile)))
+    }
+
     private fun Work.flightPlan(intent: FlightIntent): IntArray {
         val plan = IntArray(grid.size)
         if (intent.isIdle) return plan
@@ -1535,7 +1555,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     thrust = m.thrust,
                     leverX = tileCentre(grid.xOf(bell)) - about.comMilliX,
                     leverY = tileCentre(grid.yOf(bell)) - about.comMilliY,
-                    massPerTick = m.massPerTick,
+                    push = chamberPush(tile),
                 ),
             )
         }
@@ -1576,56 +1596,83 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // fire" is a different fault from "not asked", and the panel is where a player finds out
         // which of the two they have built.
         val told = m.copy(firing = activation)
-        val input = store(m, tile, BufferRole.Input) ?: return told
-        val (allowance, carry) = throttled(m.massPerTick, activation, m.carry)
-        val chunkMass = minOf(allowance, input.total)
+        if (activation <= 0) return told
+
+        // ── What is in the chamber ────────────────────────────────────────────────
+        //
+        // The pipe cell the machine stands on, read whole: its composition decides how fast the
+        // exhaust leaves and its pressure decides how much of it goes. A motor on bare deck has no
+        // chamber and cannot fire, which is the same sentence as "a pump with no pipe beneath it has
+        // nowhere to push".
+        var moles = 0L
+        val cellMasses = LongArray(Species.COUNT)
+        var held = 0L
+        pipeMass.forEachFluid(tile) { f, mass ->
+            cellMasses[f.species.ordinal] = mass
+            held += mass
+            moles += millimolesOf(mass, f.species)
+        }
+        if (held <= 0L || moles <= 0L) return told
+        val chamber = Mixture.of(cellMasses, pipeEnergy[tile])
+
+        val speed = Thruster.exhaustVelocity(chamber)
+        // ⛔ Zero is "too little to price", not "slow" — below about a millimole the mole table
+        // floors out. Dividing the thrust budget by it would be a divide by zero, so it is a reason
+        // not to fire rather than a number to use.
+        if (speed <= 0L) return told
+        val perTick = Thruster.milliTilesPerTick(speed, cfg.ticksPerSecond)
+        if (perTick <= 0L) return told
+
+        // ── How much of it goes ───────────────────────────────────────────────────
+        //
+        // `thrust = THRUST_PER_ATMOSPHERE × p_c`, so the mass is that budget divided by what a
+        // kilogram of this propellant is worth. Pressure as `moles × kelvin / volume` against a full
+        // tile of ordinary air, cross-multiplied so neither side has to form a pressure — the same
+        // shape [applyPumps] uses, and for the same reason.
+        val kelvin = kelvinOf(chamber.energy, thermalMassOf(chamber))
+        val wanted = scaledRatio(Thruster.chamberThrust(moles, kelvin), perTick, 1000L)
+        val (allowance, carry) = throttled(wanted, activation, m.carry)
+        val chunkMass = minOf(allowance, held)
         if (chunkMass <= 0L) return told.copy(carry = carry)
 
         val path = exhaustPath(grid, structure, m)
-
         heat(tile, heatOfWorking(chunkMass, m))
 
-        // The propellant, as gas: whatever went into the chamber is what comes out of the bell —
-        // as far as anything that can *be* a gas goes.
-        //
-        // ⚠️ **A solid fired at a bulkhead does not become atmosphere.** The chamber used to put the
-        // whole chunk into the air field, whatever it was made of, which is the same thing the
-        // mineral vaporizer did and the reason both are visible now that the air is a [Fluid]. What
-        // cannot be a fluid still leaves the vessel — it went out of the nozzle — so it is booked
-        // overboard as the solid it is and the air ledger is not told a gas appeared.
-        // TODO: a thruster fed gravel should arguably refuse to fire rather than throw it away.
-        //  That is an acceptance rule, not an arithmetic one, and it is Stu's call.
-        val chunk = input.take(chunkMass)
+        // ⚠️ Through [Mixture.take] and its complement, which sum back to the cell exactly — so what
+        // is written back below is the cell minus what left, to the microgram, with no share
+        // arithmetic to round. See `reference_oos_microgram_deadlock`.
+        val chunk = chamber.take(chunkMass)
+        val left = chamber - chunk
+        for (f in Fluid.ALL) pipeMass[tile, f] = left[f.species]
+        pipeEnergy[tile] = left.energy
+
         val parcel = MassArray(1) { _, f -> chunk[f.species] }
-        var gaseousMass = 0L
-        for (f in Fluid.ALL) gaseousMass += chunk[f.species]
-        val solidMass = chunkMass - gaseousMass
-        val propellantEnergy = energyAtKelvin(thermalMassAt(parcel, TileIndex(0)), Temperature.AMBIENT_KELVIN)
 
         // Everything standing in the plume, taken with it. A jet does not thread between the gas in
         // a corridor; it entrains it, which is why the whole path is walked and not just its ends.
         var scoopedMass = 0L
         var scoopedEnergy = 0L
-        for (tile in path.path) {
+        for (crossed in path.path) {
             // The destination keeps what it has — the exhaust is about to be added to it.
-            if (!path.isClear && tile == path.destination) continue
-            masses.forEachFluid(tile) { f, held ->
-                parcel.add(TileIndex(0), f, held)
-                scoopedMass += held
-                masses[tile, f] = 0L
+            if (!path.isClear && crossed == path.destination) continue
+            masses.forEachFluid(crossed) { f, gas ->
+                parcel.add(TileIndex(0), f, gas)
+                scoopedMass += gas
+                masses[crossed, f] = 0L
             }
-            scoopedEnergy += airEnergy[tile]
-            airEnergy[tile] = 0L
+            scoopedEnergy += airEnergy[crossed]
+            airEnergy[crossed] = 0L
         }
 
         val ejectedMass = chunkMass + scoopedMass
 
         if (path.isClear) {
-            // Straight overboard as the solid it still is, so only the solid ledger hears about it.
-            ventedMass += chunkMass
-            // Out of the world at exhaust velocity, and the ship gets the other half.
-            airVentedByExhaust(scoopedMass, scoopedEnergy)
-            val impulse = ejectedMass * Thruster.tilesPerTick(cfg.ticksPerSecond)
+            // ⛔ **Propellant is atmosphere now, so it leaves on the air ledger and not the cargo
+            // one.** It came out of the pipe layer, which `atmosphereMass` counts, so `ventedMass`
+            // would be booking a departure from a ledger it was never on. The whole crossing the
+            // old solid-fed motor needed — `solidBecameGas`, and its mirror — is simply gone.
+            airVentedByExhaust(ejectedMass, chunk.energy + scoopedEnergy)
+            val impulse = ejectedMass * perTick / 1000L
             val outX = impulse * m.facing.dx
             val outY = impulse * m.facing.dy
             exhaustMomentumX += outX
@@ -1640,21 +1687,17 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         } else {
             val destination = path.destination
             // ⚠️ [destination] and not [tile] — the gas and its heat land in the *same* place, and
-            // splitting them is not a rounding error but a category one. Sent home while the energy
-            // went down the plume, the destination gained joules and no gas at all: capacity stayed
-            // zero, and [gasKelvin] reads a zero capacity as ambient, so a tile with a rocket firing
-            // into it reported room temperature however long the burn ran.
+            // splitting them is not a rounding error but a category one.
             for (f in Fluid.ALL) masses.add(destination, f, parcel[TileIndex(0), f])
-            // The jet's kinetic energy stops here and becomes heat, which is what makes firing into
-            // your own bulkhead expensive rather than merely useless.
-            val landed = propellantEnergy + Thruster.kineticEnergy(ejectedMass)
-            airEnergy[destination] += landed + scoopedEnergy
-            solidBecameGas(gaseousMass, landed)
-            // Out of the nozzle and gone, without ever having been a gas. See the parcel above.
-            ventedMass += solidMass
+            // ⛔ **No `½mv²` added on top any more, and that is a correction rather than a
+            // simplification.** The exhaust's kinetic energy *is* the propellant's heat — `½v_e²` is
+            // exactly the specific enthalpy the velocity was derived from — so adding it again
+            // minted the energy twice. It lands as the heat it started as, which conserves, and a
+            // blocked motor still cooks the tile in front of it because that heat all arrives in one
+            // cell.
+            airEnergy[destination] += chunk.energy + scoopedEnergy
         }
 
-        putStore(m, tile, BufferRole.Input, (input - chunk).orNull())
         return told.copy(carry = carry)
     }
 

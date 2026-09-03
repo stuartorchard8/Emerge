@@ -188,7 +188,13 @@ Each ends at a green gate. Commit directly to main, one focused commit per step.
    ⛔ **The first version of the size-independence test passed while both its readings were zero**
    (one under the floor, one over the overflow). Every reading is now pinned to the physics rather
    than to another reading.
-3. ⛔ **BLOCKED on a design call — see §8.** Built, measured, and reverted: a machine buffer
+3. ✅ **DONE, merged with step 4 — the pipe cell is the chamber.** A motor reads and burns straight
+   out of the pipe under it; no store, no layer crossing, no `gasBecameSolid`. It lost its rail port
+   with it (§2.1), and `massPerTick` with that — a motor has no rate of its own, only a thrust
+   budget and whatever the plumbing has put under it. Flight balance now weights by thrust (§5.1).
+   ⛔ **Blocked on one number — see §10.**
+
+   The reverted first attempt, kept because it is why the chamber is where it is: Built, measured, and reverted: a machine buffer
    **cannot hold a fluid**. `offGas` walks `buffers.stuff` every tick and moves every fluid species
    into the room around it, so propellant drawn into a chamber is back in the air before it can be
    burned. Measured: the draw ran (122 kg, then 1.7 t, then 3 t over successive passes) and the
@@ -259,7 +265,47 @@ ledger crossing.
 ⚠️ **Whichever way this goes, it is worth knowing that nothing in the game currently stores a fluid
 anywhere except a pipe or a room.** A tank machine (§7.4, deferred) would hit this same wall.
 
-## 9. Explicitly not doing
+## 9. The thrust dial is 4–15× oversized, and it is your call
+
+**Measured, not estimated:**
+
+| | |
+|---|---|
+| A pipe cell at one atmosphere holds | **125 g** |
+| A motor at one atmosphere asks for, per tick | **515 g** (H₂) · **1446 g** (H₂O) · **1928 g** (N₂) |
+| The old flat engine threw | 500 g/tick at 3 km/s |
+
+So a motor wants **four to fifteen times its whole chamber, every tick**. It empties the cell and
+stops, which means **a motor has no rate — it has a gulp**, and a throttle, a flight balance and a
+wire all need a rate to act on. Four tests are `@Ignore`d on exactly that and nothing else:
+`the autopilot stops a spin and then stops burning`, `an asymmetric ship goes forward on its rearward
+motors alone`, `an off-centre thruster spins the ship`, `a reading stops the machine outright`.
+
+⚠️ **This is not a fault in the chamber model.** It is the flat engine and the fluid systems having
+been built without reference to each other — the motor was never fed by plumbing before, so nothing
+ever compared the two. The numbers were always this far apart; only now does anything notice.
+
+Four ways out, and the first is the real decision:
+
+- **(i) Make the engine smaller.** To leave throttle headroom at a *pumped* four atmospheres
+  (`Pump.STALL_RATIO`), `THRUST_PER_ATMOSPHERE` wants to be around **1/125** of its calibrated
+  value. That is a number, not a mechanism, and it makes the physics self-consistent: an engine
+  sized to what plumbing can feed. It costs a lot of thrust — ships want many more motors, or much
+  longer burns.
+- **(ii) Cap the throat at a fraction of the chamber per tick.** Defensible physics — a finite throat
+  cannot pass more than the chamber's contents in the time sound crosses it — and it guarantees a
+  rate at any pressure, so throttling always bites. But it is a new mechanism, and it makes thrust
+  stop tracking pressure above the cap.
+- **(iii) Give the motor a buffer after all** — §8's option (b), a chamber exempt from `offGas`.
+  Smoothing is exactly what a buffer is for, and this is the problem it was going to solve.
+- **(iv) Fatten the plumbing.** `PIPE_VOLUME` from `FULL/8` to `FULL` is 8× — 1000 g a cell, still
+  under nitrogen's 1928 g/tick, and it makes a pipe hold as much as a room, which is the thing
+  `PIPE_VOLUME`'s own note says narrowness exists to prevent. Not enough on its own.
+
+**Recommended: (i).** It needs no new machinery and it is the honest reading of the measurement. But
+it is a large, visible balance change, so it is yours rather than mine.
+
+## 10. Explicitly not doing
 
 - **Not** combustion in the chamber. Once §6.4 lands, burning is a reaction run on the parcel before
   the temperature is read — an increment, not a rewrite. Cold gas first, because it decides every

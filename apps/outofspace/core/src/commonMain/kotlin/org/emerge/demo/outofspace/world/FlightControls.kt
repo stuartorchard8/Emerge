@@ -162,14 +162,14 @@ class Motor(
     val leverX: Long,
     val leverY: Long,
     /** What it throws at full activation: the weight its torque carries in the balance. */
-    val massPerTick: Long,
+    val push: Long,
 ) {
     /**
      * The torque this motor makes per unit of thrust, in milli-tiles: `r × d̂`, clockwise-positive.
      *
      * The lever arm is *in* this number rather than divided back out of it, because that is what
      * makes it the thing that can be summed: a torque is a force times a distance, and two motors
-     * balance when their `activation × massPerTick × cross` cancel.
+     * balance when their `activation × push × cross` cancel.
      */
     val cross: Long get() = leverX * thrust.dy - leverY * thrust.dx
 }
@@ -220,7 +220,7 @@ fun flightActivations(intent: FlightIntent, motors: List<Motor>): IntArray {
         // Reduced by a gram so that many engines cannot overflow the sum. The balance is a *ratio*,
         // so any divisor common to both sides is free — and a motor throwing less than a gram a tick
         // is not one whose torque anybody can measure.
-        val torque = term.toLong() * m.cross * (m.massPerTick / Budget.GRAM)
+        val torque = term.toLong() * m.cross * (m.push / Budget.GRAM)
         if (torque > 0L) clockwise += torque else widdershins -= torque
     }
     if (clockwise > 0L && widdershins > 0L && clockwise != widdershins) {

@@ -83,17 +83,15 @@ class BudgetParityTest {
         // ⚠️ The extractor is absent because it no longer *has* a rate to exceed: it bites while it
         // has room and stops when it does not, so the belt is the only thing metering it. That is
         // this invariant satisfied structurally rather than by a number that has to agree.
-        // ⚠️ Stated as the **ceiling** it is. Every machine that had this rate exactly has since
-        // lost it — the vaporizer was deleted and the extractor is metered by the rail — and a
-        // motor deliberately runs well under it. Asserting equality would have made the invariant
-        // untestable the moment nothing sat on the limit, which is a rule that quietly stops being
-        // checked; asserting the bound is the rule itself.
-        for ((what, rate) in listOf(
-            "thruster" to Thruster(TileIndex(0), Direction.Right).massPerTick,
-        )) {
-            assertTrue(rate <= Capacity.PACKET_MASS, "$what must not out-produce the belt it feeds: $rate")
-            assertTrue(rate > 0L, "$what must produce something")
-        }
+        // ⛔ **And the thruster has left too, so this invariant now has no subject at all.** It was
+        // the last machine with a stated rate; a motor's propellant is a fluid out of the pipe cell
+        // under it, metered by chamber pressure, and it hands nothing to a belt in either direction
+        // — it has no ports. So there is no producer left that *could* out-produce a belt.
+        //
+        // ⚠️ **Left written down rather than deleted, because the rule is still true and the next
+        // machine with a rate has to meet it.** A producer that hands to track must not exceed
+        // `Capacity.PACKET_MASS` a tick or it starves its own output, and that broke silently once
+        // when the belt-load shrank. Add it to a list here the day something has a rate again.
 
         // ── Debug tools ──
         assertEquals(1_000L, Edit.INJECT_MASS.grams, "the injector delivers a kilogram a tick")
