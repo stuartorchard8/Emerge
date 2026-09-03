@@ -112,19 +112,12 @@ private fun localPorts(machine: DeckMachine): List<LocalPort> {
             LocalPort(r, 0, Direction.Right, PortKind.Output),
         )
 
-        // ⛔ **`facing` is the BERTH, not a rail port — so neither door may be on it.** Step 2 gave
-        // this machine a storage's layout, input at `-r` and output at `+r`, and that was wrong the
-        // moment the berth had to point anywhere: a docking port sits in the hull with one face open
-        // to space, and `+r` along that face is *outside the ship*. A belt would have had to run out
-        // through the hull to collect a purchase.
-        //
-        // So cargo goes in at the inboard face and purchases come out of a **flank**, which is the
-        // same shape a concentrator's waste port has and for the same reason — two streams that
-        // genuinely leave from different places. The berth is [DockingPort.berthTile] and carries no
-        // port at all, because nothing on a belt is going to catch a spacecraft.
+        // ⛔ **`facing` is the BERTH, not a rail port — so neither doors need to be opposite it.**
+        // Cargo goes in and out at the near edge (opposite the facing). In practice this looks like a storage with its
+        // ports pulled back away from the BERTH side of the dock.
         is DockingPort -> listOf(
-            LocalPort(-r, 0, Direction.Left, PortKind.Input),
-            LocalPort(0, r, Direction.Down, PortKind.Output),
+            LocalPort(-r, -r, Direction.Down, PortKind.Input),
+            LocalPort(-r, +r, Direction.Down, PortKind.Output),
         )
         is Hull, is Airlock -> emptyList()
 

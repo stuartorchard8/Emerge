@@ -1621,7 +1621,7 @@ class OutofspaceRenderer {
         private const val BUFFER_BAR_FULL = 4_000f
 
         /** Kelvin either side of ambient that saturates the heat ramp. */
-        private const val RAMP_SPAN = 60f
+        private const val RAMP_SPAN = 180f
 
         /**
          * Fraction of an atmosphere either side of ambient that saturates the pressure and density

@@ -121,14 +121,9 @@ internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
         }
         is Storage -> if (role == BufferRole.Inside) pack(0, 0) else NO_OFFSET
 
-        // Two stores on two doors, and **no `Inside`**: a docking port works nothing. What is
-        // waiting to be sold sits on the input port and what has been bought sits on the output one,
-        // which keeps a purchase the player has not collected from being sold straight back.
         is DockingPort -> when (role) {
-            BufferRole.Input -> pack(-r, 0)
-            // On the flank, with the output port it serves — see `localPorts`, which explains why
-            // `+r` along the facing is the one place neither of this machine's doors may be.
-            BufferRole.Product -> pack(0, r)
+            BufferRole.Input   -> pack(-r, -r)
+            BufferRole.Product -> pack(-r, +r)
             else -> NO_OFFSET
         }
 

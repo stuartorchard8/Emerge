@@ -59,13 +59,8 @@ data class Thruster(
     val carry: Long = 0L,
     /**
      * Propellant thrown per tick at full activation.
-     *
-     * A tenth of a belt-load rather than the whole one every other machine takes: a thruster is not
-     * a producer feeding a belt but a consumer *of* one, and at a full packet a tick a single motor
-     * would drink a dedicated supply line dry. A tenth is a rate one line can sustain to several
-     * engines, which is the arrangement the machine is for.
      */
-    val massPerTick: Long = Capacity.PACKET_MASS / 30L,
+    val massPerTick: Long = Capacity.PACKET_MASS / 200L,
     /**
      * Where this motor takes its orders from. Flight controls by default — see [ThrusterControl].
      */
