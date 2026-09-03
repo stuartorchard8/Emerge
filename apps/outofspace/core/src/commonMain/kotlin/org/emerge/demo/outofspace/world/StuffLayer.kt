@@ -318,7 +318,18 @@ class StuffLayer private constructor(
         return acc
     }
 
-    /** Asserts the bitmask agrees with the masses, and the tile/row maps agree with each other. */
+    /**
+     * Asserts the bitmask agrees with the masses, the tile/row maps agree with each other, and
+     * **no row holds energy without matter to hold it**.
+     *
+     * ⛔ That last one is not tidiness. Energy is extensive: a tile with nothing in it has no joules,
+     * and a row holding some is a lie that **cannot be seen until it is too late**. Every `kelvinAt`
+     * in the game answers ambient when the capacity is zero, so orphaned energy reads exactly like
+     * an honest empty tile — right up to the tick a gram lands on it and the whole hoard is divided
+     * by that gram. A construction site came back from a save holding 12.9 GJ of nothing and melted
+     * on the first delivery; it had read as a perfectly ordinary 293 K site for the whole game
+     * before that. Stated here because the storage is the only place that can refuse it outright.
+     */
     fun checkInvariants() {
         for (row in 0 until rowCount) {
             val tile = tileOf[row]
@@ -332,6 +343,7 @@ class StuffLayer private constructor(
                 require((mass != 0L) == (bit != 0L)) { "tile $tile species $s: mass $mass, present ${bit != 0L}" }
             }
             require(totals[row] == sum) { "tile $tile totals ${totals[row]}, row sums to $sum" }
+            require(sum > 0L || energies[row] == 0L) { "tile $tile holds ${energies[row]} energy and no matter" }
         }
         for (tile in 0 until tileCount) {
             val row = rowOf[tile]

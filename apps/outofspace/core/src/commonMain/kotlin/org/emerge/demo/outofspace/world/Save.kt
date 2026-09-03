@@ -311,7 +311,7 @@ object Save {
 
         // Packed sparsely like heat. Version 3 and earlier stored per-tile heat; absent loads ambient.
         writeSparse(out, "airheat", state.air.copyEnergy().data)
-        writeDeckHeat(out, state.deck.stuff)
+        writeDeckHeat(out, state.deck)
         writeDeckStuff(out, state.deck)
         writeTrackStuff(out, state.conduits)
         out.append("airventedheat ").append(state.airVentedEnergy).append('\n')
@@ -386,18 +386,49 @@ object Save {
      * order things were built and demolished in, and letting it reach the file would make two
      * identical worlds save as different text.
      */
-    private fun writeDeckHeat(out: StringBuilder, deck: StuffLayer) {
-        val tiles = ArrayList<Int>(deck.occupiedTiles)
-        deck.forEachOccupiedTile { if (deck.energyAt(it) != 0L) tiles.add(it.index) }
+    private fun writeDeckHeat(out: StringBuilder, deck: DeckArray) {
+        val tiles = ArrayList<Int>()
+        val readings = HashMap<Int, Long>()
+        // Walked by **machine**, not by occupied row, because the tile this has to be able to talk
+        // about is the one with no row at all: a bare construction site holds nothing, and "nothing"
+        // is precisely the reading the loader will not arrive at on its own.
+        for (anchor in deck.grid.tiles) {
+            val m = deck[anchor] ?: continue
+            val laid = laidDeckEnergy(deck, m)
+            for (part in m.tiles(deck.grid)) {
+                val energy = deck.stuff.energyAt(part)
+                if (energy == laid) continue
+                tiles.add(part.index)
+                readings[part.index] = energy
+            }
+        }
         tiles.sort()
         var onLine = 0
         for (tile in tiles) {
             if (onLine == 0) out.append("deckheat")
-            out.append(' ').append(tile).append('=').append(deck.energyAt(TileIndex(tile)))
+            out.append(' ').append(tile).append('=').append(readings[tile])
             if (++onLine == HEAT_PER_LINE) { out.append('\n'); onLine = 0 }
         }
         if (onLine != 0) out.append('\n')
     }
+
+    /**
+     * **What [readDeckMachine]'s `stand` will put on one tile of [m] if this file says nothing.**
+     *
+     * ⛔ The bill's capacity, and **not** `deck.stuff.heatCapacityAt(part)`. The two agree for every
+     * finished tile — its matter *is* its bill — and disagree for the one case that matters: a ghost
+     * holds nothing, so the tile-derived figure is `0 × 293 = 0`, which reads as "already ambient,
+     * omit the line", while the loader stands the machine with its whole casing and seeds a whole
+     * tile's worth of heat. Omitting against one quantity and reconstructing from another is the
+     * entire bug: a construction site came back holding 12.9 GJ of nothing, and melted the instant
+     * the first iron gave that heat a gram to divide by.
+     *
+     * The rule this states, and the one [writeSegment] states again for track: **a writer may omit a
+     * reading only when it equals what the reader will reconstruct.** Never when it merely looks
+     * default.
+     */
+    private fun laidDeckEnergy(deck: DeckArray, m: DeckMachine): Long =
+        heatCapacityOf(tileBillOfMaterials(m.kind, deck.materialOf(m))) * Temperature.AMBIENT_KELVIN
 
     /**
      * The deck's **matter**, one `deckstuff tile <mixture>` line per tile whose casing is no longer
@@ -670,11 +701,14 @@ object Save {
         // every other species on disk, so the enum stays free to be reordered.
         f.append(" made=").append(s.material.name)
         val energy = conduits.energyAt(s.conduit, tile)
-        // Compared against what *this* tile would hold if freshly laid, not against
-        // [Conduit.ambientPerTile]. The bill of materials apportions, so a multi-species conduit's
-        // capacity can differ from the kind's by a part in a million — and against the kind's figure
-        // every single tile would then look non-ambient and be written out.
-        if (energy != conduits.heatCapacityAt(s.conduit, tile) * Temperature.AMBIENT_KELVIN) {
+        // Compared against what [TrackLayers.lay] will reconstruct — the **bill's** capacity at
+        // ambient, not this tile's current capacity. Against the kind's round figure every tile
+        // would look non-ambient and be written out, because the bill apportions and lands a part
+        // per million off; against the tile's *own* matter a bare site compares `0` with `0 × 293`
+        // and omits the line, after which the loader lays a full length of metal and seeds a full
+        // length's heat onto a site holding nothing. See [laidDeckEnergy] — same rule, same trap,
+        // and this is the half that looked correct because it is right for every finished tile.
+        if (energy != heatCapacityOf(conduitBillOfMaterials(s.conduit, s.material)) * Temperature.AMBIENT_KELVIN) {
             f.append(" k=").append(energy)
         }
         return f.toString()
