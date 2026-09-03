@@ -188,9 +188,12 @@ Each ends at a green gate. Commit directly to main, one focused commit per step.
    ⛔ **The first version of the size-independence test passed while both its readings were zero**
    (one under the floor, one over the overflow). Every reading is now pinned to the physics rather
    than to another reading.
-3. **The draw.** The thruster takes from the pipe cell on its chamber tile into its own store, with a
-   stall floor, modelled on `applyPumps`. Nothing changes about firing yet. Gate: a motor on a
-   charged pipe fills its store and stalls on an empty one; mass ledger unmoved.
+3. ⛔ **BLOCKED on a design call — see §8.** Built, measured, and reverted: a machine buffer
+   **cannot hold a fluid**. `offGas` walks `buffers.stuff` every tick and moves every fluid species
+   into the room around it, so propellant drawn into a chamber is back in the air before it can be
+   burned. Measured: the draw ran (122 kg, then 1.7 t, then 3 t over successive passes) and the
+   chamber read *empty* at every single check, with both ledgers balanced the whole time — the
+   propellant was going pipe → chamber → room → valve → pipe in a circle.
 4. **Fire on it, and drop the rail port** (§2.1). `massPerTick` becomes `thrust / v_e`; impulse
    becomes `ejectedMass × v_e` in milli-tiles per tick; propellant energy is read rather than
    rebuilt (§5.2); `localPorts` returns nothing for a `Thruster`. ⚠️ **The port goes in this step and
@@ -221,7 +224,42 @@ All four are settled. Kept as a record of what was decided against, not as work.
 4. ~~Is there a tank?~~ — **the pipe network is the tank.** Build a bigger one. `PIPE_VOLUME` is the
    dial if a run turns out to hold too little to be worth plumbing.
 
-## 8. Explicitly not doing
+## 8. Where propellant lives — the call step 3 ran into
+
+`offGas` (`world/AmbientChemistry.kt`) is the pass that empties a wet rock into the room it is
+standing in. It walks the **buffer layer**, and it is right to: a hopper of ore carrying methane is
+"gas in a sack", and emptying the sack is the largest thing that function does. It has exactly one
+structural guard — `holdsAirOut`, so a volatile sealed inside a bulkhead stays put — and a machine's
+store is not that.
+
+So "the chamber is a `BufferRole.Input` store holding a fluid" is not a thing the world supports, and
+making it one is a rule about what a machine buffer *is*.
+
+**Recommended: (a) the pipe cell is the chamber.** A motor reads and burns straight out of the pipe
+under it, with no store of its own.
+
+- It is what §7.4 already decided — **the pipe network is the tank** — carried one step further.
+- It **deletes** the layer crossing rather than fixing it. No `gasBecameSolid`, no new term in
+  `massBalance`, no second place where gas becomes cargo. The doc on `massBalance` is explicit that
+  every new way for matter to cross the boundary is a way the ledger reads a leak for ever if
+  somebody forgets, so not adding one is worth real money.
+- §4's chamber pressure becomes **literally the pipe cell's pressure**, which is what it wanted to be
+  anyway and is one fewer indirection.
+- It collapses steps 3 and 4 into one: there is nothing to verify about a draw that is not a burn.
+
+The cost, stated plainly: a motor's throughput is then bounded by one pipe cell an eighth of a tile
+big, refilled by diffusion. That is the *intent* (§1, §4) but it is now the whole story, with no
+buffer to smooth it — a burn will be as steady as the plumbing behind it and no steadier.
+
+**The alternative, (b): exempt a thruster's chamber from `offGas`.** A pressure vessel is sealed, and
+that is a perfectly good sentence. It keeps the plan's shape and the smoothing buffer. It costs a new
+rule about machine buffers that invites the same question of every other machine, and it keeps the
+ledger crossing.
+
+⚠️ **Whichever way this goes, it is worth knowing that nothing in the game currently stores a fluid
+anywhere except a pipe or a room.** A tank machine (§7.4, deferred) would hit this same wall.
+
+## 9. Explicitly not doing
 
 - **Not** combustion in the chamber. Once §6.4 lands, burning is a reaction run on the parcel before
   the temperature is read — an increment, not a rewrite. Cold gas first, because it decides every
