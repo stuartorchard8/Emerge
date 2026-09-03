@@ -210,17 +210,30 @@ Each ends at a green gate. Commit directly to main, one focused commit per step.
 `the autopilot stops a spin and then stops burning`, `an asymmetric ship goes forward on its rearward
 motors alone`, `an off-centre thruster spins the ship`, `a reading stops the machine outright`.
 
-## 7. Open — the one that keeps density interesting
+## 7. Packets stay fixed-mass — decided, and parked
 
-**Should a gas packet hold a fixed volume rather than a fixed mass?**
+**Should a gas packet hold a fixed volume rather than a fixed mass?** It was going to be the lever
+that keeps density interesting: make a packet a volume and a hydrogen canister carries far less mass
+than an oxygen one, so a hydrogen line delivers fewer kg/s and §3.4's "hydrogen gives 3.7× the push"
+stops being a free lunch.
 
-`Capacity.quantityOf` is **already a function for this reason**, and its own doc already says
-*"solids/liquids: volume; gases: mass"*. Make it volume for gases and a hydrogen canister carries far
-less mass than an oxygen one, so a hydrogen line delivers fewer kg/s.
+⛔ **It does not survive contact with a real packet, because a packet is mixed phase.** A `Mixture` is
+a heap of whatever was scooped, solid and fluid together — a lump of ore carrying its own volatiles
+is the ordinary case, not the corner one. So "volume for the solids, mass for the gases" has no
+answer for the single number a packet's capacity has to be.
 
-That restores the density trade — the actual reason nobody flies much hydrogen — with none of the
-fluid solver, and it is what stops §3.4's "hydrogen gives 3.7× the push" being a free lunch. **Not
-decided.** Cheap to add, and cheapest before anything is balanced around the mass version.
+⚠️ **`Capacity.quantityOf`'s own doc has the same flaw**, and it is worth knowing before anybody
+reaches for it as the ready-made hook: *"solids/liquids: volume; gases: mass"* is written as though a
+packet were one or the other, and no packet is.
+
+**Fixed volume for *everything*** — solids included — is the coherent version, and it is a bigger
+question than it looks: it needs a **pressure to store gas at**, which is a design decision with
+nothing in the game to derive it from, and it re-prices every belt in the vessel.
+
+**Decided 2026-09-04 (Stu): leave it fixed mass, and come back another day.** Recorded rather than
+dropped, because the density trade is real and its absence is a known gap rather than an oversight —
+until it is closed, the only thing making a light propellant expensive is that there is less of it
+about.
 
 ## 8. History — the pipe-fed chamber, and why it turned
 
