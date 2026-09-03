@@ -15,6 +15,7 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.heatCapacityOf
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.Valve
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -70,7 +71,7 @@ class SealedTileGasTest {
      * `AmbientChemistryTest.withLump`'s reason, and the difference between a fixture that states its
      * stock and one that states a leak.
      */
-    private fun withLump(lump: Mixture, at: TileIndex): VesselState {
+    private fun withLump(lump: Mixture, at: TileIndex, vent: Boolean = false): VesselState {
         val deck = DeckArray(grid)
         for (x in 0 until grid.width) {
             deck += Hull(grid.tile(x, 0))
@@ -83,6 +84,11 @@ class SealedTileGasTest {
         // The bulkhead the run passes through. A wall inside the room rather than part of its shell,
         // so a failure cannot be confused with the vessel venting to space.
         deck += Hull(wall)
+        // ⛔ **Off-gassing is opt-in now, so venting has to be asked for.** A run of track lets go of
+        // its volatiles where a valve stands over it and nowhere else — see
+        // `PLAN_fluid_thrusters.md` §2.1. Without this the anti-vacuity test below reads "nothing
+        // calcined" when what actually happened is "nothing was allowed out".
+        if (vent) deck += Valve(at)
 
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 2, grid.width - 3, row)
@@ -184,7 +190,7 @@ class SealedTileGasTest {
 
     @Test
     fun `the same lump on open deck does vent, so the two above are not green by accident`() {
-        val start = withLump(calcining(), openDeck)
+        val start = withLump(calcining(), openDeck, vent = true)
         val after = run(start, TICKS)
 
         assertTrue(

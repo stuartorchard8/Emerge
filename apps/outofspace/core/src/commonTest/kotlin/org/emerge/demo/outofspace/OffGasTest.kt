@@ -27,8 +27,16 @@ class OffGasTest {
     private val tile = TileIndex(3)
     private val kg = Budget.KILOGRAM
 
-    /** Nowhere is a wall — the ordinary case, a lump standing in a room. */
-    private val inTheOpen: (TileIndex) -> Boolean = { false }
+    /**
+     * Every tile is a vent — a lump standing on a valve, in a room.
+     *
+     * ⚠️ **The sense inverted with the parameter.** It used to be "nowhere is a wall", because
+     * off-gassing happened everywhere it was not forbidden; it is now "everywhere is permitted",
+     * because it happens nowhere it is not asked for. These tests are about the *physics* of what
+     * comes off a lump, so they hold the gate open and say nothing about where the game opens it —
+     * see `AmbientChemistryTest` and `SealedTileGasTest` for that half.
+     */
+    private val atAVent: (TileIndex) -> Boolean = { true }
 
     private fun layerWith(vararg stuff: Pair<Species, Long>, kelvin: Int): StuffLayer {
         val layer = StuffLayer.empty(tiles)
@@ -46,7 +54,7 @@ class OffGasTest {
         val layer = layerWith(Species.Iron to 100L * kg, Species.Water to 10L * kg, kelvin = 293)
         val air = air()
 
-        val step = offGas(layer, air, null, inTheOpen)
+        val step = offGas(layer, air, null, atAVent)
 
         assertTrue(air[tile, Fluid.Water] > 0L, "no water reached the room")
         assertTrue(layer[tile, Species.Water] < 10L * kg, "the lump did not give any water up")
@@ -62,7 +70,7 @@ class OffGasTest {
         val layer = layerWith(Species.Water to 10L * kg, Species.Ammonia to 4L * kg, kelvin = 293)
         val air = air()
 
-        offGas(layer, air, null, inTheOpen)
+        offGas(layer, air, null, atAVent)
 
         assertEquals(
             10L * kg - layer[tile, Species.Water], air[tile, Fluid.Water],
@@ -81,7 +89,7 @@ class OffGasTest {
         val airEnergy = EnergyArray(tiles)
         val before = layer.energyAt(tile)
 
-        val step = offGas(layer, air, airEnergy, inTheOpen)
+        val step = offGas(layer, air, airEnergy, atAVent)
 
         assertTrue(step.toGasMass > 0L, "nothing left, so there is nothing to have carried")
         assertTrue(step.toGasEnergy > 0L, "the vapour left its heat behind in the lump")
@@ -109,13 +117,13 @@ class OffGasTest {
         val layer = layerWith(Species.Water to 10L * kg, kelvin = 293)
         val air = air()
 
-        offGas(layer, air, null, inTheOpen)
+        offGas(layer, air, null, atAVent)
         val afterFirst = air[tile, Fluid.Water]
         val heldAfterFirst = layer[tile, Species.Water]
 
         assertTrue(heldAfterFirst > 0L, "the whole 10 kg boiled off — the saturation ceiling did nothing")
 
-        repeat(20) { offGas(layer, air, null, inTheOpen) }
+        repeat(20) { offGas(layer, air, null, atAVent) }
 
         assertEquals(afterFirst, air[tile, Fluid.Water], "the room kept taking water past saturation")
         assertEquals(heldAfterFirst, layer[tile, Species.Water], "the lump kept shedding past saturation")
@@ -128,7 +136,7 @@ class OffGasTest {
         fun shed(kelvin: Int): Long {
             val layer = layerWith(Species.Water to 10L * kg, kelvin = kelvin)
             val air = air()
-            offGas(layer, air, null, inTheOpen)
+            offGas(layer, air, null, atAVent)
             return air[tile, Fluid.Water]
         }
 
@@ -143,7 +151,7 @@ class OffGasTest {
         val layer = layerWith(Species.Methane to 3L * kg, kelvin = 293)
         val air = air()
 
-        offGas(layer, air, null, inTheOpen)
+        offGas(layer, air, null, atAVent)
 
         assertEquals(0L, layer[tile, Species.Methane], "methane stayed in the lump as though it were rock")
         assertEquals(3L * kg, air[tile, Fluid.Methane], "the methane did not all arrive")
@@ -155,10 +163,10 @@ class OffGasTest {
         val air = air()
         // Saturate the room first, from a lump that is not this one.
         val primer = layerWith(Species.Water to 10L * kg, kelvin = 293)
-        offGas(primer, air, null, inTheOpen)
+        offGas(primer, air, null, atAVent)
         val alreadyThere = air[tile, Fluid.Water]
 
-        offGas(layer, air, null, inTheOpen)
+        offGas(layer, air, null, atAVent)
 
         assertEquals(alreadyThere, air[tile, Fluid.Water], "a saturated room took more water anyway")
         assertEquals(10L * kg, layer[tile, Species.Water], "the second lump gave up water into a full room")
@@ -177,7 +185,7 @@ class OffGasTest {
         val air = air()
         val before = layer.kelvinAt(tile)
 
-        val step = offGas(layer, air, null, inTheOpen)
+        val step = offGas(layer, air, null, atAVent)
 
         assertTrue(step.toGasMass > 0L, "nothing evaporated, so nothing was paid for")
         assertTrue(
@@ -201,7 +209,7 @@ class OffGasTest {
             // Re-warming the lump between passes is what "without latent heat" looked like.
             var out = 0L
             repeat(8) {
-                out += offGas(layer, air, null, inTheOpen).toGasMass
+                out += offGas(layer, air, null, atAVent).toGasMass
                 if (!withLatent) layer.setEnergy(tile, energyAtKelvin(layer.thermalMassAt(tile), 400))
                 // The room is emptied each pass, so saturation is never what limits this — the only
                 // difference between the two runs is whether the lump was allowed to get colder.
@@ -219,11 +227,11 @@ class OffGasTest {
     // ── Never into a wall ────────────────────────────────────────────────────
 
     @Test
-    fun `a lump inside something that holds air out keeps everything`() {
+    fun `a lump somewhere with no vent keeps everything`() {
         val layer = layerWith(Species.Water to 10L * kg, Species.Methane to 3L * kg, kelvin = 400)
         val air = air()
 
-        val step = offGas(layer, air, null, holdsAirOut = { true })
+        val step = offGas(layer, air, null, mayVent = { false })
 
         assertTrue(step.isNothing, "something crossed out of a tile that has no room in it")
         assertEquals(10L * kg, layer[tile, Species.Water], "water left a sealed tile")

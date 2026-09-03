@@ -18,6 +18,7 @@ import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.Valve
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -64,7 +65,7 @@ class AmbientChemistryTest {
      * that `baselineCargoMass` counts it: a fixture that states its stock *after* construction is a
      * fixture that states a leak.
      */
-    private fun withLump(lump: Mixture, at: Int = 5): VesselState {
+    private fun withLump(lump: Mixture, at: Int = 5, vent: Boolean = false): VesselState {
         val deck = DeckArray(grid)
         for (x in 0 until grid.width) {
             deck += Hull(grid.tile(x, 0))
@@ -74,6 +75,12 @@ class AmbientChemistryTest {
             deck += Hull(grid.tile(0, y))
             deck += Hull(grid.tile(grid.width - 1, y))
         }
+
+        // ⛔ **A vent, where one is asked for.** Off-gassing is opt-in — a run of track lets go of
+        // its volatiles under a valve and nowhere else, see `PLAN_fluid_thrusters.md` §2.1 — so a
+        // reaction's gaseous product stays *on the belt* unless the fixture builds somewhere for it
+        // to go. Most of this file wants it on the belt, which is where a reaction leaves it.
+        if (vent) deck += Valve(grid.tile(at, ROW))
 
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 2, grid.width - 3, ROW)
@@ -143,13 +150,30 @@ class AmbientChemistryTest {
         val carbonAfter = railMass(after, Species.Carbon)
         assertTrue(carbonAfter < carbonBefore, "the lump did not burn: still ${carbonAfter} of $carbonBefore")
 
+        // ⛔ **The product stays in the cargo layer.** A reaction never decides phase — see
+        // `react` — and `offGas` is the one door out, which is now opt-in. So a fire on a belt eats
+        // the room's oxygen and leaves its carbon dioxide *on the belt*, as something the player can
+        // route rather than something they have to breathe.
         assertTrue(
-            airMass(after, Fluid.CarbonDioxide) > airMass(start, Fluid.CarbonDioxide),
-            "carbon left the belt and no carbon dioxide arrived",
+            railMass(after, Species.CarbonDioxide) > railMass(start, Species.CarbonDioxide),
+            "carbon left the belt and no carbon dioxide took its place",
         )
         assertTrue(
             airMass(after, Fluid.Oxygen) < airMass(start, Fluid.Oxygen),
             "carbon dioxide appeared without any oxygen being consumed",
+        )
+    }
+
+    @Test
+    fun `and it reaches the room when the player has built a vent for it`() {
+        // The other half, and the one that says the gate is a gate rather than a wall: the same
+        // fire over a valve puts its exhaust into the room, exactly as every fire used to.
+        val start = withLump(carbonAt(burningKelvin), vent = true)
+        val after = run(start, TICKS)
+
+        assertTrue(
+            airMass(after, Fluid.CarbonDioxide) > airMass(start, Fluid.CarbonDioxide),
+            "a fire standing on a valve still kept its exhaust",
         )
     }
 
@@ -345,7 +369,11 @@ class AmbientChemistryTest {
         // A hot solid becoming a gas must hand its joules over, or the world quietly cools by the
         // temperature of everything that ever reacted. Checked as "the gas got warmer", which is
         // the observable half — the energy identity itself is parked, see [VesselState.heatBalance].
-        val start = withLump(carbonAt(burningKelvin))
+        //
+        // ⚠️ **Over a vent, because that is now the only way a gas reaches the air at all.** The
+        // question is unchanged — does the heat travel with the matter — but the matter only travels
+        // where the player built somewhere for it to go. See `PLAN_fluid_thrusters.md` §2.1.
+        val start = withLump(carbonAt(burningKelvin), vent = true)
         val after = run(start, TICKS)
 
         assertTrue(railMass(after, Species.Carbon) < railMass(start, Species.Carbon), "nothing burned")
@@ -362,7 +390,7 @@ class AmbientChemistryTest {
         //
         // Serpentine giving up its water is that reaction, near enough: it is endothermic, so both
         // effects point the same way and neither can hide the other.
-        val wet = withLump(lumpAt(1200, Species.Serpentine to 20L * Budget.KILOGRAM))
+        val wet = withLump(lumpAt(1200, Species.Serpentine to 20L * Budget.KILOGRAM), vent = true)
         val dried = run(wet, TICKS)
         assertTrue(
             railMass(dried, Species.Serpentine) < railMass(wet, Species.Serpentine),

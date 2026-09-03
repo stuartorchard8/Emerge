@@ -624,16 +624,24 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // into the air on its own account, and the only one told where the walls are. Chemistry
             // first, so a volatile made this tick can leave in the tick it was made rather than
             // waiting a pass.
-            val offRails = offGas(w.rail.stuff, w.masses, w.airEnergy, structure::blocksAir)
-            val offHoppers = offGas(w.buffers.stuff, w.masses, w.airEnergy, structure::blocksAir)
+            // ⛔ **Only where the player built a vent, and never out of a machine's store.** A
+            // hopper is a tank now — that is what makes hoarding a tonne of propellant possible —
+            // and a run of track lets go of its volatiles at a [Valve] and nowhere else. See
+            // `PLAN_fluid_thrusters.md` §2.1; `offHoppers` used to stand beside this and is gone.
+            //
+            // ⚠️ Structure is still half the question: a valve inside a bulkhead has no gas cell to
+            // vent into, and putting gas in a wall is what `SealedTileGasTest` forbids.
+            val offRails = offGas(w.rail.stuff, w.masses, w.airEnergy) { tile ->
+                w.deck[tile] is Valve && !structure.blocksAir(tile)
+            }
 
             // ⚠️ The cross-store reactions are in these sums. A row whose principal is in the air
             // and whose other reagent is on a belt — the Boudouard reaction — moves cargo mass into
             // the atmosphere as surely as an off-gassing lump does, and a row burning a lump with
             // the room's oxygen moves air mass the other way. The two ledgers only close if both
             // are told.
-            val toGasMass = offRails.toGasMass + offHoppers.toGasMass + inRooms.toGasMass
-            val toGasEnergy = offRails.toGasEnergy + offHoppers.toGasEnergy + inRooms.toGasEnergy
+            val toGasMass = offRails.toGasMass + inRooms.toGasMass
+            val toGasEnergy = offRails.toGasEnergy + inRooms.toGasEnergy
             val toSolidMass = inRooms.toSolidMass
             val toSolidEnergy = inRooms.toSolidEnergy
             if (toGasMass != 0L || toGasEnergy != 0L) w.solidBecameGas(toGasMass, toGasEnergy)
@@ -643,8 +651,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // ⚠️ The off-gas passes are in this sum: since latent heat landed they report the energy
             // that went into breaking the bonds of whatever evaporated, which is negative and is
             // exactly the same kind of quantity a reaction enthalpy is.
-            val made = inRooms.releasedEnergy + inPipes.releasedEnergy +
-                offRails.releasedEnergy + offHoppers.releasedEnergy
+            val made = inRooms.releasedEnergy + inPipes.releasedEnergy + offRails.releasedEnergy
             if (made != 0L) w.reactionEnergy(made)
         }
         if (_c0) profiler.recordPhase("chemistry", _c!!.elapsedNow().inWholeNanoseconds)

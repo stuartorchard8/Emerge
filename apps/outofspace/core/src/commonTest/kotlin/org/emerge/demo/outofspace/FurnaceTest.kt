@@ -248,9 +248,13 @@ class FurnaceTest {
         val carbonLeft = (store(after, BufferRole.Inside)?.get(Species.Carbon) ?: 0L) +
             (store(after, BufferRole.Product)?.get(Species.Carbon) ?: 0L)
         assertTrue(carbonLeft < CHARGE, "the charge came through untouched")
+        // ⛔ **Into the store, not into the room.** A hopper never off-gasses now — that is what
+        // makes a store a tank — so a furnace's gaseous product comes out of its output port as
+        // cargo the player can route, rather than out of its casing as something they breathe. See
+        // `PLAN_fluid_thrusters.md` §2.1. Put a valve on the output run and the room gets it.
         assertTrue(
-            airMass(after, Fluid.CarbonDioxide) > airMass(start, Fluid.CarbonDioxide),
-            "carbon left the chamber and no carbon dioxide arrived in the room",
+            bufferMass(after, Species.CarbonDioxide) > bufferMass(start, Species.CarbonDioxide),
+            "carbon left the chamber and no carbon dioxide took its place",
         )
     }
 
@@ -286,7 +290,7 @@ class FurnaceTest {
         // "there is some" is a precondition that can never fail and would let this pass by
         // burning nothing at all.
         assertTrue(
-            airMass(after, Fluid.CarbonDioxide) > airMass(start, Fluid.CarbonDioxide),
+            bufferMass(after, Species.CarbonDioxide) > bufferMass(start, Species.CarbonDioxide),
             "nothing burned, so this proves nothing",
         )
         assertEquals(0L, after.airBalance, "the air ledger is out by ${after.airBalance}")
@@ -310,7 +314,7 @@ class FurnaceTest {
     // ── Increment 4: the table, in the machine it was built for ──────────────
 
     @Test
-    fun `limestone calcines into quicklime and the room gets the carbon dioxide`() {
+    fun `limestone calcines into quicklime and the carbon dioxide comes out with it`() {
         // The reaction this machine's documentation has promised since before it could happen.
         // CaCO3 -> CaO + CO2: the lime stays in the chamber and leaves by the belt, the gas leaves
         // by the room, and the machine's one output port is correct precisely because of that.
@@ -324,9 +328,13 @@ class FurnaceTest {
             bufferMass(after, Species.Calcite) < CALCINING_CHARGE,
             "the limestone came through untouched",
         )
+        // ⛔ **Into the store, not into the room.** A hopper never off-gasses now — that is what
+        // makes a store a tank — so a furnace's gaseous product comes out of its output port as
+        // cargo the player can route, rather than out of its casing as something they breathe. See
+        // `PLAN_fluid_thrusters.md` §2.1. Put a valve on the output run and the room gets it.
         assertTrue(
-            airMass(after, Fluid.CarbonDioxide) > airMass(start, Fluid.CarbonDioxide),
-            "lime appeared and no carbon dioxide went into the room",
+            bufferMass(after, Species.CarbonDioxide) > bufferMass(start, Species.CarbonDioxide),
+            "lime appeared and no carbon dioxide came with it",
         )
 
         // And in the proportion the formula says, not merely in the right direction: CaCO3 is 100,

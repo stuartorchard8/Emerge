@@ -143,13 +143,27 @@ private fun airMassAt(air: MassArray, tile: TileIndex): Long {
  * separate piece of work with a ledger of its own. Until then a lump cannot chill itself back below
  * its own boiling point, and the saturation ceiling is the only thing stopping it.
  *
- * ### Where it may not happen
+ * ### Where it may happen — the caller's decision, and no longer "anywhere with a room"
  *
- * [holdsAirOut] is asked first and answers for the tile, not for the matter: a bulkhead has no gas
- * cell, so there is nowhere for a volatile to go and it stays in the lump until the lump is
- * somewhere with a room around it. This is the guard `SealedTileGasTest` pins, and it is deliberately
- * the *only* place in the chemistry that consults the structure — one gate, on the one pass that
- * can put matter into the air.
+ * [mayVent] answers for the **tile**, not for the matter, and it is the whole of the gate. It used
+ * to be the inverse — "is this tile sealed" — and everywhere else was fair game, which made a hopper
+ * of ore an open sack and a length of track a slow leak.
+ *
+ * ⛔ **That is why a store could not be a tank, and it is now the caller who says where a vent is.**
+ * A machine's buffer never vents, so a tonne of liquid oxygen keeps. A run of track vents only where
+ * the player has put a [org.emerge.demo.outofspace.world.machine.Valve] over it, which turns
+ * "my ore is leaking" into "I built a place for it to leak". See `PLAN_fluid_thrusters.md` §2.1.
+ *
+ * ⚠️ **Structure is still part of the answer and must stay part of it.** A bulkhead has no gas cell,
+ * so a volatile inside one has nowhere to go and stays in the lump — the guard `SealedTileGasTest`
+ * pins. It is now one half of the caller's predicate rather than the whole of it, and dropping it
+ * would put gas inside a wall.
+ *
+ * ⚠️ **The physics is unchanged and none of it moved.** Saturation, the vapour headroom, the latent
+ * heat that makes a boiling liquid cool itself: all still here, all still running wherever they are
+ * asked to. What changed is *where* they are asked. A gas fire is still perfectly reachable — a
+ * player dumping an asteroid's volatiles to concentrate its ore more cheaply can still fill a
+ * corridor with methane — it is a trade they made rather than an accident that befell them.
  *
  * ⚠️ **Give it the layer whose contents are cargo**, exactly as [oxidise] requires and for the same
  * reason: what leaves here is booked by `solidBecameGas`, which closes the cargo identity against
@@ -159,7 +173,7 @@ fun offGas(
     layer: StuffLayer,
     air: MassArray,
     airEnergy: EnergyArray?,
-    holdsAirOut: (TileIndex) -> Boolean,
+    mayVent: (TileIndex) -> Boolean,
 ): ChemistryStep {
     var toGasMass = 0L
     var toGasEnergy = 0L
@@ -171,8 +185,9 @@ fun offGas(
     val leaving = LongArray(Fluid.COUNT)
 
     layer.forEachOccupiedTile { tile ->
-        // The one structural question, asked before any arithmetic: is there a room here at all.
-        if (holdsAirOut(tile)) return@forEachOccupiedTile
+        // The one question asked before any arithmetic, and it is the caller's to answer: may what
+        // is standing here let go of its volatiles at all.
+        if (!mayVent(tile)) return@forEachOccupiedTile
 
         val heldMass = layer.massAt(tile)
         if (heldMass <= 0L) return@forEachOccupiedTile
