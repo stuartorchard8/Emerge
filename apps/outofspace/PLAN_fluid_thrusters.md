@@ -103,8 +103,7 @@ No scale constant, no fixed point, no `Frac`, nothing to calibrate. Worst case i
 molar heat capacity is additive over moles, so there is no averaging of γ anywhere — which is the
 second reason this group is what gets stored and γ itself never is.
 
-⛔ **`2γ/(γ−1)` was written as 4 for the monatomic case first time round** (`e6f44812`, corrected in
-`8f0a...`). `f + 2` cannot produce a 4, and that is now what the test asserts against: an expected
+⛔ **`2γ/(γ−1)` was written as 4 for the monatomic case first time round** (`e6f44812`, corrected in `92cc1b56`). `f + 2` cannot produce a 4, and that is now what the test asserts against: an expected
 value reached by the same division that produced the wrong one is not a check.
 
 ⚠️ **`tilesPerTick` must keep more resolution than it does.** At 780 m/s the current
@@ -176,9 +175,19 @@ Each ends at a green gate. Commit directly to main, one focused commit per step.
 
 1. ✅ **DONE — γ from atomicity.** `Species.adiabaticK` derived over `MINERALS` atom counts,
    returning 4, 7 or 8. Nothing reads it yet.
-2. **`exhaustVelocity(mass, energy)` as a pure function**, over a parcel. Gate: the §3 table
-   reproduced to ±2%, plus the degenerate cases — no mass, no energy, one species, a mixture.
-   ⚠️ This is where a wrong answer is cheapest to find; do not fold it into the tick.
+2. ✅ **DONE — `exhaustVelocity(propellant: Mixture)`**, pure, in `Thruster`'s companion. The §3
+   table to ±2%, and the mole-weighted K makes a blend of equal *masses* of H₂ and N₂ land near the
+   hydrogen, as 14:1 in moles should.
+   ⚠️ **Two faults found here that would have been invisible one step later.** `millimolesOf` on a
+   *store*-sized heap **overflows `Long` negative** — twenty tonnes of hydrogen is 10¹⁹ millimoles —
+   so a motor drawing on a full tank reported no velocity at all; the single-heap overload now goes
+   through `scaledRatio`, while the per-tile one keeps its plain product because a tile cannot hold
+   enough to overflow and it is the pressure field's hot path. And the mole table **floors to zero
+   below about a millimole**, so a nearly-empty chamber returns a velocity of 0 rather than a small
+   one — ⛔ **step 4's `ṁ = thrust / v_e` must guard that, not divide by it.**
+   ⛔ **The first version of the size-independence test passed while both its readings were zero**
+   (one under the floor, one over the overflow). Every reading is now pinned to the physics rather
+   than to another reading.
 3. **The draw.** The thruster takes from the pipe cell on its chamber tile into its own store, with a
    stall floor, modelled on `applyPumps`. Nothing changes about firing yet. Gate: a motor on a
    charged pipe fills its store and stalls on an empty one; mass ledger unmoved.

@@ -303,7 +303,35 @@ private fun idealPressure(mass: Long, species: Species, kelvin: Int, volume: Int
 /** The temperature [tilePressure] measures against — one atmosphere at room temperature. */
 private const val AMBIENT_KELVIN = Temperature.AMBIENT_KELVIN.toLong()
 
-/** The pressure of a single tile, for callers that want one rather than the whole field. */
+/**
+ * How many millimoles [mass] of [species] is — the conversion on its own, for a caller holding one
+ * heap rather than a tile.
+ *
+ * The same table and the same truncation as every other caller in this file, which is the point of
+ * it being here: a mole count formed anywhere else would be a second exit from the mass system, and
+ * the doc on [MOLAR_DIVISOR] explains why there are only meant to be two.
+ *
+ * ⛔ **Through [scaledRatio], because a heap is not a tile.** A store holds twenty tonnes, and twenty
+ * tonnes of hydrogen times its 500,000 millimoles per kilogram is 10¹⁹ — past `Long`, and it wraps
+ * *negative*, so the plain product does not merely round badly, it answers backwards.
+ *
+ * ⚠️ **Rounds to zero below about a millimole**, which for hydrogen is a milligram and for a mineral
+ * is a tenth of a gram. That is the resolution of the mole table and not a fault here, but a caller
+ * dividing by a mole count needs to know the floor exists.
+ */
+fun millimolesOf(mass: Long, species: Species): Long =
+    scaledRatio(mass, MOLAR_DIVISOR, MILLIMOLES_PER_KILOGRAM[species.ordinal])
+
+/**
+ * The pressure of a single tile, for callers that want one rather than the whole field.
+ *
+ * ⚠️ **Spells the conversion out rather than calling the twin above, and the duplication is
+ * deliberate.** This runs per species per tile and is the hot path the whole pressure field is built
+ * on; [scaledRatio] opens with an integer division to decide whether it needs to split, and integer
+ * division is the slowest arithmetic there is. A *tile* cannot hold enough gas to overflow the plain
+ * product — a full one is grams — so the safety the twin buys is safety this caller has by
+ * construction. Same table, same truncation, same answer.
+ */
 fun millimolesOf(masses: MassArray, tile: TileIndex): Long {
     var sum = 0L
     masses.forEachSpecies(tile) { s, mass -> sum += mass * MILLIMOLES_PER_KILOGRAM[s.ordinal] / MOLAR_DIVISOR }

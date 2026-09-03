@@ -1,11 +1,18 @@
 package org.emerge.demo.outofspace.world.machine
 
+import org.emerge.demo.outofspace.chem.Mixture
+import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.TILE_LITRES
+import org.emerge.demo.outofspace.chem.adiabaticK
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.num.Budget
+import org.emerge.demo.outofspace.num.isqrt
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
+import org.emerge.demo.outofspace.world.kelvinOf
+import org.emerge.demo.outofspace.world.millimolesOf
+import org.emerge.demo.outofspace.world.thermalMassOf
 import org.emerge.demo.outofspace.world.StructureMap
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
@@ -133,6 +140,81 @@ data class Thruster(
          */
         fun tilesPerTick(ticksPerSecond: Int): Long =
             EXHAUST_METRES_PER_SECOND * 1_000L / (TILE_MILLIMETRES * ticksPerSecond)
+
+        /**
+         * **R × 1000, in the units this file's arithmetic wants.**
+         *
+         * The molar gas constant is 8.314 J/(mol·K), and [org.emerge.demo.outofspace.chem.Species.molarMass]
+         * is in **grams** per mole — so `R/M` in SI needs a factor of a thousand to turn kilograms
+         * into grams, and folding it into the constant is what leaves [exhaustVelocity] with no
+         * conversion of its own to get wrong.
+         *
+         * ⚠️ **Not mass-dimensioned, and so it does not move with [Budget].** It is per *mole*, and
+         * a mole is a count of particles — the same warning [Pump.MILLIMOLES_PER_TICK] carries. The
+         * mass unit enters [exhaustVelocity] once, explicitly, where the millimoles are weighed
+         * against the grams.
+         */
+        private const val GAS_CONSTANT_MILLI: Long = 8314L
+
+        /**
+         * **How fast this propellant leaves a nozzle**, in metres per second, into vacuum.
+         *
+         * `v_e = √( 2γ/(γ−1) · R·T/M )` — the ideal rocket with its expansion term at the limit,
+         * which is every nozzle in the game until something flies where there is a back-pressure to
+         * expand against (`PLAN_fluid_thrusters.md` §7.2). Hot chamber, light molecule, and nothing
+         * else: **T over M is the whole mechanic.**
+         *
+         * ### Why this is exact integer arithmetic and not a fixed-point approximation
+         *
+         * Three numbers had to line up and did. `2γ/(γ−1)` is a whole number for each of the three
+         * molecular shapes — see [org.emerge.demo.outofspace.chem.adiabaticK]. `Species.molarMass` is
+         * already in grams per mole, the unit `R × 1000` wants. And a mixture's `K` is the
+         * **mole-weighted mean** of its species', exactly rather than approximately, because
+         * `K = 2·Cp/R` and a molar heat capacity is additive over moles. So there is no scale to
+         * calibrate, no `Frac`, and no averaging of γ anywhere.
+         *
+         * The mole count cancels out of the ratio, which is what keeps the expression short:
+         * `Σ(n_s·K_s) / n × R·T·1000 / (1000·mass/n)` loses its `n` and leaves the divide below.
+         *
+         * ⛔ **Every species present counts, including one that has no business being a gas.** A
+         * chamber with rock in it throws the rock, slowly — forsterite is 140 g/mol against
+         * hydrogen's 2 — and that is the correct penalty rather than an unhandled case. It is also
+         * the honest reading of what the game did for its whole life before this: a solid-fed motor
+         * was getting hydrogen's exhaust velocity out of gravel.
+         *
+         * Returns **0** for an empty parcel, which is the one case with no answer: no propellant is
+         * not slow propellant, and a caller multiplying a zero mass by a velocity wants a zero.
+         */
+        fun exhaustVelocity(propellant: Mixture): Long {
+            val mass = propellant.total
+            if (mass <= 0L) return 0L
+
+            // Σ n_s·K_s over the parcel, in millimoles — the numerator of the mole-weighted K, kept
+            // un-divided so the mole count can cancel below instead of being rounded away here.
+            var weightedK = 0L
+            for (s in Species.ALL) {
+                val held = propellant[s]
+                if (held == 0L) continue
+                weightedK += millimolesOf(held, s) * s.adiabaticK
+            }
+            if (weightedK <= 0L) return 0L
+
+            // ⛔ Through `thermalMassOf`, never `heatCapacityOf` — the divided capacity has already
+            // thrown away everything under CAPACITY_DIVISOR, which for a parcel of hydrogen is most
+            // of it, and a temperature formed off it reads ambient. See `kelvinOf`.
+            val kelvin = kelvinOf(propellant.energy, thermalMassOf(propellant))
+            if (kelvin <= 0) return 0L
+
+            // v² = Σ(n_s·K_s) · R·1000 · T · GRAM / (1000 · mass). Through `scaledRatio` so the
+            // ratio is taken before the scale: the numerator alone is ~1e22 for a chamber-sized
+            // parcel, and `Long` stops at 9.2e18.
+            val squared = scaledRatio(
+                weightedK,
+                1000L * mass,
+                GAS_CONSTANT_MILLI * kelvin * Budget.GRAM,
+            )
+            return isqrt(squared)
+        }
 
         /**
          * The kinetic energy carried by [mass] of exhaust: `½mv²`, in the game's energy unit.
