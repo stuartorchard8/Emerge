@@ -101,10 +101,10 @@ class DockingPortTest {
         /**
          * A warehouse locked to this, downstream of the port's **output**, or none.
          *
-         * ⚠️ **Down, not right.** A docking port takes cargo in at its inboard face and hands
-         * purchases out of a *flank* — `LocalPort(0, r, Direction.Down, Output)` — so a run laid
-         * along the row reaches the input and nothing else. A pull test on such a run answers "the
-         * ship wants nothing" for the wrong reason entirely.
+         * ⚠️ **Not on the centre row.** Both of a docking port's doors sit on its inboard face
+         * but at the *corners* of it — `LocalPort(-r, +r, Output)` — so a run laid along the row
+         * reaches neither one. A pull test on such a run answers "the ship wants nothing" for the
+         * wrong reason entirely.
          */
         consumer: Species? = null,
     ): VesselState {
@@ -113,11 +113,17 @@ class DockingPortTest {
         deck += fixtureStorage(tank, Direction.Right)
         deck += DockingPort(port, Direction.Right, orders = orders, ore = ore)
         val rails = arrayOfNulls<Segment>(grid.size)
-        // Ten, so there is track under the port itself as well as up to its door.
+        // Along the row to the port and one tile up onto the input door, which is the top corner
+        // of the inboard face at (9, 2) rather than the middle of it. Ten, so there is track under
+        // the port itself as well as up to that door.
         joinRow(grid, rails, 3, 10, 3)
+        joinCol(grid, rails, 9, 2, 3)
         if (consumer != null) {
             deck += fixtureStorage(grid.tile(10, 6), Direction.Down, filter = SpeciesFilter(consumer, null))
-            joinCol(grid, rails, 10, 4, 5)
+            // Down off the output door at the bottom corner, (9, 4), and across to the warehouse's
+            // own door at (10, 5). Not joined to the row above it: the two streams stay separate.
+            joinCol(grid, rails, 9, 4, 5)
+            joinRow(grid, rails, 9, 10, 5)
         }
         return VesselState(
             grid, deck,
