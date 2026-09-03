@@ -4359,10 +4359,23 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // anything to. A gauge watches the track under it and never takes anything off it;
                 // a valve is an opening onto the room, not a destination.
                 is Sensor, is WireButton, is Pump, is Gauge, is Valve -> false
+                // ⛔ **The mouth's own door**, the twin of the warehouse's above and closed for the
+                // same reason: an acceptance is a statement about routes, and a lump *crossing* the
+                // input port tile on its way to a tank beyond it was never routed here. Since the
+                // doors moved to the corners of the inboard face that tile is a natural place to lay
+                // track along, so this is now the common case rather than a curiosity. See
+                // [DockingPort.admits].
+                is DockingPort -> {
+                    if (!destination.admits(packet.contents)) return false
+                    val role = inputBufferRole(destination) ?: return false
+                    val store = bufferTile(grid, destination, destination.center, role) ?: return false
+                    val merged = acceptInto(destination, buffers.resourceAt(store), packet) ?: return false
+                    buffers.put(store, merged)
+                    true
+                }
                 // Both take a feed, and both take it the way every buffered kind does — by role
                 // tile, kind-blind. See the machine-list twin above.
-                is Thruster, is Concentrator, is Furnace,
-                is DockingPort, is Extractor -> {
+                is Thruster, is Concentrator, is Furnace, is Extractor -> {
                     val role = inputBufferRole(destination) ?: return false
                     val store = bufferTile(grid, destination, destination.center, role) ?: return false
                     val merged = acceptInto(destination, buffers.resourceAt(store), packet) ?: return false

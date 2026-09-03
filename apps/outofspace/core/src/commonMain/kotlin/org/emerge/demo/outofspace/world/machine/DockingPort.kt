@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.world.machine
 
+import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Acceptance
 import org.emerge.demo.outofspace.world.Direction
@@ -79,6 +80,37 @@ data class DockingPort(
 
     /** What is permitted for [species], signed. Zero when nothing is. */
     fun permitted(species: Species): Long = orders[species] ?: 0L
+
+    /**
+     * Whether the sell book admits [cargo] — **the mouth's own door**, and not merely a second
+     * opinion on the network's.
+     *
+     * ⛔ **A tile a run crosses was never routed to.** The sell list becomes an
+     * [org.emerge.demo.outofspace.world.Acceptance] at the input port tile, and an acceptance is a
+     * statement about *routes*: it decides what is sent here. Since the doors moved to the corners
+     * of the inboard face, that tile is a natural place to lay track *along*, and a lump crossing it
+     * on its way to a tank beyond has a perfectly good reason to be there — nothing routed it to the
+     * mouth, so nothing had ever asked the mouth whether it wanted it. Without this the port
+     * swallowed it and sold it. Stu's save, `dock.txt` at (12, 24): a hundred kilograms of frost
+     * bound for a tank up the line, sold for a species that was not on the book at all.
+     *
+     * The same hole [org.emerge.demo.outofspace.world.machine.Storage] closed for a locked
+     * warehouse, and closed the same way.
+     *
+     * ⚠️ **Kind only, never quantity** — the partner of the clamp in `sold`: a lump already standing
+     * in the mouth when the player cuts a figure down is matter that has arrived and is going to be
+     * sold. What this refuses is cargo the book does not name at all.
+     *
+     * ⚠️ **The same partition [sold] reads**, deliberately and in the same shape: a blend is the ore
+     * permission's and a pure lump is its species'. Two ways of asking "which permission is this
+     * one's" that could disagree would put matter in the mouth that nothing could book.
+     */
+    fun admits(cargo: Mixture): Boolean {
+        if (cargo.total <= 0L) return false
+        if (cargo.impurities > 0L) return ore < 0L
+        val species = cargo.dominant ?: return false
+        return permitted(species) < 0L
+    }
 
     /** How much of [species] may still be **sold**, or [ENDLESS]. Zero when the player is buying it. */
     fun selling(species: Species): Long = sellingOf(permitted(species))

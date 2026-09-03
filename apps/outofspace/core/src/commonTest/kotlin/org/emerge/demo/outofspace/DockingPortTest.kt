@@ -198,6 +198,78 @@ class DockingPortTest {
         assertTrue((s.inStore(port, BufferRole.Input)?.total ?: 0L) > 0L, "the cargo never arrived")
     }
 
+    // ── The mouth's own door ─────────────────────────────────────────────────
+
+    /**
+     * A run that **crosses** the input door on its way somewhere else.
+     *
+     * ⚠️ **The doors are corners now**, so the inboard face is a natural place to lay track along —
+     * and a tile a run passes over is not a terminus. The tank pours east, turns up onto the input
+     * door at (9, 2), and carries on across the top of the port to a warehouse at (14, 2) locked to
+     * [passing]. Everything on this run has a reason to be on it; the port is simply in the way.
+     */
+    private fun crossroads(
+        passing: Species,
+        stock: Mixture,
+        orders: Map<Species, Long> = mapOf(Species.Iron to -DockingPort.ENDLESS),
+    ): VesselState {
+        val grid = cfg.initialGrid
+        val deck = DeckArray(grid)
+        deck += fixtureStorage(tank, Direction.Right)
+        deck += DockingPort(port, Direction.Right, orders = orders)
+        deck += fixtureStorage(grid.tile(14, 2), Direction.Right, filter = SpeciesFilter(passing, null))
+        val rails = arrayOfNulls<Segment>(grid.size)
+        // Out of the tank along row 3 as far as the port's near edge, up onto the input door, and
+        // then straight on over the port to the warehouse's own door at (13, 2). One path, no fork:
+        // whatever is on it is going to the warehouse unless something takes it off first.
+        joinRow(grid, rails, 3, 9, 3)
+        joinCol(grid, rails, 9, 2, 3)
+        joinRow(grid, rails, 9, 13, 2)
+        return VesselState(
+            grid, deck,
+            conduits = Conduits.ofRails(rails.toList()),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+            dockedMarket = Market.empty(),
+        ).stocked(tank, stock).anchored()
+    }
+
+    /** What the warehouse beyond the port has taken delivery of. */
+    private fun VesselState.beyondThePort(): Long =
+        inStore(grid.tile(14, 2), BufferRole.Inside)?.total ?: 0L
+
+    @Test
+    fun `a lump crossing the input door on its way past is not sold`() {
+        // ⛔ **Stu's save `dock.txt` at (12, 24).** A hundred kilograms of frost bound for a tank
+        // beyond the port was taken off the belt at the input door and sold — for a species that
+        // was not on the sell list at all, through a mouth that had never asked for it.
+        //
+        // The network was right: the lump had somewhere to be and the route to it ran over that
+        // tile. What was wrong is that the mouth had no door of its own. The sell list becomes an
+        // `Acceptance`, which is a statement about *routes*, and a lump merely passing through was
+        // never routed here — so nothing had ever asked whether the port wanted it. Exactly the
+        // hole `Storage` closed for a locked warehouse, and for the same reason.
+        val cargo = 4L * Capacity.PACKET_MASS
+        val s = run(crossroads(Species.Nickel, Mixture.of(Species.Nickel to cargo, energy = 0L).atAmbient()), 60 * RAIL_PERIOD)
+
+        assertEquals(0L, s.exportedMass, "the port sold cargo that was never on its list")
+        assertEquals(0L, s.credits, "the port was paid for cargo that was never on its list")
+        assertEquals(0L, s.inStore(port, BufferRole.Input)?.total ?: 0L, "the mouth swallowed traffic passing over it")
+        assertTrue(s.beyondThePort() > 0L, "nothing reached the warehouse the cargo was bound for")
+    }
+
+    @Test
+    fun `a lump the port IS selling is still taken off the run it crosses`() {
+        // The other half, on the same track: the door refuses what the list does not name and takes
+        // what it does. Without this the test above passes for the boring reason that a port on a
+        // through-run has stopped trading altogether.
+        val cargo = 4L * Capacity.PACKET_MASS
+        val s = run(crossroads(Species.Nickel, ore(cargo)), 60 * RAIL_PERIOD)
+
+        assertTrue(s.exportedMass > 0L, "iron on the port's own list rode straight past the mouth")
+        assertEquals(0L, s.beyondThePort(), "iron reached a warehouse locked to nickel")
+    }
+
     @Test
     fun `purity is worth more at the same mouth`() {
         // §3.6 through the whole machine rather than against `Market` directly: the same mass, sold
