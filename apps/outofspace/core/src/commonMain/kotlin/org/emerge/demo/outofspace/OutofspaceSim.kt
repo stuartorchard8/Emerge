@@ -4180,6 +4180,35 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
              * above, each at its own door, which is `Acceptance.admits` again by another road.
              */
             fun sinkAdmits(tile: TileIndex, cargo: Mixture): Boolean {
+                // ⛔ **A span's door is the road past it, and it is the one kind that cannot state
+                // its appetite in [accepts].** Every other machine's appetite is a fact about the
+                // machine, so it can be written down before the walk and read here afterwards. A
+                // bridge's is *whatever lies on the other side*, which is not known until the walk
+                // has run — so it says nothing, and "nothing stated means anything, for ever" is
+                // precisely the wrong reading for it. That sentence is right for a machine and
+                // wrong for a doorway.
+                //
+                // ⚠️ **Still one statement, read twice.** This is the same [whitelist] the routing
+                // walk is drawn from, asked one tile along — not a second opinion. The rule
+                // `9276cf53` settled is that a machine must never keep a door of its own; a span
+                // keeps none either, it reads the only one there is.
+                //
+                // ⛔ **Asked of the FAR END, never of this tile — they are different questions and
+                // the difference is the whole bug.** [Whitelist] is per *tile*: it answers "can
+                // anything reachable from here use this", over every way out at once. A span's
+                // mouth is very often also an ordinary through-tile — Stu's save `bridge.txt`, the
+                // span at (11,13), whose input at (11,12) is on a corridor running up to (11,11)
+                // and a bottomless tank beyond it. That tile therefore answers `permitsAnything`,
+                // truthfully, and it is answering about the corridor. Ask it and the span reads its
+                // neighbour's appetite as its own and swallows everything, which is exactly what it
+                // did. The span's own question is the road **past** it, which is the far end's
+                // entry — and that came back false all along.
+                //
+                // ⚠️ **Kind, never quantity** (`rationed = false`), which is what a door asks
+                // everywhere else. A lump standing at a mouth is already committed: refusing it for
+                // being surplus does not save it, it only strands it one tile earlier.
+                val far = flow.hopTo(tile)
+                if (far != null && !whitelist.permits(far, cargo, rationed = false)) return false
                 val own = accepts[tile] ?: return true
                 for (a in own) if (a.admits(cargo)) return true
                 return false

@@ -466,6 +466,42 @@ class BridgeTest {
         )
     }
 
+    @Test
+    fun `a span does not swallow what is already standing at its mouth`() {
+        // ⛔ **The routing door and the machine's door are two different doors, and closing one is
+        // not closing the other.** `Whitelist.permits` stops a *source* sending material toward a
+        // span that leads nowhere useful. It says nothing about a lump already standing on the
+        // span's own input tile — put there before the far side was locked, or left over from a
+        // route that has since changed. The door a standing lump meets is `sinkAdmits`, which reads
+        // the `accepts` map; a bridge states nothing in that map, and **a tile that states nothing
+        // admits everything**. So the span swallowed it anyway, carried it over, and set it down on
+        // a dead end.
+        //
+        // ⛔ **The same missing sentence as `9276cf53`** — a docking port swallowing a lump that was
+        // only crossing its mouth — and the bridge is the kind that fix could not reach. Every other
+        // machine's appetite is a fact about the machine and can be *stated* in `accepts`; a span's
+        // is whatever lies past it, which is not known until the walk has run. So "nothing stated
+        // means anything, for ever" is exactly the wrong reading here, and the statement the door
+        // has to read is the whitelist itself.
+        //
+        // Stu's save `bridge.txt`, the span at (11,13): 100kg of concentrator tailings standing at
+        // the mouth (11,12), the only sink past the span a tank locked to Fayalite, and the lump
+        // dominant in Ferrosilite. The corridor behind had already stopped feeding — the routing
+        // door was doing its job — and the one lump already at the door still went over and
+        // stranded itself at (11,14), where it sat for a hundred rail periods.
+        val s = run(
+            acrossToATank(SpeciesFilter(Species.Copper, null)).riding(grid.tile(8, 3), ingots),
+            40 * RAIL_PERIOD,
+        )
+
+        assertEquals(0, s.slotsFilled(grid.tile(9, 3)), "the span swallowed a lump it cannot pass on")
+        assertNull(s.onRail(grid.tile(10, 3)), "and set it down on the dead end past itself")
+        assertEquals(
+            ingots.total, s.onRail(grid.tile(8, 3))?.total,
+            "it should still be standing at the mouth, where the road it needs may yet be built",
+        )
+    }
+
     // ── Conservation ──────────────────────────────────────────────────────────
 
     @Test
