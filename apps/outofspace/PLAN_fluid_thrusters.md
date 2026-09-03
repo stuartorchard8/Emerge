@@ -51,6 +51,23 @@ The consequence is worth stating as a feature rather than an omission: **there i
 filter, and there does not need to be.** A pipe network only connects where the player drew the
 joins, so keeping hydrogen out of the water supply is a *layout* problem. That is the game.
 
+### 2.1 A thruster has no rail port — decided, Stu, 2026-09-03
+
+**One propellant path.** `localPorts` returns nothing for a `Thruster`, so a belt arriving at a motor
+has nothing to hand over and the rail network routes around it — the same as it already does for a
+pump or a valve.
+
+Three things fall out, and they are the reason this is the cheap option rather than the brave one:
+
+- **It is still buildable.** `constructionPortOf` gives every ghost a rail port at its centre
+  whatever its kind, and `standingPortsOf` returns that alone while the ghost stands. Motors are
+  built by track exactly as they are now.
+- **No save work.** Ports are derived from the machine kind in `localPorts` and never written to
+  disk, so a legacy motor loses its port on load with nothing to migrate.
+- **No stranded matter, and no special case for it.** Leave the existing solid branch of `fire()`
+  alone: a legacy motor throws whatever is already in its store on the next burn, exactly as today,
+  and then runs dry because nothing can refill it. The ledger never hears about a change.
+
 ## 3. Exhaust velocity
 
 The ideal rocket into vacuum, with the expansion term at its limit:
@@ -136,9 +153,11 @@ Four of these are silent if missed.
    `Temperature.AMBIENT_KELVIN` rather than reading the chunk's real energy. For a fluid motor T is
    the entire point, so this must read what is actually there — and it touches the orphan-energy
    invariant (`StuffLayer.checkInvariants`), so 0 matter ⇒ 0 energy has to keep holding.
-3. **The solid path, and the standing TODO.** `fire()` already carries the question: *"a thruster fed
-   gravel should arguably refuse to fire rather than throw it away. That is an acceptance rule, not
-   an arithmetic one, and it is Stu's call."* This is now that call — see §7.1.
+3. **The solid path, and the standing TODO — answered by deletion.** `fire()` carries the question:
+   *"a thruster fed gravel should arguably refuse to fire rather than throw it away. That is an
+   acceptance rule, not an arithmetic one, and it is Stu's call."* The call is **§2.1**: a motor
+   loses its rail port, so nothing can hand it gravel and there is no acceptance rule to write. A
+   question that stops existing is a better answer than a rule that resolves it.
 4. **Save version.** Currently v21. A motor whose `massPerTick` is derived and whose store holds a
    fluid is a format change; existing thrusters migrate.
 
@@ -155,10 +174,14 @@ Each ends at a green gate. Commit directly to main, one focused commit per step.
 3. **The draw.** The thruster takes from the pipe cell on its chamber tile into its own store, with a
    stall floor, modelled on `applyPumps`. Nothing changes about firing yet. Gate: a motor on a
    charged pipe fills its store and stalls on an empty one; mass ledger unmoved.
-4. **Fire on it.** `massPerTick` becomes `thrust / v_e`; impulse becomes `ejectedMass × v_e` in
-   milli-tiles per tick; propellant energy is read rather than rebuilt (§5.2). Gate: momentum ledger
-   still balances over a burn; a hydrogen motor and a nitrogen motor at equal chamber pressure make
-   **equal thrust and unequal mass flow**.
+4. **Fire on it, and drop the rail port** (§2.1). `massPerTick` becomes `thrust / v_e`; impulse
+   becomes `ejectedMass × v_e` in milli-tiles per tick; propellant energy is read rather than
+   rebuilt (§5.2); `localPorts` returns nothing for a `Thruster`. ⚠️ **The port goes in this step and
+   not before** — a motor with no port and no draw yet is a motor that cannot be fed at all, and the
+   two halves have to land together or the starter vessel stops flying mid-migration. Gate: momentum
+   ledger still balances over a burn; a hydrogen motor and a nitrogen motor at equal chamber pressure
+   make **equal thrust and unequal mass flow**; a belt run at a motor routes past it instead of
+   stalling at it.
 5. **Flight balance by thrust, not flow** (§5.1). Gate: a ship with two different propellants either
    side of its axis burns straight.
 6. **Panel + save bump.** Chamber pressure, propellant, v_e, ṁ on the inspector. ⛔ **Not done until
@@ -166,12 +189,7 @@ Each ends at a green gate. Commit directly to main, one focused commit per step.
 
 ## 7. Open questions — Stu's call
 
-1. **Does a thruster keep its rail port?** Recommend **no**: one propellant path, and the §5.3 TODO
-   is answered by deletion rather than by an acceptance rule. A portless motor is still *buildable*,
-   because `constructionPortOf` gives every ghost a rail port at its centre regardless — so this
-   costs nothing structurally. The alternative is keeping both and drinking whichever is present,
-   which needs an `Acceptance` naming fluids so the rails stop feeding it rock. Existing saves have
-   solid-fed motors either way.
+1. ~~Does a thruster keep its rail port?~~ — **answered: no.** See §2.1.
 2. **Does the bell mean anything?** §3 assumes infinite expansion, i.e. every nozzle is a perfect
    vacuum nozzle. Defensible, and it keeps the maths integer — but it means the second tile of the
    footprint is decoration. Making throat area a setting is the obvious knob if you want a design
