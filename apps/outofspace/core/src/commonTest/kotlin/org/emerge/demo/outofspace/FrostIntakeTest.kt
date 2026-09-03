@@ -217,11 +217,33 @@ class FrostIntakeTest {
     private fun Plant.edit(state: VesselState, vararg edits: Edit): VesselState =
         OutofspaceReducer.reduce(cfg, state, mapOf(PlayerId(0) to OutofspaceInput(edits.toList())))
 
-    /** Everything riding on any belt — where a packet went is not the question. */
+    /** Everything riding on any belt **at this instant** — where a packet went is not the question. */
     private fun Plant.onBelts(s: VesselState, species: Species): Long {
         var sum = 0L
         for (tile in grid.tiles) sum += s.rail.stuff[tile, species]
         return sum
+    }
+
+    /** The end of a run, and the most of one species seen riding at any tick of it. */
+    private class Carried(val end: VesselState, val everOnTrack: Long)
+
+    /**
+     * A run, watched every tick.
+     *
+     * ⚠️ **Sampled, because a glance at the end is a question about travel time and not about the
+     * rule.** These tests ask whether a lump ever *left*, and a belt only holds it in between; read
+     * once at the finish it says "no" both when nothing went and when something went and arrived,
+     * which are opposite answers. It said the second when `RAIL_PERIOD` went 32 -> 8 and the packet
+     * started completing its trip to the concentrator inside the window.
+     */
+    private fun Plant.carry(state: VesselState, ticks: Int, species: Species): Carried {
+        var s = state
+        var peak = onBelts(s, species)
+        repeat(ticks) {
+            s = OutofspaceReducer.reduce(cfg, s, emptyMap())
+            peak = maxOf(peak, onBelts(s, species))
+        }
+        return Carried(s, peak)
     }
 
     /**
@@ -298,11 +320,11 @@ class FrostIntakeTest {
         val p = plant()
         val start = p.state.stocked(p.plate, ore(30L * kg), BufferRole.Product)
 
-        val s = p.run(start, 60)
+        val r = p.carry(start, 60, Species.Iron)
 
-        assertEquals(0L, p.onBelts(s, Species.Iron), "a runt lump went out onto the track")
+        assertEquals(0L, r.everOnTrack, "a runt lump went out onto the track")
         assertEquals(
-            30L * kg, s.inStore(p.plate, BufferRole.Product)?.total,
+            30L * kg, r.end.inStore(p.plate, BufferRole.Product)?.total,
             "and the hopper did not keep it either",
         )
     }
@@ -314,9 +336,13 @@ class FrostIntakeTest {
         val p = plant()
         val start = p.state.stocked(p.plate, ore(Capacity.PACKET_MASS), BufferRole.Product)
 
-        val s = p.run(start, 60)
+        val r = p.carry(start, 60, Species.Iron)
 
-        assertTrue(p.onBelts(s, Species.Iron) > 0L, "a full packet stayed in the hopper")
+        assertTrue(r.everOnTrack > 0L, "a full packet stayed in the hopper")
+        assertEquals(
+            0L, r.end.inStore(p.plate, BufferRole.Product)?.total ?: 0L,
+            "and it went whole, rather than dribbling out and leaving a remainder",
+        )
     }
 
     @Test
@@ -329,8 +355,8 @@ class FrostIntakeTest {
         s = p.edit(s, Edit.Remove(p.plate, DeleteLayer.Deck))
         assertTrue(p.plate in s.scrapping, "fixture: it should be condemned")
 
-        s = p.run(s, 60)
+        val r = p.carry(s, 60, Species.Iron)
 
-        assertTrue(p.onBelts(s, Species.Iron) > 0L, "the condemned machine kept its remainder")
+        assertTrue(r.everOnTrack > 0L, "the condemned machine kept its remainder")
     }
 }
