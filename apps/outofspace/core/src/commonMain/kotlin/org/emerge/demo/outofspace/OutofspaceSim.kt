@@ -175,7 +175,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     const val HEAT_PERIOD       = 8
     const val PUMP_PERIOD       = 8
     const val MACHINE_PERIOD    = 1
-    const val RAIL_PERIOD       = 32
+    const val RAIL_PERIOD       = 8
 
     /**
      * A station's own plants — **once a minute**, at [OutofspaceConfig.ticksPerSecond] of 64.
