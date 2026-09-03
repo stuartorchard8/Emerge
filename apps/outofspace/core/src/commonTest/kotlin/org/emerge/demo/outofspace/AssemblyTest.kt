@@ -5,6 +5,8 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.Assembly
 import org.emerge.demo.outofspace.world.BodyKind
+import org.emerge.demo.outofspace.world.Pose
+import org.emerge.demo.outofspace.world.bodiesOverlap
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.Direction
@@ -28,6 +30,7 @@ import org.emerge.demo.outofspace.world.machine.DockingPort
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.PlayerId
+import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -212,6 +215,64 @@ class AssemblyTest {
         assertTrue(s.vesselImpulseX < before, "the assembly was not pushed by a rock landing on it")
         assertEquals(0L, s.momentumBalanceX, "momentum was minted by a touch on a held member")
         assertEquals(0L, s.momentumBalanceY, "momentum was minted by a touch on a held member")
+    }
+
+    /**
+     * ⏸ **PARKED, and it is not this change's doing — the diagnosis, so nobody has to find it twice.**
+     *
+     * A rock that begins the tick *straddling* a held member's wall stays straddling it for ever.
+     * Every save written before held geometry existed has one, because until now nothing stopped a
+     * rock arriving there.
+     *
+     * ⛔ **It is the per-axis separation rule meeting a symmetric overlap, and it is pre-existing.**
+     * A body's cells are discs and a station's are too, so a rock centred on a one-cell wall overlaps
+     * wall discs with cells *above* the wall and cells *below* it. Those normals point opposite ways,
+     * the deepest-push-per-direction rule takes `pushDown − pushUp`, and the two cancel exactly.
+     * [RockContact.separateAlongCentres] is the switch that exists for precisely this — its own doc
+     * records a pair measured easing out to 3.5 tiles and stopping — and `false` is Stu's call and
+     * the default, so the same is true of two free rocks today and always has been.
+     *
+     * Measured here, 400 ticks, rock centre offset from the wall's centre line:
+     *
+     * | start | moves | ends |
+     * |---|---|---|
+     * | 0.0 tile | 0.00 | still straddling |
+     * | 0.3 | +0.20 (further in) | still straddling |
+     * | 0.7 | −0.20 | still straddling |
+     * | 0.9 | −0.40 | still straddling |
+     *
+     * — an attractor, not a slow crawl. Before this change the rock was not in the collision set at
+     * all, so it drifted straight out the far side; now it is held where it is. Neither is right.
+     *
+     * ⚠️ **Flipping [RockContact.separateAlongCentres] would not currently reach this**, because a
+     * held member's contacts are booked as [Contact.HULL] and that branch tests `other != HULL`.
+     * Making the line-of-centres rule available here means carrying the held member's index on the
+     * contact so the push can find its centre — a change to the separation rule, which is a
+     * judgement about rubble and Stu's to make.
+     */
+    @Ignore
+    @Test
+    fun `a rock that starts inside a held member is eased out of it`() {
+        val (ship, port) = quietShip()
+        val node = DockNode(0, 10, Direction.Left)
+        val world = ship.copy(bodies = listOf(stationAt(ship, port, node, id = 9)))
+        var s = run(world, 1, Edit.Dock(port.center))
+        val station = s.bodies.single { it.kind == BodyKind.STATION }
+
+        // Straddling the station's bottom wall, seven tiles off its waist so the ship is not behind
+        // it — exactly how the reported save had one.
+        val wallY = station.comY + station.height * Flight.PER_TILE / 2L - Flight.PER_TILE / 2L
+        s = s.copy(bodies = s.bodies + pebble(station.comX - 7L * Flight.PER_TILE, wallY, 3L).copy(impulseX = 0L))
+
+        fun overlapping(v: VesselState): Boolean {
+            val held = v.bodies.single { it.kind == BodyKind.STATION }
+            val rock = v.bodies.single { it.kind != BodyKind.STATION }
+            return bodiesOverlap(rock, Pose(rock.positionX, rock.positionY, rock.ang, rock.about), held, v.memberPose(9))
+        }
+        assertTrue(overlapping(s), "the fixture did not put the rock inside the station")
+
+        repeat(400) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
+        assertTrue(!overlapping(s), "the rock is still lodged in the station after 400 ticks")
     }
 
     // ── Two members ──────────────────────────────────────────────────────────
