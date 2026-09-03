@@ -166,7 +166,7 @@ class RotationTest {
 
     /** A motor bolted well off the centreline spins the ship, in the direction its arm says. */
     @Test
-    @Ignore // ⛔ **PARKED pending a calibration call — `PLAN_fluid_thrusters.md` §9.** A motor now empties its
+    @Ignore // ⛔ **PARKED pending a calibration call — `PLAN_fluid_thrusters.md` §8.** A motor now empties its
     fun `an off-centre thruster spins the ship`() {
         val cfg = OutofspaceConfig()
         val controller = OutofspaceController(cfg, box(cfg.initialGrid, BAY_HIGH))

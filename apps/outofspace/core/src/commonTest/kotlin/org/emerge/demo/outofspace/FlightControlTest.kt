@@ -214,7 +214,7 @@ class FlightControlTest {
      * version of "no fuel is wasted" a player can check.
      */
     @Test
-    @Ignore // ⛔ **PARKED pending a calibration call — `PLAN_fluid_thrusters.md` §9.** A motor now empties its
+    @Ignore // ⛔ **PARKED pending a calibration call — `PLAN_fluid_thrusters.md` §8.** A motor now empties its
     fun `an asymmetric ship goes forward on its rearward motors alone`() {
         val cfg = OutofspaceConfig()
         val grid = cfg.initialGrid
@@ -279,7 +279,7 @@ class FlightControlTest {
      * arrival at it.
      */
     @Test
-    @Ignore // ⛔ **PARKED pending a calibration call — `PLAN_fluid_thrusters.md` §9.** A motor now empties its
+    @Ignore // ⛔ **PARKED pending a calibration call — `PLAN_fluid_thrusters.md` §8.** A motor now empties its
     fun `the autopilot stops a spin and then stops burning`() {
         val cfg = OutofspaceConfig()
         val spun = turningShip(cfg.initialGrid)

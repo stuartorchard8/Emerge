@@ -135,7 +135,7 @@ data class Thruster(
          * ⛔ **A motor will almost never see a full atmosphere**, and that is the mechanic rather
          * than a miscalibration. The chamber is a pipe cell an eighth of a tile across, refilled by
          * diffusion from whatever the player plumbed to it — so real thrust is a fraction of this,
-         * set by the plumbing. See `PLAN_fluid_thrusters.md` §4.
+         * set by the plumbing. See `PLAN_fluid_thrusters.md` §8.
          */
         const val THRUST_PER_ATMOSPHERE: Long = 25_000_000_000L
 
@@ -184,7 +184,7 @@ data class Thruster(
          *
          * `v_e = √( 2γ/(γ−1) · R·T/M )` — the ideal rocket with its expansion term at the limit,
          * which is every nozzle in the game until something flies where there is a back-pressure to
-         * expand against (`PLAN_fluid_thrusters.md` §7.2). Hot chamber, light molecule, and nothing
+         * expand against (`PLAN_fluid_thrusters.md` §10). Hot chamber, light molecule, and nothing
          * else: **T over M is the whole mechanic.**
          *
          * ### Why this is exact integer arithmetic and not a fixed-point approximation

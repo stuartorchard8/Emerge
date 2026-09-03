@@ -15,7 +15,7 @@ import kotlin.test.assertTrue
  * The hand-checked list below is therefore the oracle and is deliberately written out by formula, so
  * a reader can check it against a periodic table rather than against the code that produced it.
  *
- * See `PLAN_fluid_thrusters.md` §3.
+ * See `PLAN_fluid_thrusters.md` §4.
  */
 class AtomicityTest {
 

@@ -1,74 +1,127 @@
-# Fluid thrusters
+# Fluid thrusters, and fluids on rails
 
-Status: **SCOPED, nothing built** — 2026-09-03.
+Status: **REDIRECTED 2026-09-04 — steps 1–2 built, step 3 built and to be reverted.**
 
-A thruster stops being a hole that eats gravel at a flat 3 km/s and becomes a rocket: it drinks a
-fluid out of the plumbing, and what that fluid *is* decides how fast the exhaust leaves. Hot chamber,
-light molecule. Propellant choice becomes a real decision with a twelvefold spread in it.
+A thruster stops being a hole that eats gravel at a flat 3 km/s and becomes a rocket: what it burns
+decides how fast the exhaust leaves. Hot chamber, light molecule, a fourteenfold spread in what a
+propellant is worth.
 
-This is the piece that unblocks the pipe network having a *purpose*, and after that the starter ship.
+**The propellant reaches it by rail.** That is a reversal — this plan was written around the pipe
+network, and §8 records why it turned — and it means the vessel gets bulk fluid handling out of the
+logistics system it already has: demand, filters, bridges, storage, and twenty-tonne tanks.
+
+**The pipe network is deleted.** Not bypassed, not scoped down. See §9.
 
 ---
 
-## 1. What exists today, verified
+## 1. Why not pipes
 
-The seam is narrower than it looks from the outside.
+⛔ **The pipe network cannot transport, by construction, and that was decided on purpose.**
+`PLAN_fluid_extraction.md` step 5 removed advection, projection and momentum from the fluid model.
+What is left is `diffuseFluid`, which **equalises**: it has no direction, so it can even out but
+cannot deliver. Souping up the pump adds a *source*; it does not add direction. Getting bulk flow
+back means bringing the momentum solver home from fluidlab — the thing that was extracted for being
+expensive and impossible to tune per fluid against reality.
 
-| | today |
+**Measured, on the built pipe-fed motor** (`8dad7374`):
+
+| | |
 |---|---|
-| **Pump** (`world/Pumping.kt`) | room → pipe. Has **no ports**; works on the atmosphere `MassArray`, never on a store. |
-| **Valve** (`world/PipeField.kt`) | pipe ↔ room, by pressure equalisation. Also no ports. |
-| **Every port in the game** | `Conduit.Rail`. `Port.localPorts` never sets `conduit`, so the `Conduit.Pipe` branch of the port system has no members. |
-| **Machine stores vs. the pipe** | `Mixture` in `BufferLayer` vs. a `MassArray`+`EnergyArray` continuum on the same lattice. **Nothing crosses between them.** |
-| **Thruster** | `massPerTick = PACKET_MASS/200`, flat. `EXHAUST_METRES_PER_SECOND = 3000`, flat and species-blind. Propellant is a solid off a belt. |
+| A pipe cell at one atmosphere holds | **125 g** |
+| A motor at one atmosphere asks for, per tick | **515 g** (H₂) · **1446 g** (H₂O) · **1928 g** (N₂) |
+| A rail line delivers (100 kg a packet, `RAIL_PERIOD` 8, 64 Hz) | **800 kg/s** |
+| A motor at one atmosphere wants | 33 kg/s (H₂) – 123 kg/s (N₂) |
 
-So gas can get *into* plumbing and *out into a room*, but **nothing can drink from a pipe**. The
-thruster is the first machine that will.
+A pipe cell holds a *thousandth* of what a motor asks for in a single tick. **One rail line feeds six
+to twenty-four motors.** The supply problem does not get tuned away, it disappears — and the engine
+needs no nerf, so the calibration decision §8 raised stops existing.
 
-⚠️ **Pipe transport is diffusive, not pumped.** Since `PLAN_fluid_extraction.md` step 5, the pipe
-layer runs the same `diffuseFluid` pass as a room, on `pipeApertures`. There is no bulk flow toward a
-consumer — a network *equalises*. That is load-bearing for §4: a motor that drains its chamber cell
-is refilled at the diffusion rate from its neighbours, so **a long thin run genuinely starves a
-motor** without anyone writing a rule saying so.
+## 2. Fluids ride rails
 
-⛔ **Not a constraint, despite an earlier claim:** rail/pipe exclusion is **gone**. `spokenFor`
-returns `false` unconditionally and the `Conduits` invariant is deleted, because a pipe ghost is fed
-by rail on its own tile and the two must coexist. Plumbing crosses track freely; routing a pipe to a
-motor on an existing ship is unconstrained.
+A fluid moves as a `Mixture` in a packet, exactly as ore does. Nothing about demand, filtering,
+bridges, storage or the flow graph needs to know it is a fluid.
 
-## 2. The coupling: a motor drinks from the cell it stands on
+⚠️ **Most of this exists already and was never wired up.** `FluidPacket` and `packFluid` are in
+`logistics/Packet.kt` with tests — *"fluids always merge into an amalgam"*, *"a solid and a fluid
+never merge"*. And **`RailLayer` stores a bare `Mixture`**: `SolidPacket` is a wrapper applied at the
+boundaries, not the way track holds things. So this is mostly *removing an assertion*, not building
+transport. The places that assert it:
 
-**A thruster draws from the pipe cell on its own chamber tile**, in the shape `applyPumps` already
-has — a bounded draw per tick that stalls below a pressure floor.
+- `RailLayer.packetAt`, which wraps every load as a `SolidPacket`
+- `takePacket` in `OutofspaceSim`, which mints one, and the two call sites that downcast to it
+- `Save`'s reader, which **silently drops** a `FluidPacket` — though the writer already emits `F:`
+  for one
 
-⛔ **Deliberately not pipe ports, and deliberately not fluid demand.** Demand is a rail concept
-because a packet is discrete and has to *choose* a route; that is what `Whitelist`, `Acceptance` and
-the `FlowGraph` walk are all for. A continuum does not choose — it flows down a gradient. Building a
-demand system for plumbing would be inventing a mechanism rather than modelling one, and it would
-mean two answers to "where does this go" living in one game.
+### 2.1 A machine's store is a tank
 
-The consequence is worth stating as a feature rather than an omission: **there is no propellant
-filter, and there does not need to be.** A pipe network only connects where the player drew the
-joins, so keeping hydrogen out of the water supply is a *layout* problem. That is the game.
+⛔ **Off-gassing is what stopped a store being a tank, and it becomes opt-in.** `offGas`
+(`world/AmbientChemistry.kt`) has exactly **two** call sites — `offRails` and `offHoppers`, both
+cargo layers — and it moves every fluid species into the room around it. That is what makes a hopper
+of ore stop being "gas in a sack", and it is also what makes hoarding a tonne of liquid oxygen
+impossible today.
 
-### 2.1 A thruster has no rail port — decided, Stu, 2026-09-03
+- **A hopper never off-gasses.** A storage tank is a tank; that is the whole point.
+- **A run of track off-gasses only where the player says so** — see §3.2.
 
-**One propellant path.** `localPorts` returns nothing for a `Thruster`, so a belt arriving at a motor
-has nothing to hand over and the rail network routes around it — the same as it already does for a
-pump or a valve.
+⚠️ **The physics is relocated, not deleted.** Saturation, the vapour headroom, the latent heat that
+makes a boiling liquid cool itself — all of it stays and runs where it is asked to. **Gas fires stay
+emergent**: a player dumping volatiles off an asteroid to concentrate the ore more cheaply is making
+a deliberate trade that can still fill a corridor with methane. What goes away is the frustrating
+accident, not the fire.
 
-Three things fall out, and they are the reason this is the cheap option rather than the brave one:
+## 3. The three machines
 
-- **It is still buildable.** `constructionPortOf` gives every ghost a rail port at its centre
-  whatever its kind, and `standingPortsOf` returns that alone while the ghost stands. Motors are
-  built by track exactly as they are now.
-- **No save work.** Ports are derived from the machine kind in `localPorts` and never written to
-  disk, so a legacy motor loses its port on load with nothing to migrate.
-- **No stranded matter, and no special case for it.** Leave the existing solid branch of `fire()`
-  alone: a legacy motor throws whatever is already in its store on the next burn, exactly as today,
-  and then runs dry because nothing can refill it. The ledger never hears about a change.
+### 3.1 Pump — a 1×1 source that packetises the room
 
-## 3. Exhaust velocity
+Draws gas out of the room it faces and hands **whole packets** to the rail network through an output
+port. A continuum-to-packet converter, which is what an extractor already is for rock.
+
+- Keeps a `Product` store, fills it at a rate, ships whole packets and never a runt — the arrangement
+  `reference_oos_extractor_one_buffer` and `reference_oos_packets_never_merge` already argue for.
+- Ships through the ordinary door, so it obeys demand: nothing is packed for a network that cannot
+  use it.
+- **Grabs whatever the room holds**, mixed. It does not separate — see §3.3.
+- ⚠️ Loses `MILLIMOLES_PER_TICK`'s molar framing. A packet is a mass, so a pump's rate is a mass;
+  molar was right when the destination was a pressure, and it is not the unit a belt counts in.
+
+### 3.2 Valve — the one place a run may off-gas
+
+A permeable deck machine standing over **track**, marking that tile as a place volatiles may leave
+cargo for the room. Everything §2.1 gated is ungated here and only here.
+
+- Reuses the machine, its build cost and its **wiring** — so venting can be switched by a signal,
+  which makes "pressurise the cabin on demand" and "dump the volatiles at this bay" the same device.
+- Two uses fall straight out: **degassing an asteroid's ore** on the way to a concentrator, and
+  **filling a room with something** on purpose.
+
+### 3.3 Concentrator — gas separation, unchanged
+
+⚠️ **Nothing to build.** It separates by `Mixture.dominant` and is phase-blind, so a charge of air
+concentrates to nitrogen with the rest to tailings, exactly as ore concentrates to iron. Confirmed
+with Stu 2026-09-04: *"it will work identically."* The oxygen loop is therefore
+pump → concentrator → storage → thruster, out of machines that all already exist.
+
+Worth **one test** rather than an assumption, since nothing has ever handed it a gas.
+
+### 3.4 Thruster — a rate, a filter, and a real exhaust velocity
+
+Back to what it was, with the physics added:
+
+- **Rail input port and an `Input` store**, as before `8dad7374`.
+- **`massPerTick` returns.** Thrust is `massPerTick × v_e`, so propellant choice now changes thrust
+  *directly* rather than only efficiency — hydrogen gives 3.7× nitrogen's push at the same rate.
+- **A `SpeciesFilter`, tunable like a storage's.** This is the acceptance rule the standing `fire()`
+  TODO asked for, it stops a motor being fed gravel, and it hands over the material-restriction lever
+  from item 4 of the original list as a setting rather than a ban. Nearly free: `SpeciesFilter` plus
+  `sinkAdmits` is the machinery the bridge work just finished.
+
+⛔ **The trade moves from the chamber to the logistics, and that is the good outcome.** With pressure
+gone, what makes hydrogen expensive is no longer a thin pipe — it is that a hydrogen line has to
+*carry* it. See §7 for the lever that makes that bite.
+
+## 4. Exhaust velocity — built, and unaffected by any of this
+
+✅ `e6f44812`, `107ea1c0`. It reads a `Mixture`; a store holds a `Mixture`. **Nothing here changes.**
 
 The ideal rocket into vacuum, with the expansion term at its limit:
 
@@ -76,39 +129,31 @@ The ideal rocket into vacuum, with the expansion term at its limit:
 v_e = √( 2γ/(γ−1) · R·T/M )
 ```
 
-Everything is already in the codebase except γ:
+Everything was already in the codebase except γ, which is derived from the atom counts in `MINERALS`
+rather than tabulated — monatomic, diatomic, polyatomic.
 
-- **M** — `millimolesOf(mass, tile)` already gives moles from a `MassArray`; mass/moles *is* M. No
-  new table, and it works for a mixture without special-casing one.
-- **T** — `gasKelvin(energy, mass)`.
-- **√** — `num.isqrt`, already used by `Prices` and `RigidBody`.
-- **γ** — **missing.** Derive it from atomicity rather than tabulating: monatomic ⁵⁄₃, diatomic ⁷⁄₅,
-  polyatomic ⁴⁄₃, read off the atom counts already in `MINERALS`. ⛔ Do not add a column — a
-  measured-looking number nobody measured is exactly what `SpeciesInfo` warns about.
-
-### The integer form is exact, which is the good part
+### The integer form is exact
 
 `2γ/(γ−1)` for those three γ is **5, 7 and 8** — equivalently `f + 2` for f degrees of freedom, which
-is the arithmetic to check it against. Whole numbers. And with M in g/mol — which is what
-`Species.molarMass` already holds — `R/M` in SI is `8314/M_g`. So:
+is the arithmetic to check it against. And `Species.molarMass` is already in grams per mole, the unit
+`R × 1000` wants:
 
 ```
 v_e(m/s) = isqrt( K · 8314 · T_kelvin / M_gPerMol )        K ∈ {5, 7, 8}
 ```
 
-No scale constant, no fixed point, no `Frac`, nothing to calibrate. Worst case is `8 · 8314 · 10000 / 2`
-≈ 3.3×10⁸, which is nowhere near `Long`.
+No scale constant, no fixed point, nothing to calibrate. A mixture's K is the **mole-weighted mean**
+of its species', exactly rather than approximately, because `K = 2·Cp/R` and a molar heat capacity is
+additive over moles — so there is no averaging of γ anywhere.
 
-⚠️ **A mixture's K is the mole-weighted mean of its species', and that is exact.** `K = 2·Cp/R` and a
-molar heat capacity is additive over moles, so there is no averaging of γ anywhere — which is the
-second reason this group is what gets stored and γ itself never is.
+⛔ **`2γ/(γ−1)` was written as 4 for the monatomic case first time round** (`e6f44812`, corrected in
+`92cc1b56`). `f + 2` cannot produce a 4, and that is what the test asserts against now: an expected
+value reached by redoing the division that produced the wrong one is not a check.
 
-⛔ **`2γ/(γ−1)` was written as 4 for the monatomic case first time round** (`e6f44812`, corrected in `92cc1b56`). `f + 2` cannot produce a 4, and that is now what the test asserts against: an expected
-value reached by the same division that produced the wrong one is not a check.
-
-⚠️ **`tilesPerTick` must keep more resolution than it does.** At 780 m/s the current
-`v · 1000 / (TILE_MILLIMETRES · ticksPerSecond)` floors to 207 and throws away ~0.5%. Carry
-milli-tiles per tick and divide once at the end — the same lesson `f02179dc` taught `kelvinOf`.
+⚠️ **`millimolesOf` overflows `Long` *negative* on a store-sized heap** — twenty tonnes of hydrogen is
+10¹⁹ millimoles — so the single-heap overload goes through `scaledRatio`. It also **floors to zero
+below about a millimole**, so a nearly-empty parcel is worth a velocity of 0 rather than a small one,
+and anything dividing by v_e must guard that rather than divide by it.
 
 ### What it pays out
 
@@ -121,197 +166,107 @@ milli-tiles per tick and divide once at the end — the same lesson `f02179dc` t
 | steam, burned | 8 | 3500 K | 3.60 km/s |
 | H₂, heated | 7 | 3000 K | 9.34 km/s |
 
-A factor of fourteen, every number arrived at rather than chosen. Note the current flat 3000 is
-almost exactly **room-temperature hydrogen** — so the physics lands on top of today's behaviour for
-the best cold propellant and makes everything else worse, which is the right direction.
+The old flat 3000 m/s is almost exactly room-temperature hydrogen, so the physics lands on top of
+today's behaviour for the best propellant and makes everything else worse — the right direction.
 
-## 4. Burn rate, and why thrust is *not* the interesting number
+## 5. What this still breaks elsewhere
 
-Choked flow through a throat is `ṁ = p_c·A_t·√(γ/(R_specific·T_c))·(2/(γ+1))^((γ+1)/(2(γ−1)))`. Two
-of those factors are near-constant across every γ in range — the bracket is 0.65–0.68, and `√γ·√K` is
-2.6–3.3 — and the rest is `1/v_e` by the definition in §3. So, honestly and not as a fudge:
-
-```
-ṁ  ≈  C · p_c / v_e            thrust = ṁ · v_e  ≈  C · p_c
-```
-
-**Thrust is nearly propellant-independent; efficiency varies fourteenfold.** That is the real trade
-and it is a much better game than "hydrogen pushes harder": switching propellant does not change how
-hard your ship shoves, it changes how long it can keep shoving and how much tankage the shove costs.
-
-So: **one new dial**, thrust per unit of chamber pressure. Mass flow is then `thrust / v_e`, drawn
-from the chamber. `massPerTick` stops being a stored constant and becomes a derived reading.
-
-**Chamber pressure** is the pipe cell's moles over its volume — `millimolesOf(pipeMass, tile)` against
-`pipeVolumes.at(tile)`, compared by cross-multiplication as `applyPumps` already does rather than by
-forming two pressures. Combined with §1's diffusive refill this makes **plumbing a performance
-system**: `PIPE_VOLUME` (currently `FULL/8`) becomes a dial that matters, and a motor at the end of a
-long run makes less thrust than one beside its supply.
-
-## 5. What this breaks elsewhere
-
-Four of these are silent if missed.
-
-1. ⚠️ **`FlightControls` assumes one exhaust velocity for the whole ship.** It balances motors on
-   `activation × massPerTick × cross` (`FlightControls.kt:223`) — thrust as a proxy for mass flow.
-   Once v_e varies per motor that term needs the velocity in it, or **a ship with a hydrogen motor to
-   port and a nitrogen motor to starboard spins under a straight burn**. Check the `Budget.GRAM`
-   scaling for overflow while touching it.
-2. ⚠️ **`fire()` throws the propellant's own temperature away.** It rebuilds `propellantEnergy` at
-   `Temperature.AMBIENT_KELVIN` rather than reading the chunk's real energy. For a fluid motor T is
-   the entire point, so this must read what is actually there — and it touches the orphan-energy
-   invariant (`StuffLayer.checkInvariants`), so 0 matter ⇒ 0 energy has to keep holding.
-3. **The solid path, and the standing TODO — answered by deletion.** `fire()` carries the question:
-   *"a thruster fed gravel should arguably refuse to fire rather than throw it away. That is an
-   acceptance rule, not an arithmetic one, and it is Stu's call."* The call is **§2.1**: a motor
-   loses its rail port, so nothing can hand it gravel and there is no acceptance rule to write. A
-   question that stops existing is a better answer than a rule that resolves it.
-4. **Save version.** Currently v21. A motor whose `massPerTick` is derived and whose store holds a
-   fluid is a format change; existing thrusters migrate.
+1. ✅ **`FlightControls` weights motors by thrust, not mass flow** (`8dad7374`). Keep it: with v_e
+   varying per motor, weighting by mass would throttle back the engine pushing hardest, and a ship
+   with two propellants would turn while flying straight. Only the value it reads changes, from
+   chamber pressure back to `massPerTick × v_e`.
+2. ✅ **The exhaust's kinetic energy is no longer minted** (`8dad7374`). `½v_e²` *is* the specific
+   enthalpy the velocity was derived from, so the old extra `½mv²` on a blocked motor counted the
+   same joules twice. Keep it.
+3. **`fire()` must read the propellant's real temperature**, not rebuild it at `AMBIENT_KELVIN`. For a
+   motor whose v_e depends on T that is the whole mechanic, and it touches the orphan-energy
+   invariant.
+4. **Save version.** Two format changes land together: a motor's store and rate return, and the pipe
+   layer leaves (§9).
 
 ## 6. Steps
 
 Each ends at a green gate. Commit directly to main, one focused commit per step.
 
-1. ✅ **DONE — γ from atomicity.** `Species.adiabaticK` derived over `MINERALS` atom counts,
-   returning 4, 7 or 8. Nothing reads it yet.
-2. ✅ **DONE — `exhaustVelocity(propellant: Mixture)`**, pure, in `Thruster`'s companion. The §3
-   table to ±2%, and the mole-weighted K makes a blend of equal *masses* of H₂ and N₂ land near the
-   hydrogen, as 14:1 in moles should.
-   ⚠️ **Two faults found here that would have been invisible one step later.** `millimolesOf` on a
-   *store*-sized heap **overflows `Long` negative** — twenty tonnes of hydrogen is 10¹⁹ millimoles —
-   so a motor drawing on a full tank reported no velocity at all; the single-heap overload now goes
-   through `scaledRatio`, while the per-tile one keeps its plain product because a tile cannot hold
-   enough to overflow and it is the pressure field's hot path. And the mole table **floors to zero
-   below about a millimole**, so a nearly-empty chamber returns a velocity of 0 rather than a small
-   one — ⛔ **step 4's `ṁ = thrust / v_e` must guard that, not divide by it.**
-   ⛔ **The first version of the size-independence test passed while both its readings were zero**
-   (one under the floor, one over the overflow). Every reading is now pinned to the physics rather
-   than to another reading.
-3. ✅ **DONE, merged with step 4 — the pipe cell is the chamber.** A motor reads and burns straight
-   out of the pipe under it; no store, no layer crossing, no `gasBecameSolid`. It lost its rail port
-   with it (§2.1), and `massPerTick` with that — a motor has no rate of its own, only a thrust
-   budget and whatever the plumbing has put under it. Flight balance now weights by thrust (§5.1).
-   ⛔ **Blocked on one number — see §10.**
+1. ✅ **DONE — γ from atomicity** (`e6f44812`, corrected `92cc1b56`).
+2. ✅ **DONE — `exhaustVelocity(Mixture)`**, pure (`107ea1c0`).
+3. ⛔ **BUILT AND TO BE REVERTED — the pipe cell as the chamber** (`8dad7374`). See §8. Three pieces
+   of it are keepers and must survive the revert: thrust-weighted flight balance, the un-minted
+   kinetic energy, and the `Species.atomsPerMolecule` / `millimolesOf` work.
+4. **Gate off-gassing** (§2.1): hoppers never, track only under a valve. ⚠️ **First, because nothing
+   else can be tested without it** — a fluid packet evaporates off the belt on its first tick
+   otherwise. Gate: a tonne of liquid oxygen sits in a storage indefinitely; ore over a valve tile
+   still degasses; the air and cargo ledgers both stay closed.
+5. **Fluids ride rails end to end**, with the pump as the source (§3.1) and the `SolidPacket`
+   assertions removed (§2). Gate: a pump fills a storage across a run, through demand and a filter,
+   and a `FluidPacket` survives a save round trip — which it does not today.
+6. **The motor back on rails, with a filter** (§3.4). Gate: **the four parked tests come back** — they
+   are parked on nothing but the missing rate. A motor refuses a packet its filter does not name, and
+   a belt run at one routes past it.
+7. **Delete the pipe network** (§9). Last, because by here nothing needs it.
+8. **Valve as the vent marker** (§3.2), if it has not already fallen out of step 4.
 
-   The reverted first attempt, kept because it is why the chamber is where it is: Built, measured, and reverted: a machine buffer
-   **cannot hold a fluid**. `offGas` walks `buffers.stuff` every tick and moves every fluid species
-   into the room around it, so propellant drawn into a chamber is back in the air before it can be
-   burned. Measured: the draw ran (122 kg, then 1.7 t, then 3 t over successive passes) and the
-   chamber read *empty* at every single check, with both ledgers balanced the whole time — the
-   propellant was going pipe → chamber → room → valve → pipe in a circle.
-4. **Fire on it, and drop the rail port** (§2.1). `massPerTick` becomes `thrust / v_e`; impulse
-   becomes `ejectedMass × v_e` in milli-tiles per tick; propellant energy is read rather than
-   rebuilt (§5.2); `localPorts` returns nothing for a `Thruster`. ⚠️ **The port goes in this step and
-   not before** — a motor with no port and no draw yet is a motor that cannot be fed at all, and the
-   two halves have to land together or the starter vessel stops flying mid-migration. Gate: momentum
-   ledger still balances over a burn; a hydrogen motor and a nitrogen motor at equal chamber pressure
-   make **equal thrust and unequal mass flow**; a belt run at a motor routes past it instead of
-   stalling at it.
-5. **Flight balance by thrust, not flow** (§5.1). Gate: a ship with two different propellants either
-   side of its axis burns straight.
-6. **Panel + save bump.** Chamber pressure, propellant, v_e, ṁ on the inspector. ⛔ **Not done until
-   screenshotted** — three economy bugs were found that way and none by a test.
-
-## 7. Answered — Stu, 2026-09-03
-
-All four are settled. Kept as a record of what was decided against, not as work.
-
-1. ~~Does a thruster keep its rail port?~~ — **no.** See §2.1.
-2. ~~Does the bell mean anything?~~ — **every nozzle is a perfect vacuum nozzle today.** Selectable
-   nozzle shape is deferred until there is non-vacuum flight to select it *for*; until a ship flies
-   somewhere with a back-pressure, expansion ratio is a dial with one correct setting. This is what
-   lets §3 drop the `1 − (p_e/p_c)^((γ−1)/γ)` term and stay in integers.
-3. ~~Where does propellant come from?~~ — **hydrogen off-gassed by captured asteroids**, caught by a
-   pump in the bay. It is already produced, already vented to space when the doors reopen, and it is
-   the best propellant in the game by §3. ⚠️ **So the first real propellant loop needs no new
-   production machinery at all** — a pump, a run of pipe, and a motor. The furnace-to-atmosphere path
-   stays available and unbuilt; nobody has to be told to boil ice.
-4. ~~Is there a tank?~~ — **the pipe network is the tank.** Build a bigger one. `PIPE_VOLUME` is the
-   dial if a run turns out to hold too little to be worth plumbing.
-
-## 8. Where propellant lives — the call step 3 ran into
-
-`offGas` (`world/AmbientChemistry.kt`) is the pass that empties a wet rock into the room it is
-standing in. It walks the **buffer layer**, and it is right to: a hopper of ore carrying methane is
-"gas in a sack", and emptying the sack is the largest thing that function does. It has exactly one
-structural guard — `holdsAirOut`, so a volatile sealed inside a bulkhead stays put — and a machine's
-store is not that.
-
-So "the chamber is a `BufferRole.Input` store holding a fluid" is not a thing the world supports, and
-making it one is a rule about what a machine buffer *is*.
-
-**Recommended: (a) the pipe cell is the chamber.** A motor reads and burns straight out of the pipe
-under it, with no store of its own.
-
-- It is what §7.4 already decided — **the pipe network is the tank** — carried one step further.
-- It **deletes** the layer crossing rather than fixing it. No `gasBecameSolid`, no new term in
-  `massBalance`, no second place where gas becomes cargo. The doc on `massBalance` is explicit that
-  every new way for matter to cross the boundary is a way the ledger reads a leak for ever if
-  somebody forgets, so not adding one is worth real money.
-- §4's chamber pressure becomes **literally the pipe cell's pressure**, which is what it wanted to be
-  anyway and is one fewer indirection.
-- It collapses steps 3 and 4 into one: there is nothing to verify about a draw that is not a burn.
-
-The cost, stated plainly: a motor's throughput is then bounded by one pipe cell an eighth of a tile
-big, refilled by diffusion. That is the *intent* (§1, §4) but it is now the whole story, with no
-buffer to smooth it — a burn will be as steady as the plumbing behind it and no steadier.
-
-**The alternative, (b): exempt a thruster's chamber from `offGas`.** A pressure vessel is sealed, and
-that is a perfectly good sentence. It keeps the plan's shape and the smoothing buffer. It costs a new
-rule about machine buffers that invites the same question of every other machine, and it keeps the
-ledger crossing.
-
-⚠️ **Whichever way this goes, it is worth knowing that nothing in the game currently stores a fluid
-anywhere except a pipe or a room.** A tank machine (§7.4, deferred) would hit this same wall.
-
-## 9. The thrust dial is 4–15× oversized, and it is your call
-
-**Measured, not estimated:**
-
-| | |
-|---|---|
-| A pipe cell at one atmosphere holds | **125 g** |
-| A motor at one atmosphere asks for, per tick | **515 g** (H₂) · **1446 g** (H₂O) · **1928 g** (N₂) |
-| The old flat engine threw | 500 g/tick at 3 km/s |
-
-So a motor wants **four to fifteen times its whole chamber, every tick**. It empties the cell and
-stops, which means **a motor has no rate — it has a gulp**, and a throttle, a flight balance and a
-wire all need a rate to act on. Four tests are `@Ignore`d on exactly that and nothing else:
+⚠️ **Four tests are `@Ignore`d** on step 3's calibration and come back at step 6:
 `the autopilot stops a spin and then stops burning`, `an asymmetric ship goes forward on its rearward
 motors alone`, `an off-centre thruster spins the ship`, `a reading stops the machine outright`.
 
-⚠️ **This is not a fault in the chamber model.** It is the flat engine and the fluid systems having
-been built without reference to each other — the motor was never fed by plumbing before, so nothing
-ever compared the two. The numbers were always this far apart; only now does anything notice.
+## 7. Open — the one that keeps density interesting
 
-Four ways out, and the first is the real decision:
+**Should a gas packet hold a fixed volume rather than a fixed mass?**
 
-- **(i) Make the engine smaller.** To leave throttle headroom at a *pumped* four atmospheres
-  (`Pump.STALL_RATIO`), `THRUST_PER_ATMOSPHERE` wants to be around **1/125** of its calibrated
-  value. That is a number, not a mechanism, and it makes the physics self-consistent: an engine
-  sized to what plumbing can feed. It costs a lot of thrust — ships want many more motors, or much
-  longer burns.
-- **(ii) Cap the throat at a fraction of the chamber per tick.** Defensible physics — a finite throat
-  cannot pass more than the chamber's contents in the time sound crosses it — and it guarantees a
-  rate at any pressure, so throttling always bites. But it is a new mechanism, and it makes thrust
-  stop tracking pressure above the cap.
-- **(iii) Give the motor a buffer after all** — §8's option (b), a chamber exempt from `offGas`.
-  Smoothing is exactly what a buffer is for, and this is the problem it was going to solve.
-- **(iv) Fatten the plumbing.** `PIPE_VOLUME` from `FULL/8` to `FULL` is 8× — 1000 g a cell, still
-  under nitrogen's 1928 g/tick, and it makes a pipe hold as much as a room, which is the thing
-  `PIPE_VOLUME`'s own note says narrowness exists to prevent. Not enough on its own.
+`Capacity.quantityOf` is **already a function for this reason**, and its own doc already says
+*"solids/liquids: volume; gases: mass"*. Make it volume for gases and a hydrogen canister carries far
+less mass than an oxygen one, so a hydrogen line delivers fewer kg/s.
 
-**Recommended: (i).** It needs no new machinery and it is the honest reading of the measurement. But
-it is a large, visible balance change, so it is yours rather than mine.
+That restores the density trade — the actual reason nobody flies much hydrogen — with none of the
+fluid solver, and it is what stops §3.4's "hydrogen gives 3.7× the push" being a free lunch. **Not
+decided.** Cheap to add, and cheapest before anything is balanced around the mass version.
+
+## 8. History — the pipe-fed chamber, and why it turned
+
+Kept because it is the argument for the current shape, and because two of its findings outlived it.
+
+**First attempt: a store fed from the pipe.** Reverted at once. `offGas` walks the buffer layer and
+empties every fluid into the room, so propellant drawn into a chamber was back in the air before it
+could burn — measured, with the draw running (122 kg, then 1.7 t, then 3 t on successive passes) and
+the chamber reading empty at every check while both ledgers stayed closed. It was going pipe →
+chamber → room → valve → pipe in a circle. **That finding is now §2.1's foundation**: a machine
+buffer could not hold a fluid, so off-gassing had to move before anything else could.
+
+**Second: the pipe cell *as* the chamber** (`8dad7374`). This worked, and deleted a great deal — no
+store, no ports, no `gasBecameSolid`, no new term in `massBalance`. What it could not do is supply a
+motor: §1's table. A motor emptied its cell every tick, so it had **no rate, only a gulp**, and a
+throttle, a flight balance and a wire all need a rate.
+
+**The pivot.** Rails were already carrying 100 kg lumps through a mature demand system with filters,
+bridges and twenty-tonne tanks, while plumbing was moving grams by diffusion. Stu, 2026-09-04:
+*"the trickle of diffusive pipe transport feels unfit for this purpose… I feel like we'll always be
+pushing against the fundamental nature of this system."* §1 is why that reading is right rather than
+impatient.
+
+## 9. Deleting the pipe network
+
+Decided 2026-09-04: **entirely**, not scoped down. Half-alive is the worst outcome — a second,
+strictly worse way to move a fluid, which players will keep trying because it is there.
+
+Goes: `PipeField.kt`, `Pumping.kt`'s `applyPumps`, `exchangeLayers` (`Interlayer.kt`),
+`pipeApertures`, `pipeVolumes`, `PIPE_VOLUME`, `VesselState.pipeAir`, `Conduit.Pipe` and its layer,
+the pipe pass in the tick, the pipe inspector layer and overlay, `DeleteLayer.Pipe`, and the pipe
+half of `Valve` and `Pump`.
+
+⚠️ **The migration must not leak.** `atmosphereMass` is `air.totalMass + pipeAir.totalMass`, so a load
+that moves a pipe cell's gas into the **room on the same tile** leaves `atmosphereMass` — and
+therefore `airBalance` — untouched, with no ledger term at all. Only a sealed tile with no room has
+to vent, and that books to `airVentedMass` like any other departure. ⛔ Do not simply drop `pipeAir`:
+every save with plumbing in it would read as a leak for the rest of its life.
 
 ## 10. Explicitly not doing
 
-- **Not** combustion in the chamber. Once §6.4 lands, burning is a reaction run on the parcel before
-  the temperature is read — an increment, not a rewrite. Cold gas first, because it decides every
-  shape downstream and needs no chemistry at all.
-- **Not** pipe ports or fluid demand (§2).
-- **Not** a fluid storage machine (§7.4).
+- **Not** combustion in the chamber. Burning is a reaction run on the parcel before the temperature
+  is read — an increment, not a rewrite. Cold gas first, because it decides every shape downstream.
+- **Not** selectable nozzle shape. Every nozzle is a perfect vacuum nozzle until something flies where
+  there is a back-pressure to expand against; until then expansion ratio is a dial with one correct
+  setting, and dropping the term is what keeps §4 in integers.
 - **Not** restoring momentum to the gas. A thruster mints its impulse from `mass × v_e` directly and
   is unaffected by the fluid solver's absence — see `PLAN_fluid_extraction.md` §3.
 - **Not** exhaust plumes, bloom or thruster audio. Separate work, and it wants this settled first so

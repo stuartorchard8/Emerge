@@ -89,7 +89,7 @@ val Species.atomsPerMolecule: Int
  * The adiabatic index itself is never wanted; every use of it in a rocket is this group, and stating
  * the group is what keeps the arithmetic in integers. γ = 5/3, 7/5 and 4/3 put `2γ/(γ−1)` at exactly
  * 5, 7 and 8 with nothing left over, so an exhaust velocity is an [org.emerge.demo.outofspace.num.isqrt]
- * of whole numbers and there is no fixed-point scale to calibrate. See `PLAN_fluid_thrusters.md` §3.
+ * of whole numbers and there is no fixed-point scale to calibrate. See `PLAN_fluid_thrusters.md` §4.
  *
  * γ falls out of how a molecule can hold energy: an atom has three ways to move and nothing else, a
  * dumbbell adds two ways to tumble, and anything bent or bigger adds the third. So this is a fact
