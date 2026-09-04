@@ -23,6 +23,7 @@ import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.DirectedDeckMachine
 import org.emerge.demo.outofspace.world.machine.Concentrator
+import org.emerge.demo.outofspace.world.machine.Electrolyzer
 import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
@@ -70,6 +71,8 @@ fun materialBefore(kind: DeckMachineKind): Species = when (kind) {
     // unreachable and is here only because the `when` is exhaustive. Titanium keeps it consistent
     // with every other installation rather than inventing an answer for a case that cannot arise.
     DeckMachineKind.DockingPort,
+    // Unreachable for the docking port's reason: it did not exist at version 21 either.
+    DeckMachineKind.Electrolyzer,
     -> Species.Titanium
     DeckMachineKind.Furnace -> Species.Firebrick
     DeckMachineKind.Bridge, DeckMachineKind.Gauge -> materialBefore(Conduit.Rail)
@@ -615,6 +618,8 @@ object Save {
             // A pump holds nothing: what it moves is in the two air fields. Facing and wiring are
             // written by the common code around this.
             is Pump -> {}
+            // Neither does an electrolyzer: what it has made is in its two output stores.
+            is Electrolyzer -> {}
             // The exhaust path is derived from the hull every tick and so is not state — see
             // [exhaustPath]; the propellant is a store, written by the role loop below.
             is Thruster -> {
@@ -1918,6 +1923,8 @@ object Save {
                 } ?: InputKey.Up,
             )
             DeckMachineKind.Pump -> Pump(tile, facing())
+            // Holds nothing of its own: both gases are stores, written by the role loop.
+            DeckMachineKind.Electrolyzer -> Electrolyzer(tile, facing())
             DeckMachineKind.Concentrator -> Concentrator(
                 tile,
                 facing = facing(),

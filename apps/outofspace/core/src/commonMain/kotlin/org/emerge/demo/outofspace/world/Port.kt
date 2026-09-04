@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.world.machine.Electrolyzer
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.machine.DeckArray
@@ -89,6 +90,17 @@ private fun localPorts(machine: DeckMachine): List<LocalPort> {
 
         // In at the back, concentrate out the front, tailings out of the floor.
         is Concentrator -> listOf(
+            LocalPort(-r, 0, Direction.Left, PortKind.Input),
+            LocalPort(r, 0, Direction.Right, PortKind.Output, Stream.Product),
+            LocalPort(0, r, Direction.Down, PortKind.Output, Stream.Waste),
+        )
+
+        // ⚠️ **The concentrator's layout exactly**, because from the outside it is the same machine:
+        // one thing in, two different things out, and the two must leave by different faces or the
+        // player cannot route them apart. Which gas leaves which mouth is fixed rather than dialled
+        // — a machine whose outputs swapped meaning would be a machine you have to inspect before
+        // you can lay a belt to it.
+        is Electrolyzer -> listOf(
             LocalPort(-r, 0, Direction.Left, PortKind.Input),
             LocalPort(r, 0, Direction.Right, PortKind.Output, Stream.Product),
             LocalPort(0, r, Direction.Down, PortKind.Output, Stream.Waste),

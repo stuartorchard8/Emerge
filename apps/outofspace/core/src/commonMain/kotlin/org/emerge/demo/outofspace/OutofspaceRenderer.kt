@@ -7,6 +7,7 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.bufferTile
+import org.emerge.demo.outofspace.world.machine.Electrolyzer
 import org.emerge.demo.outofspace.world.machine.Valve
 import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.Bridge
@@ -806,6 +807,10 @@ class OutofspaceRenderer {
             // visible and selectable while the economy is what is being built.
             is DockingPort -> {
                 footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.DockingPort))
+                fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
+            }
+            is Electrolyzer -> {
+                footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Electrolyzer))
                 fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
             }
             is Furnace -> {
@@ -1881,6 +1886,8 @@ fun kindColor(kind: DeckMachineKind): Long = when (kind) {
     DeckMachineKind.Thruster -> 0xC04A30FFL
     DeckMachineKind.Concentrator -> 0x2E5A6BFFL
     DeckMachineKind.Furnace -> 0x5E5A3BFFL
+    // Cool blue-green: the electrical machine in a room full of hot ones.
+    DeckMachineKind.Electrolyzer -> 0x2F5E64FFL
     DeckMachineKind.Extractor -> 0x6B4A2AFFL
 }
 

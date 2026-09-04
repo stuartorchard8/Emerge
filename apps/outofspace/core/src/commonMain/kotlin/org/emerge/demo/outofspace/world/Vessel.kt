@@ -3,6 +3,7 @@ package org.emerge.demo.outofspace.world
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Fluid
+import org.emerge.demo.outofspace.world.machine.Electrolyzer
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.machine.Gauge
@@ -1210,6 +1211,10 @@ fun fullness(machine: DeckMachine?, centre: TileIndex, grid: Grid, buffers: Buff
     is Hull, is Airlock -> 0
     is Vent -> 0
     is Pump -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / Pump.BUFFER_CAP).toInt()
+    // Against both hoppers plus a feed, so a reading of full means the plant is genuinely backed up
+    // rather than that the fast side got there first.
+    is Electrolyzer -> (massIn(machine, centre, grid, buffers) * SignalField.FULL /
+        (MACHINE_BUFFER_CAP + Electrolyzer.BUFFER_CAP * 2)).toInt()
 }.coerceIn(0, SignalField.FULL)
 
 /**
@@ -1246,6 +1251,16 @@ private fun labelOf(machine: DeckMachine, role: BufferRole): String = when (mach
         BufferRole.Inside -> "PROCESSING"
         BufferRole.Product -> "CONCENTRATE"
         BufferRole.Waste -> "TAILINGS"
+    }
+
+    // Two outputs, which is the bar an entry has to clear — and here the fallback would be worse
+    // than flat, it would be misleading: OUTPUT and WASTE on a machine whose two products are
+    // equally the point, and whose whole reason for having two mouths is that they are different
+    // gases. The names are what a belt has to be routed by.
+    is Electrolyzer -> when (role) {
+        BufferRole.Product -> "HYDROGEN"
+        BufferRole.Waste -> "OXYGEN"
+        else -> "INPUT"
     }
 
     // ⚠️ **Neutral on purpose, and it must stay neutral.** This is what a machine with no entry of

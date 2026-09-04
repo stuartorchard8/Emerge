@@ -155,3 +155,40 @@ fun conservationOf(inputs: List<Mixture>, outputs: List<Mixture>): LongArray {
     }
     return delta
 }
+
+/** The two gases out of an electrolyzer: the hydrogen and the oxygen a charge of water became. */
+data class Electrolysed(val hydrogen: Mixture, val oxygen: Mixture)
+
+/**
+ * `2 H₂O → 2 H₂ + O₂` — a charge of water taken apart into the two gases worth burning.
+ *
+ * ⛔ **The caller hands this water and nothing else, and that is guaranteed at the door rather than
+ * checked here.** An [org.emerge.demo.outofspace.world.machine.Electrolyzer] states an appetite for
+ * **pure** water, so the network never routes it anything else and its feed store cannot hold
+ * anything else — the same "one door" rule every other sink obeys. Handed a lump of gravel this
+ * would cheerfully turn it into hydrogen; the reason it never is, is upstream of here.
+ *
+ * ⚠️ **The mass split is exact, and that is luck worth noticing.** The game's molar masses make
+ * `2 × 18 = 36` in and `2 × 2 + 32 = 36` out, so the ratio is exactly 1:8 with nothing left over.
+ * The hydrogen is computed and **the oxygen is the remainder**, which is this file's structural rule
+ * — no arithmetic path can lose or invent a gram, and `conservationOf` says so out loud.
+ *
+ * ⚠️ **Thermal energy rides along in proportion and no enthalpy is charged.** Breaking the bonds
+ * costs 484 kJ per 36 g, and if that came out of the charge's own heat a kilogram of water would
+ * have to cool by three thousand kelvin to pay for it — it would freeze on the first tick and keep
+ * going. Real electrolysis is driven by electricity, which this game does not have, so the machine
+ * mints it exactly as a [org.emerge.demo.outofspace.world.machine.Furnace]'s element mints its own.
+ * ⛔ **The energy ledger stays closed** because nothing thermal moves here: chemical potential is
+ * not a pool the game tracks, so the joules appear later, on the tick something burns this back to
+ * water, where `reactionEnergy` books them. See `PLAN_chemical_rockets.md` §1.
+ */
+fun electrolyse(water: Mixture): Electrolysed {
+    val total = water.total
+    if (total <= 0L) return Electrolysed(Mixture.EMPTY, Mixture.EMPTY)
+    val hydrogenMass = scaledRatio(2L * Species.Hydrogen.molarMass, 2L * Species.Water.molarMass, total)
+    val hydrogenEnergy = scaledRatio(hydrogenMass, total, water.energy)
+    return Electrolysed(
+        hydrogen = Mixture.of(Species.Hydrogen to hydrogenMass, energy = hydrogenEnergy),
+        oxygen = Mixture.of(Species.Oxygen to total - hydrogenMass, energy = water.energy - hydrogenEnergy),
+    )
+}

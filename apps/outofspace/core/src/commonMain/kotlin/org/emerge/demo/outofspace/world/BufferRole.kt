@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.world.machine.Electrolyzer
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DockingPort
 import org.emerge.demo.outofspace.world.machine.Bridge
@@ -113,6 +114,16 @@ internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
             BufferRole.Inside -> pack(0, 0)
             BufferRole.Product -> pack(r, 0)
             BufferRole.Waste -> pack(0, r)
+        }
+        // ⛔ **No [BufferRole.Inside], and that is the machine rather than an omission.** An
+        // electrolyzer works at a rate straight out of its feed into its two hoppers; there is no
+        // charge sitting in the middle of it being worked on, so there is no tile that would mean
+        // anything. See `Electrolyzer`, which argues the same point from the other end.
+        is Electrolyzer -> when (role) {
+            BufferRole.Input -> pack(-r, 0)
+            BufferRole.Product -> pack(r, 0)
+            BufferRole.Waste -> pack(0, r)
+            BufferRole.Inside -> NO_OFFSET
         }
         is Furnace -> when (role) {
             BufferRole.Input -> pack(-r, 0)

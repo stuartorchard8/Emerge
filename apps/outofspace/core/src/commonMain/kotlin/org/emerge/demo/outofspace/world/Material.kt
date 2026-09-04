@@ -214,7 +214,7 @@ val DeckMachineKind.fillPermille: Int
         // A bell, a throat and the plumbing behind them: thicker than an instrument housing and
         // nowhere near a furnace lining, because the hot part of a rocket is deliberately thin.
         DeckMachineKind.Thruster -> 120
-        DeckMachineKind.Concentrator, DeckMachineKind.Extractor -> 150
+        DeckMachineKind.Concentrator, DeckMachineKind.Extractor, DeckMachineKind.Electrolyzer -> 150
         // A lining thick enough to hold a furnace's heat in, around the space the ore occupies.
         DeckMachineKind.Furnace -> 250
         // Instruments and fittings: mostly a housing. Carried across unchanged.

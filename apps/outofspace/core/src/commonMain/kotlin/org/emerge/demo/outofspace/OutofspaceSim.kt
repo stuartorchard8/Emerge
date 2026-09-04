@@ -8,6 +8,8 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.MachineSettings
 import org.emerge.demo.outofspace.world.aimed
 import org.emerge.demo.outofspace.world.withSettings
+import org.emerge.demo.outofspace.chem.electrolyse
+import org.emerge.demo.outofspace.world.machine.Electrolyzer
 import org.emerge.demo.outofspace.world.machine.HEATER_POWER
 import org.emerge.demo.outofspace.chem.process
 import org.emerge.demo.outofspace.logistics.Capacity
@@ -475,6 +477,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                             ?: if (on) SignalField.FULL else 0,
                         tile, structure,
                     )
+                    is Electrolyzer -> w.split(m, on, tile)
                     is Concentrator -> w.refine(cfg, m, on, tile)
                     is Furnace -> w.refine(cfg, m, on, tile)
                     is Extractor -> w.leech(m, on, tile)
@@ -2818,6 +2821,43 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             return m
         }
 
+        /**
+         * One tick of an [Electrolyzer]: take water off the feed and put the two gases it becomes
+         * into two stores that never meet.
+         *
+         * ⚠️ **Both stores are checked, and either one full stops the machine.** The oxygen side
+         * fills eight times faster than the hydrogen side, so a machine that ran until the *sum* was
+         * full would spend most of its life splitting water it had nowhere to put. Stopping on
+         * either is also what makes the wiring mean something: unwire the oxygen belt and the whole
+         * plant backs up, which is the right consequence and not a stall to design away.
+         *
+         * ⛔ **No ledger term.** Nothing crosses between the cargo and air identities — water goes in
+         * as cargo and two gases come out as cargo — and no thermal energy is created or destroyed,
+         * because [electrolyse] carries the charge's heat across in proportion. The enthalpy it does
+         * not charge for is `PLAN_chemical_rockets.md` §1, not an omission here.
+         */
+        fun split(m: Electrolyzer, on: Boolean, tile: TileIndex): Electrolyzer {
+            if (!on) return m
+            val hydrogenTile = bufferTile(grid, m, tile, BufferRole.Product)!!
+            val oxygenTile = bufferTile(grid, m, tile, BufferRole.Waste)!!
+            val hydrogenHeld = buffers.resourceAt(hydrogenTile)
+            val oxygenHeld = buffers.resourceAt(oxygenTile)
+            if ((hydrogenHeld?.total ?: 0L) >= Electrolyzer.BUFFER_CAP) return m
+            if ((oxygenHeld?.total ?: 0L) >= Electrolyzer.BUFFER_CAP) return m
+
+            val feed = store(m, tile, BufferRole.Input) ?: return m
+            // ⚠️ Through [Mixture.take], the only exact draw: the complement sums back to the feed to
+            // the microgram, and the heat goes with the water rather than staying behind.
+            val charge = feed.take(minOf(Electrolyzer.MASS_PER_TICK, feed.total))
+            if (charge.total <= 0L) return m
+
+            val made = electrolyse(charge)
+            putStore(m, tile, BufferRole.Input, (feed - charge).orNull())
+            buffers.put(hydrogenTile, hydrogenHeld?.plus(made.hydrogen) ?: made.hydrogen)
+            buffers.put(oxygenTile, oxygenHeld?.plus(made.oxygen) ?: made.oxygen)
+            return m
+        }
+
         fun leech(m: Extractor, on: Boolean, tile: TileIndex): Extractor {
             // Backed up: stop biting. What is not taken is still in the rock — or still on the floor
             // — which is a better place for it than a buffer; nothing is forfeit by waiting.
@@ -3997,6 +4037,28 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 else for (f in Fluid.ALL) list.add(Acceptance.filtered(SpeciesFilter(f.species, minPercent = null)))
             }
 
+            // ── Electrolyzers: water, and only water that is already pure ────
+            //
+            // ⛔ **100%, and the strictness is what lets `electrolyse` be three lines.** The split
+            // has no answer for a contaminant: it cannot turn gravel into hydrogen and it has
+            // nowhere to put it if it does not, so anything that is not water would settle in the
+            // feed store and stop the machine for good. Refusing it at the *route* rather than at
+            // the door is this file's own rule — the network simply never sends it, so there is
+            // nothing to strand and nothing to explain.
+            //
+            // ⚠️ **The player concentrates first**, which is a machine they already have and an
+            // idiom they already know. It is also the same standard `BUILD_PURITY_PERCENT` holds
+            // them to, so "pure means pure" stays one rule rather than two with a tolerance between.
+            for ((tile, at) in ports) {
+                if (rails[tile.index] == null) continue
+                val input = at.firstOrNull { it.kind == PortKind.Input } ?: continue
+                if (deck[input.owner] !is Electrolyzer) continue
+                // A site is not a machine — the warehouse note above is the same trap.
+                if (deck.isGhost(input.owner)) continue
+                accepts.getOrPut(tile) { mutableListOf() }
+                    .add(Acceptance.filtered(SpeciesFilter(Species.Water, SpeciesFilter.MAX_PERCENT)))
+            }
+
             // ── Concentrators: ore, and never anything already pure ──────────
             //
             // ⛔ **A concentrator has nothing to do to a pure lump.** Feeding it one wastes a charge
@@ -4468,7 +4530,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // Both take a feed, and both take it the way every buffered kind does — by role
                 // tile, kind-blind. See the machine-list twin above.
                 is Thruster, is Concentrator, is Furnace,
-                is DockingPort, is Extractor -> {
+                is DockingPort, is Extractor, is Electrolyzer -> {
                     val role = inputBufferRole(destination) ?: return false
                     val store = bufferTile(grid, destination, destination.center, role) ?: return false
                     val merged = acceptInto(destination, buffers.resourceAt(store), packet) ?: return false

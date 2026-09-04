@@ -179,6 +179,15 @@ fun DeckMachine.withSettings(settings: MachineSettings): DeckMachine {
             if (settings.facing is Setting.Present) result = result.copy(facing = settings.facing.value)
             result
         }
+        // Wiring and facing, which is the whole of it — the split has no dial. A ratio would be
+        // a lie: `2 H₂O → 2 H₂ + O₂` is one reaction and it goes the one way.
+        DeckMachineKind.Electrolyzer -> {
+            base as Electrolyzer
+            var result = base
+            if (settings.wiring is Setting.Present) result = result.copy(wiring = settings.wiring.value)
+            if (settings.facing is Setting.Present) result = result.copy(facing = settings.facing.value)
+            result
+        }
         DeckMachineKind.Pump -> {
             base as Pump
             var result = base

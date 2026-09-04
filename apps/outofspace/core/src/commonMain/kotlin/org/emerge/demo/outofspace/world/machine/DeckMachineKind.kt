@@ -63,6 +63,14 @@ enum class DeckMachineKind(
      */
     Thruster("THRUSTER", preventThoroughfare = true),
     Concentrator("CONCENTRATOR", preventThoroughfare = true, gatesOutput = true),
+    /**
+     * Water in, hydrogen out of one face and oxygen out of another — see `Electrolyzer`.
+     *
+     * Whole packets, for the pump's reason rather than the concentrator's: its two stores are
+     * hoppers filling at a rate, not a pair of finished packets, and the 1:8 mass split means a
+     * charge handed out whole would make a runt of the hydrogen every single time.
+     */
+    Electrolyzer("ELECTROLYZER", preventThoroughfare = true, gatesOutput = true, shipsWholePackets = true),
     Furnace("FURNACE", preventThoroughfare = true, gatesOutput = true),
     Extractor("EXTRACTOR", gatesOutput = true, shipsWholePackets = true),
 

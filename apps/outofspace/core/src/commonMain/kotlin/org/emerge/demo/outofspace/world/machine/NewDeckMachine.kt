@@ -27,6 +27,7 @@ fun newDeckMachine(kind: DeckMachineKind, tile: TileIndex, facing: Direction): D
     DeckMachineKind.Sensor -> Sensor(tile, facing, threshold = SignalField.FULL, delay = 0, release = 0)
     DeckMachineKind.KeyInput -> WireButton(tile)
     DeckMachineKind.Pump -> Pump(tile, facing)
+    DeckMachineKind.Electrolyzer -> Electrolyzer(tile, facing)
     DeckMachineKind.Thruster -> Thruster(tile, facing)
     DeckMachineKind.Concentrator -> Concentrator(tile, facing)
     DeckMachineKind.Furnace -> Furnace(tile, facing)
