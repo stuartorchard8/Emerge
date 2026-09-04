@@ -201,32 +201,39 @@ class ReductionSweepTest {
     // ── Oxygen is what stops it ──────────────────────────────────────────────
 
     @Test
-    fun `in air the reagent burns instead of reducing`() {
+    fun `oxygen blended into the charge burns the reagent instead of reducing with it`() {
         // "Reduction wants a vacuum" as an *outcome* rather than a rule. Nothing in `Reduction.kt`
         // mentions oxygen; the reductant is simply also a fuel, and the oxidation table is running
-        // over the same tile. The same charge, twice, differing only in whether there is air.
+        // over the same charge. The same charge, twice, differing only in whether oxygen is in it.
+        //
+        // ⛔ **The oxygen is in the charge now, not in the room.** A store reacts with itself, so a
+        // hopper in an airy room reduces exactly as well as one in a vacuum — see
+        // `PLAN_fluid_thrusters.md` §2.2. What still spoils a reduction is oxygen the player let
+        // into the mixture, which is the version of this that a player can actually cause.
+        //
         // ⚠️ **The carbon has to be the scarce thing** for this to show anything. With a hopper full
         // of graphite, burning a fraction of it still leaves far more than the quartz row can use, and
-        // the two runs come out identical — which says the air is harmless rather than that the test
-        // is badly sized. Scarce carbon is also the honest case: it is the reagent the player paid to
-        // put there.
-        fun run(air: MassArray): Long {
-            val layer = layerWith(Species.Quartz to 100L * kg, Species.Carbon to 200L * Budget.GRAM)
+        // the two runs come out identical — which says the oxygen is harmless rather than that the
+        // test is badly sized. Scarce carbon is also the honest case: it is the reagent the player
+        // paid to put there.
+        fun run(oxygen: Long): Long {
+            val layer = layerWith(
+                Species.Quartz to 100L * kg,
+                Species.Carbon to 200L * Budget.GRAM,
+                Species.Oxygen to oxygen,
+            )
             layer.heatTo(2400)
-            react(air, EnergyArray(tiles), null, listOf(layer))
+            react(vacuum(), EnergyArray(tiles), null, listOf(layer))
             return layer[tile, Species.Silicon]
         }
 
-        val airy = MassArray(tiles)
-        airy.add(tile, Fluid.Oxygen, 50L * kg)
+        val clean = run(0L)
+        val fouled = run(50L * kg)
 
-        val inVacuum = run(vacuum())
-        val inAir = run(airy)
-
-        assertTrue(inVacuum > 0L, "no silicon was made even in a vacuum")
+        assertTrue(clean > 0L, "no silicon was made even with a clean charge")
         assertTrue(
-            inAir < inVacuum,
-            "air made no difference: $inAir in air against $inVacuum in vacuum — is the carbon being " +
+            fouled < clean,
+            "oxygen made no difference: $fouled fouled against $clean clean — is the carbon being " +
                 "double-spent rather than contended?",
         )
     }

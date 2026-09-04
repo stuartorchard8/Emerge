@@ -98,11 +98,22 @@ class AmbientChemistryTest {
         )
     }
 
-    /** A lump of carbon carrying enough heat to be at [kelvin]. */
-    private fun carbonAt(kelvin: Int, mass: Long = 20L * Budget.KILOGRAM): Mixture {
-        val capacity = mass * Species.Carbon.specificHeat / Budget.CAPACITY_DIVISOR
-        return Mixture.of(Species.Carbon to mass, energy = capacity * kelvin)
-    }
+    /**
+     * A lump of carbon **carrying its own oxygen**, at [kelvin].
+     *
+     * ⛔ **The oxygen is in the lump because a lump only reacts with itself now.** A store reacts
+     * with what it is holding and with nothing else (Stu, 2026-09-04) — so a bar of pure carbon in a
+     * roomful of air is inert, however hot, and every fire in this file has to be *built* rather
+     * than merely lit. See `PLAN_fluid_thrusters.md` §2.2.
+     *
+     * Two thirds oxygen by mass is a shade over stoichiometric for `C + O₂ → CO₂` (32 to 12), so the
+     * carbon is what runs out first and the tests below can still ask what happens when it does.
+     */
+    private fun carbonAt(
+        kelvin: Int,
+        mass: Long = 20L * Budget.KILOGRAM,
+        oxygen: Long = mass * 3L,
+    ): Mixture = lumpAt(kelvin, Species.Carbon to mass, Species.Oxygen to oxygen)
 
     private fun railMass(s: VesselState, species: Species): Long {
         var sum = 0L
@@ -142,7 +153,7 @@ class AmbientChemistryTest {
     // ── It happens at all ────────────────────────────────────────────────────
 
     @Test
-    fun `hot carbon on a belt burns in the air around it`() {
+    fun `hot carbon on a belt burns in the oxygen it is carrying`() {
         val start = withLump(carbonAt(burningKelvin))
         val after = run(start, TICKS)
 
@@ -159,8 +170,12 @@ class AmbientChemistryTest {
             "carbon left the belt and no carbon dioxide took its place",
         )
         assertTrue(
-            airMass(after, Fluid.Oxygen) < airMass(start, Fluid.Oxygen),
+            railMass(after, Species.Oxygen) < railMass(start, Species.Oxygen),
             "carbon dioxide appeared without any oxygen being consumed",
+        )
+        assertEquals(
+            airMass(start, Fluid.Oxygen), airMass(after, Fluid.Oxygen),
+            "the fire reached into the room for its oxygen",
         )
     }
 
@@ -193,18 +208,24 @@ class AmbientChemistryTest {
     }
 
     @Test
-    fun `carbon in a vacuum does not burn however hot it is`() {
-        // Decision 2 of the plan, as a test: the reagent comes from the atmosphere, so *where* a
-        // thing is decides whether it reacts. This is the property a carbothermic reduction will
-        // later depend on, and it is worth pinning before anything depends on it.
-        val start = withLump(carbonAt(burningKelvin))
-            .let { it.copy(air = Stuff.empty(grid.size), baselineAirMass = 0L, baselineAirEnergy = 0L) }
+    fun `carbon with no oxygen of its own does not burn, however hot it is, and however airy the room`() {
+        // ⛔ **The same claim as before, relocated.** It used to be "put the lump in a vacuum",
+        // because the reagent came from the atmosphere and *where* a thing was decided whether it
+        // reacted. A store now reacts with itself, so what decides is *what it is carrying* — and
+        // the sharper version of the test is a bar of pure carbon in a room full of air, which is
+        // the case that used to burn and now must not.
+        val start = withLump(carbonAt(burningKelvin, oxygen = 0L))
         val after = run(start, TICKS)
 
+        assertTrue(airMass(start, Fluid.Oxygen) > 0L, "fixture: the room must be airy for this to mean anything")
         assertEquals(
             railMass(start, Species.Carbon),
             railMass(after, Species.Carbon),
-            "carbon burned with no oxygen to burn in",
+            "carbon burned on the room's oxygen",
+        )
+        assertEquals(
+            airMass(start, Fluid.Oxygen), airMass(after, Fluid.Oxygen),
+            "the room lost oxygen to a lump that cannot reach it",
         )
     }
 
@@ -257,16 +278,20 @@ class AmbientChemistryTest {
     }
 
     @Test
-    fun `a fire in a sealed room goes out when the room runs out of air`() {
+    fun `a fire goes out when the lump runs out of its own oxygen`() {
         // What stops it, now that cooling does not. The oxygen is the bound — decision 2, and the
-        // reason a sealed room is a different place to put something flammable than an open one.
-        // A trace of air burns a trace of carbon and then nothing, however hot the lump is.
+        // reason a lump is worth blending deliberately rather than merely lighting. A trace of
+        // oxygen burns a trace of carbon and then nothing, however hot the lump is.
+        //
+        // ⛔ **The bound moved from the room to the lump**, with the coupling. A sealed room is no
+        // longer a different place to put something flammable, because the room was never what fed
+        // it; what a player controls is the mixture.
         val trace = 20L * Budget.GRAM
-        val start = starved(carbonAt(burningKelvin), oxygen = trace)
+        val start = starved(carbonAt(burningKelvin, oxygen = 0L), oxygen = trace)
         val after = run(start, TICKS * 4)
 
         assertTrue(railMass(after, Species.Carbon) > 0L, "the whole lump went, so nothing was starved")
-        assertTrue(airMass(after, Fluid.Oxygen) < trace / 2L, "the fire did not use the air it had")
+        assertTrue(railMass(after, Species.Oxygen) < trace / 2L, "the fire did not use the oxygen it had")
 
         // Out, and staying out: once it has settled, a further run of the same length takes no more
         // carbon at all, because there is no more oxygen to take it with.
@@ -282,7 +307,7 @@ class AmbientChemistryTest {
         assertEquals(
             railMass(settled, Species.Carbon),
             railMass(later, Species.Carbon),
-            "carbon kept burning in a room with no oxygen left in it",
+            "carbon kept burning with no oxygen left in the lump",
         )
     }
 
@@ -308,16 +333,16 @@ class AmbientChemistryTest {
 
     @Test
     fun `every atom is accounted for, species by species`() {
-        // The per-species statement, across both media at once. Carbon that leaves the belt must
-        // turn up as carbon *inside* carbon dioxide, and the oxygen that went with it must come out
-        // of the room's oxygen — a total-only check would pass if the two were swapped.
+        // The per-species statement. Carbon that leaves the belt must turn up as carbon *inside*
+        // carbon dioxide, and the oxygen that went with it must come out of the lump's own oxygen —
+        // a total-only check would pass if the two were swapped.
         val start = withLump(carbonAt(burningKelvin))
         val after = run(start, TICKS)
 
         val carbonBurned = railMass(start, Species.Carbon) - railMass(after, Species.Carbon)
         assertTrue(carbonBurned > 0L, "nothing burned")
 
-        val oxygenUsed = airMass(start, Fluid.Oxygen) - airMass(after, Fluid.Oxygen)
+        val oxygenUsed = railMass(start, Species.Oxygen) - railMass(after, Species.Oxygen)
         val oxidesMade = carbonOxidesAnywhere(after) - carbonOxidesAnywhere(start)
 
         assertEquals(carbonBurned + oxygenUsed, oxidesMade, "the carbon oxides do not weigh their own parts")
@@ -354,8 +379,13 @@ class AmbientChemistryTest {
         // wrong ordinal, which arithmetic tests cannot see because they never index a field. Both
         // carbon oxides are on the exempt list: the belt is where a reaction puts them now, and the
         // room is only where they end up. See [carbonOxidesAnywhere].
+        // ⚠️ Oxygen is on the exempt list now: it is a *reagent in the lump* rather than something
+        // drawn from the room, so of course it changes on the belt. That is the coupling's removal
+        // showing up in the one place it has to.
         for (s in Species.ALL) {
-            if (s == Species.Carbon || s == Species.CarbonDioxide || s == Species.CarbonMonoxide) continue
+            if (s == Species.Carbon || s == Species.CarbonDioxide || s == Species.CarbonMonoxide ||
+                s == Species.Oxygen
+            ) continue
             assertEquals(railMass(start, s), railMass(after, s), "$s changed on the belt")
         }
         for (f in Fluid.ALL) {
@@ -426,35 +456,37 @@ class AmbientChemistryTest {
     }
 
     /**
-     * The same sealed box with almost no air in it — a trace of oxygen over the whole run of track.
+     * A lump with almost no oxygen **in it** — the trace every row in it has to share.
      *
-     * This is what makes contention *happen* rather than merely be implemented: with a room full of
-     * air both reactions get everything they ask for and the apportionment is never consulted, so a
-     * test against ambient air would pass just as well with the demand pass deleted.
+     * This is what makes contention *happen* rather than merely be implemented: given plenty, both
+     * reactions get everything they ask for and the apportionment is never consulted, so a test
+     * against a generous lump would pass just as well with the demand pass deleted.
+     *
+     * ⛔ **The trace moved from the room into the lump**, with the coupling. Starving the room now
+     * starves nothing, because nothing on a belt was ever going to reach it.
      */
-    private fun starved(lump: Mixture, oxygen: Long): VesselState {
-        val base = withLump(lump)
-        val mass = MassArray(grid.size)
-        mass[grid.tile(5, ROW), Fluid.Oxygen] = oxygen
-        val air = Stuff.gas(mass)
-        return base.copy(air = air, baselineAirMass = air.totalMass, baselineAirEnergy = air.totalEnergy)
-    }
+    private fun starved(lump: Mixture, oxygen: Long): VesselState =
+        withLump(Mixture.of(lump.masses, lump.energy) + Mixture.of(Species.Oxygen to oxygen, energy = 0L))
 
     @Test
-    fun `hot iron on a belt takes oxygen out of the room and keeps it`() {
+    fun `hot iron scales on the oxygen it carries and keeps it`() {
         // The crossing increment 1 never ran: mass leaves the atmosphere and stays in the solid. A
         // reaction whose product is not a fluid makes the *cargo* heavier, which is the direction
         // `gasBecameSolid` exists for.
-        val start = withLump(lumpAt(scalingKelvin, Species.Iron to 20L * Budget.KILOGRAM))
+        val start = withLump(lumpAt(
+            scalingKelvin,
+            Species.Iron to 20L * Budget.KILOGRAM,
+            Species.Oxygen to 20L * Budget.KILOGRAM,
+        ))
         val after = run(start, TICKS)
 
         val ironLost = railMass(start, Species.Iron) - railMass(after, Species.Iron)
         assertTrue(ironLost > 0L, "the iron did not scale")
 
         val scaleMade = railMass(after, Species.Hematite) - railMass(start, Species.Hematite)
-        val oxygenUsed = airMass(start, Fluid.Oxygen) - airMass(after, Fluid.Oxygen)
+        val oxygenUsed = railMass(start, Species.Oxygen) - railMass(after, Species.Oxygen)
 
-        assertTrue(oxygenUsed > 0L, "scale appeared without the room losing any oxygen")
+        assertTrue(oxygenUsed > 0L, "scale appeared without any oxygen being consumed")
         assertEquals(ironLost + oxygenUsed, scaleMade, "the scale does not weigh its own parts")
         // ⚠️ **To within one unit per pass, not exactly**, and that is the honest statement. Each
         // pass floors its own oxygen from its own iron, and a sum of floors is not the floor of a
@@ -470,7 +502,7 @@ class AmbientChemistryTest {
     }
 
     /**
-     * ⛔ **Hull salvage becomes rail iron, and what it costs is the room's oxygen.**
+     * ⛔ **Hull salvage becomes rail iron, and what it costs is oxygen blended in with it.**
      *
      * `Fe₉₉C + O₂ → 99 Fe + CO₂`, which is decarburisation and which is what a Bessemer converter
      * does. It is the one way back out of an alloy in the game, and it is what makes a marked hull
@@ -483,8 +515,12 @@ class AmbientChemistryTest {
      * pinning the outcome of that race, which is a tuning fact and not the contract.
      */
     @Test
-    fun `steel in a hot airy room gives its carbon up and leaves iron behind`() {
-        val start = withLump(lumpAt(decarburisingKelvin, Species.Steel to 20L * Budget.KILOGRAM))
+    fun `steel with oxygen in it gives its carbon up and leaves iron behind`() {
+        val start = withLump(lumpAt(
+            decarburisingKelvin,
+            Species.Steel to 20L * Budget.KILOGRAM,
+            Species.Oxygen to 20L * Budget.KILOGRAM,
+        ))
         val after = run(start, TICKS)
 
         val steelLost = railMass(start, Species.Steel) - railMass(after, Species.Steel)
@@ -493,8 +529,8 @@ class AmbientChemistryTest {
         val ironMade = railMass(after, Species.Iron) - railMass(start, Species.Iron)
         assertTrue(ironMade > 0L, "steel was consumed and no iron came out of it")
 
-        val oxygenUsed = airMass(start, Fluid.Oxygen) - airMass(after, Fluid.Oxygen)
-        assertTrue(oxygenUsed > 0L, "carbon left the steel without the room losing any oxygen")
+        val oxygenUsed = railMass(start, Species.Oxygen) - railMass(after, Species.Oxygen)
+        assertTrue(oxygenUsed > 0L, "carbon left the steel without any oxygen being consumed")
 
         // ⚠️ Iron plus its scale, because the rust row takes a share of the iron the moment it
         // exists. The two together are what the steel actually turned into.
@@ -554,7 +590,11 @@ class AmbientChemistryTest {
         // this way. The air ledger has to hear that the atmosphere shrank on purpose and the cargo
         // ledger has to hear that it grew — book one and both are wrong in opposite directions,
         // which reads as two unrelated leaks.
-        val start = withLump(lumpAt(scalingKelvin, Species.Iron to 20L * Budget.KILOGRAM))
+        val start = withLump(lumpAt(
+            scalingKelvin,
+            Species.Iron to 20L * Budget.KILOGRAM,
+            Species.Oxygen to 20L * Budget.KILOGRAM,
+        ))
         val after = run(start, TICKS)
 
         assertTrue(railMass(after, Species.Hematite) > 0L, "nothing scaled, so this proves nothing")
@@ -569,11 +609,15 @@ class AmbientChemistryTest {
     }
 
     @Test
-    fun `two reactions in one tile never take more oxygen than is there`() {
-        // The property the demand pass exists for. Both reactants on one tile, both well above
-        // their onsets, and between them they want far more oxygen than the room holds. Resolved by
+    fun `two reactions in one lump never take more oxygen than is there`() {
+        // The property the demand pass exists for. Both reactants in one lump, both well above
+        // their onsets, and between them they want far more oxygen than the lump holds. Resolved by
         // iteration order this would hand the lot to carbon and then let iron take oxygen that no
-        // longer existed — which the air ledger reports not as a reaction but as a leak.
+        // longer existed — which the ledger reports not as a reaction but as a leak.
+        //
+        // ⚠️ **Contention within one store is what survived the coupling's removal**, and it is
+        // still the thing worth testing: two rows sharing a packet's oxygen is exactly the case a
+        // player builds when they blend a charge.
         val trace = 5L * Budget.GRAM
         val start = starved(
             lumpAt(burningKelvin, Species.Carbon to 20L * Budget.KILOGRAM, Species.Iron to 20L * Budget.KILOGRAM),
@@ -582,9 +626,12 @@ class AmbientChemistryTest {
         val after = run(start, TICKS)
 
         for (tile in grid.tiles) {
-            assertTrue(after.air.massOf(tile, Fluid.Oxygen) >= 0L, "a tile went oxygen-negative")
+            assertTrue(after.rail.stuff[tile, Species.Oxygen] >= 0L, "a lump went oxygen-negative")
         }
-        assertTrue(airMass(after, Fluid.Oxygen) < trace, "a starved tile with two reactions in it used nothing")
+        assertTrue(
+            railMass(after, Species.Oxygen) < trace,
+            "a starved lump with two reactions in it used nothing",
+        )
         assertEquals(0L, after.airBalance, "the air ledger is out by ${after.airBalance}")
         assertEquals(
             0L,
@@ -621,7 +668,12 @@ class AmbientChemistryTest {
         // would show up: one reaction's product landing in the other's ordinal balances in total and
         // is nonsense in detail.
         val start = withLump(
-            lumpAt(burningKelvin, Species.Carbon to 20L * Budget.KILOGRAM, Species.Iron to 20L * Budget.KILOGRAM),
+            lumpAt(
+                burningKelvin,
+                Species.Carbon to 20L * Budget.KILOGRAM,
+                Species.Iron to 20L * Budget.KILOGRAM,
+                Species.Oxygen to 40L * Budget.KILOGRAM,
+            ),
         )
         val after = run(start, TICKS)
 
@@ -629,21 +681,30 @@ class AmbientChemistryTest {
         val ironScaled = railMass(start, Species.Iron) - railMass(after, Species.Iron)
         assertTrue(carbonBurned > 0L && ironScaled > 0L, "only one of the two reactions ran")
 
-        val scaleMade = railMass(after, Species.Hematite) - railMass(start, Species.Hematite)
-        val oxidesMade = carbonOxidesAnywhere(after) - carbonOxidesAnywhere(start)
-        val oxygenUsed = airMass(start, Fluid.Oxygen) - airMass(after, Fluid.Oxygen)
-
-        // Every gram of oxygen the room lost is in one of the two products, and nowhere else. The
-        // carbon's share is spread across both of its oxides now — see [carbonOxidesAnywhere].
+        // ⛔ **"The oxygen is in exactly two products" stopped being true, and what replaced it is
+        // stronger.** With the carbon and the iron shut in together the packet does more chemistry
+        // than it could when the room was stealing the carbon: measured over this fixture it makes
+        // **steel** and magnetite as well as scale and the two carbon oxides. Iron and carbon hot in
+        // one place alloying is correct, and it was unreachable while a lump burned in the room.
+        //
+        // So the claim is the one that was always meant: **nothing left the cargo layer, and nothing
+        // arrived in it.** A mis-indexed write — one reaction's product landing in another's ordinal
+        // — still fails this, because it would have to conjure or destroy mass to do it, and the
+        // per-species sweep below pins which species were allowed to move at all.
         assertEquals(
-            oxygenUsed,
-            (oxidesMade - carbonBurned) + (scaleMade - ironScaled),
-            "the oxygen the room lost is not in the two products",
+            railMass(start, Species.Oxygen) + railMass(start, Species.Carbon) + railMass(start, Species.Iron),
+            Species.ALL.sumOf { railMass(after, it) },
+            "the lump does not weigh what it was made of",
         )
+        assertEquals(0L, after.massBalance, "the cargo ledger is out by ${after.massBalance}")
+        assertEquals(0L, after.airBalance, "a lump reacting with itself moved the air ledger")
 
+        // ⚠️ **Everything a hot iron-and-carbon packet can become**, which is more than it was: the
+        // two reagents shut in together also alloy to steel, and the iron scales to magnetite as
+        // well as hematite. That breadth is the coupling's removal, not a leak — the mass identity
+        // above is what says so.
         for (s in Species.ALL) {
-            // CO2 is on this list now: the belt is where a reaction puts it, and the room is only
-            // where it ends up. Same reason [carbonOxidesAnywhere] exists.
+            if (s == Species.Oxygen || s == Species.Magnetite || s == Species.Steel) continue
             if (s == Species.Carbon || s == Species.Iron || s == Species.Hematite ||
                 s == Species.CarbonDioxide || s == Species.CarbonMonoxide
             ) continue

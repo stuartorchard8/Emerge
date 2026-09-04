@@ -69,6 +69,39 @@ emergent**: a player dumping volatiles off an asteroid to concentrate the ore mo
 a deliberate trade that can still fill a corridor with methane. What goes away is the frustrating
 accident, not the fire.
 
+### 2.2 A store reacts with itself, and with nothing else
+
+Decided 2026-09-04, and it is the other half of §2.1. **Reagents must be in the same store as the
+principal.** Oxygen in the room can no longer burn carbon on a belt; a store's rows draw on that
+store's contents alone.
+
+⛔ **Why it had to follow.** Gating off-gassing made the coupling one-way: a reaction's gaseous
+product stays in cargo (`react` deliberately never decides phase), so a fire on a belt took the
+room's oxygen and gave nothing back, and a sealed room headed for vacuum. Either the products go
+back to the air — which reverses that rule and reopens the gas-sealed-in-a-bulkhead bug
+`SealedTileGasTest` exists for — or the coupling closes. It closed.
+
+**What went with it, deliberately:** iron no longer rusts in the air it passes through, steel no
+longer gives its carbon up to a hot room, and a fire no longer dies because the room ran out. Those
+were the mechanic `AmbientChemistry` was built around. A player now *blends* a charge — oxygen is a
+cargo species you deliver — which is a thing they control rather than a thing that happens to them.
+
+⚠️ **`supplyOf` is where it lived**, and it now reads one store rather than pooling the tile. The
+apportionment survives and still matters, because two rows in one packet still contend for its
+oxygen; what stopped existing is contention *between* stores. `OxygenWellTest` was entirely about
+that and is deleted — the surviving rule is guarded by `AmbientChemistryTest`'s two contention cases.
+
+✅ **Two things fell out that are better than what they replaced.** `BoudouardTest` had complained
+that `CO₂ + C → 2 CO` was "a real behaviour, correctly measured, in a configuration the simulation
+cannot produce" — a cargo layer could not hold CO₂ above 304 K because `offGas` evicted it. With
+off-gassing opt-in that configuration is producible, so the row now fires where it always should
+have: inside one hot lump, making carbon monoxide out of its own exhaust. And a packet of iron,
+carbon and oxygen held hot together **makes steel**, which was unreachable while the room stole the
+carbon first.
+
+⏸ **Deferred, Stu's idea:** packets reacting with the *rail* they are standing on. Kept simple for
+now.
+
 ## 3. The three machines
 
 ### 3.1 Pump — a 1×1 source that packetises the room

@@ -127,9 +127,14 @@ class FurnaceTest {
     }
 
     /** A charge of [species] at ambient temperature — cold, the way a delivery arrives. */
-    private fun cold(species: Species, mass: Long = CHARGE): Mixture {
-        val capacity = mass * species.specificHeat / Budget.CAPACITY_DIVISOR
-        return Mixture.of(species to mass, energy = capacity * Temperature.AMBIENT_KELVIN)
+    private fun cold(species: Species, mass: Long = CHARGE, oxygen: Long = 0L): Mixture {
+        var capacity = mass * species.specificHeat / Budget.CAPACITY_DIVISOR
+        capacity += oxygen * Species.Oxygen.specificHeat / Budget.CAPACITY_DIVISOR
+        return Mixture.of(
+            species to mass,
+            Species.Oxygen to oxygen,
+            energy = capacity * Temperature.AMBIENT_KELVIN,
+        )
     }
 
     private fun chamber(): TileIndex = centre
@@ -242,7 +247,10 @@ class FurnaceTest {
         // The point of the whole increment: the machine did not burn this. It made a place hot, and
         // carbon in air at that temperature burns for the same reason and by the same arithmetic as
         // carbon on a belt. The only thing the decomposer contributed was the conditions.
-        val start = withCharge(cold(Species.Carbon), setTemperature = 1200)
+        // ⛔ **The oxygen is in the charge, because a store reacts with itself.** A furnace makes a
+        // place hot; it does not hand its charge the room's air. Burning something in one is
+        // therefore a thing the player *blends* — see `PLAN_fluid_thrusters.md` §2.2.
+        val start = withCharge(cold(Species.Carbon, oxygen = CHARGE * 3L), setTemperature = 1200)
         val after = run(start, SETTLING_TICKS)
 
         val carbonLeft = (store(after, BufferRole.Inside)?.get(Species.Carbon) ?: 0L) +
@@ -283,7 +291,7 @@ class FurnaceTest {
         // ledger the rail is — so a chamber that burns its charge has to book the crossing exactly
         // as a belt does. If `cargoMass` and the sweep ever disagreed about whether a hopper counts,
         // this is where it would show.
-        val start = withCharge(cold(Species.Carbon), setTemperature = 1200)
+        val start = withCharge(cold(Species.Carbon, oxygen = CHARGE * 3L), setTemperature = 1200)
         val after = run(start, SETTLING_TICKS)
 
         // Against the *start*, not against zero: a room already has carbon dioxide in it, so

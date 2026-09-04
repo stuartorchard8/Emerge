@@ -337,19 +337,22 @@ fun react(
     val parts = LongArray(REACTIONS.maxOf { it.products.size })
     val wantedBySpecies = LongArray(Species.COUNT)
     val scaleBySpecies = LongArray(Species.COUNT)
-    val touched = IntArray(WIDEST_REACTION * REACTIONS.size * (layers.size + 1))
+    val touched = IntArray(WIDEST_REACTION * REACTIONS.size)
     // ⛔ **What each consumer asked for, kept.** The react phase must divide the *same* number the
     // demand phase counted, and `feasible` reads live supply — so recomputing it after the first
     // consumer has drawn gives a different answer, and two identical cargo layers at one tile stop
     // burning identical amounts. Jacobi is a promise about one snapshot; this is where the snapshot
     // is held.
-    val planned = LongArray((layers.size + 1) * REACTIONS.size)
+    val planned = LongArray(REACTIONS.size)
 
     var released = 0L
-    var toGasMass = 0L
-    var toGasEnergy = 0L
-    var toSolidMass = 0L
-    var toSolidEnergy = 0L
+    // Always zero now that nothing crosses between media in this pass — kept so the shape of a
+    // [ChemistryStep] is the same whoever produced it, and so a caller need not know which passes
+    // can cross and which cannot.
+    val toGasMass = 0L
+    val toGasEnergy = 0L
+    val toSolidMass = 0L
+    val toSolidEnergy = 0L
 
     // −1 is the air; 0 and up are the cargo layers. One index space so the two loops below can be
     // written once, since everything except the lookups is identical between them.
@@ -359,18 +362,38 @@ fun react(
     for (i in 0 until tiles) {
         val tile = TileIndex(i)
 
-        // ── Everybody's demand, against one snapshot ─────────────────────────
-        var marks = 0
-        planned.fill(0L)
+        // ── Each store, alone with itself ────────────────────────────────────
+        //
+        // ⛔ **A store reacts with what it is holding, and with nothing else.** Demand, the division
+        // of a scarce reagent, and the draw are all inside this loop now, so a packet's fire is fed
+        // by the packet's own oxygen and a room's fire by the room's. Stu, 2026-09-04: *"now oxygen
+        // has to be present in the mixture to react."*
+        //
+        // What went with the coupling, deliberately: a lump no longer rusts in the air it passes
+        // through, steel no longer gives up its carbon to a hot room, and a fire on a belt no longer
+        // dies because the room ran out. Those were the mechanic `AmbientChemistry` was built around,
+        // and they are gone on purpose — see `PLAN_fluid_thrusters.md` §2.2.
+        //
+        // ⚠️ **Nothing crosses between media here any more**, so this pass books no
+        // `toGasMass`/`toSolidMass` at all: `offGas` is the only thing that moves matter between the
+        // cargo ledger and the air one. The terms are still returned, and are still zero, because a
+        // caller that stopped summing them would be wrong the day anything crosses again.
         for (store in firstStore..lastStore) {
             val hot = storeKelvin(store, tile, temperature, layers)
             if (hot < LOWEST_REACTION_ONSET) continue
+
+            // ── What this store's rows want, against one snapshot of it ──────
+            //
+            // ⛔ Still Jacobi, and still for its original reason: the apportionment below must
+            // divide the same number this counted, or two rows drawing on one reagent stop being
+            // contended and start being served in declaration order.
+            var marks = 0
             for (r in REACTIONS.indices) {
                 val reaction = REACTIONS[r]
                 val present = presentIn(store, tile, reaction.principal, air, layers)
                 if (present <= 0L) continue
-                val consumed = feasible(reaction, present, hot, tile, air, layers)
-                planned[(store + 1) * REACTIONS.size + r] = consumed
+                val consumed = feasible(reaction, present, hot, store, tile, air, layers)
+                planned[r] = consumed
                 if (consumed <= 0L) continue
                 for (n in reaction.reagents.indices) {
                     val ordinal = reaction.reagents[n].first.ordinal
@@ -378,34 +401,24 @@ fun react(
                     wantedBySpecies[ordinal] += reaction.reagentFor(n, consumed)
                 }
             }
-        }
-        if (marks == 0) continue
+            if (marks == 0) continue
 
-        // What fraction of its own demand each consumer may have — [oxygenScales]' scale, and safe
-        // for its reason: flooring every share means they cannot sum past the supply.
-        //
-        // ⚠️ **The supply is read against the whole tile, not against one store's reach.** A row
-        // that cannot get at some of it will simply not draw it; counting it here and letting the
-        // draw fall short is the same answer, and asking the question per consumer would make the
-        // division depend on who asked.
-        for (m in 0 until marks) {
-            val ordinal = touched[m]
-            val supply = supplyOf(Species.ALL[ordinal], tile, air, layers)
-            val want = wantedBySpecies[ordinal]
-            scaleBySpecies[ordinal] = if (want <= supply) SCALE else scaledRatio(supply, want, SCALE)
-        }
+            // What fraction of its own demand each row may have — flooring every share means they
+            // cannot sum past what this store holds.
+            for (m in 0 until marks) {
+                val ordinal = touched[m]
+                val supply = supplyOf(Species.ALL[ordinal], store, tile, air, layers)
+                val want = wantedBySpecies[ordinal]
+                scaleBySpecies[ordinal] = if (want <= supply) SCALE else scaledRatio(supply, want, SCALE)
+            }
 
-        // ── And now it happens ───────────────────────────────────────────────
-        for (store in firstStore..lastStore) {
-            val hot = storeKelvin(store, tile, temperature, layers)
-            if (hot < LOWEST_REACTION_ONSET) continue
-
+            // ── And now it happens ───────────────────────────────────────────
             for (r in REACTIONS.indices) {
                 val reaction = REACTIONS[r]
                 val present = presentIn(store, tile, reaction.principal, air, layers)
                 if (present <= 0L) continue
 
-                val unconstrained = planned[(store + 1) * REACTIONS.size + r]
+                val unconstrained = planned[r]
                 if (unconstrained <= 0L) continue
                 for (n in reaction.reagents.indices) {
                     val want = reaction.reagentFor(n, unconstrained)
@@ -415,44 +428,15 @@ fun react(
                 val consumed = reaction.react(present, allowed, hot, taken)
                 if (consumed <= 0L) continue
 
-                // ── Take it, from wherever this store can reach ──────────────
-                var crossedMass = 0L
-                var crossedHeat = 0L
+                // ⛔ **From this store, and there is no second place to look.** Matter reacting
+                // where it already is has not gone anywhere, so its share of the store's warmth
+                // stays exactly where it is — which is what `carryHeat = false` says, and what
+                // `AmmoniaCrackingTest` caught the energy ledger a couple of billion joules short
+                // for want of.
                 for (n in reaction.reagents.indices) {
-                    val species = reaction.reagents[n].first
-                    var owed = taken[n]
-                    if (owed <= 0L) continue
-
-                    // ⛔ **This store first, and it carries no heat.** Matter reacting where it
-                    // already is has not gone anywhere, so its share of the store's warmth must stay
-                    // exactly where it is. Taking it here and handing it back below would be a
-                    // no-op; taking it here and *not* handing it back cools a room every time it
-                    // cracks its own ammonia, which is what this did until `AmmoniaCrackingTest`
-                    // caught the energy ledger a couple of billion joules short.
-                    owed -= drawFrom(store, tile, species, owed, air, airEnergy, layers, carryHeat = false) { _, _ -> }
-
-                    if (owed > 0L && store != AIR_STORE) {
-                        // A cargo reaction reaching into the room it stands in.
-                        val drawn = drawFrom(AIR_STORE, tile, species, owed, air, airEnergy, layers) { mass, heat ->
-                            crossedMass += mass
-                            crossedHeat += heat
-                        }
-                        owed -= drawn
-                    } else if (owed > 0L) {
-                        // An air reaction reaching the matter standing in it — every layer, since
-                        // the room touches all of them.
-                        for (l in layers.indices) {
-                            if (owed <= 0L) break
-                            owed -= drawFrom(l, tile, species, owed, air, airEnergy, layers) { mass, heat ->
-                                crossedMass += mass
-                                crossedHeat += heat
-                            }
-                        }
-                    }
+                    if (taken[n] <= 0L) continue
+                    drawFrom(store, tile, reaction.reagents[n].first, taken[n], air, airEnergy, layers, carryHeat = false) { _, _ -> }
                 }
-
-                // The heat that rode across lands in the store the reaction is happening in.
-                if (crossedHeat != 0L) addEnergyTo(store, tile, crossedHeat, airEnergy, layers)
 
                 // ── And what it becomes, in the principal's store ────────────
                 reaction.splitInto(reaction.totalConsumed(taken), parts)
@@ -462,23 +446,16 @@ fun react(
                     addTo(store, tile, reaction.products[p].first, mass, air, layers)
                 }
 
-                if (store == AIR_STORE) {
-                    toGasMass += crossedMass
-                    toGasEnergy += crossedHeat
-                } else {
-                    toSolidMass += crossedMass
-                    toSolidEnergy += crossedHeat
-                }
-
                 // Per kilogram of the **principal**, which is what the rate was a fraction of and
                 // what the row's enthalpy is quoted against.
                 released += applyStoreEnthalpy(store, tile, -reaction.enthalpy(consumed), airEnergy, layers)
             }
-        }
 
-        for (m in 0 until marks) {
-            wantedBySpecies[touched[m]] = 0L
-            scaleBySpecies[touched[m]] = 0L
+            for (m in 0 until marks) {
+                wantedBySpecies[touched[m]] = 0L
+                scaleBySpecies[touched[m]] = 0L
+            }
+            planned.fill(0L)
         }
     }
 
@@ -511,6 +488,7 @@ private fun feasible(
     reaction: Reaction,
     present: Long,
     kelvin: Int,
+    store: Int,
     tile: TileIndex,
     air: MassArray,
     layers: List<StuffLayer>,
@@ -528,7 +506,7 @@ private fun feasible(
         //
         // Scarcity is the well's job. All this has to remove is the demand that could never be met
         // at all.
-        if (supplyOf(reaction.reagents[n].first, tile, air, layers) <= 0L) return 0L
+        if (supplyOf(reaction.reagents[n].first, store, tile, air, layers) <= 0L) return 0L
     }
     return consumed
 }
@@ -640,16 +618,22 @@ private fun applyStoreEnthalpy(
  * makes "which store is this reaction in?" stop being a question with an answer. A reagent is
  * wherever it is; the row does not say and does not need to.
  */
+/**
+ * How much of [species] the store at [store] is holding at [tile] — **its own, and nothing else's.**
+ *
+ * ⛔ It used to pool the whole tile: the air plus every cargo layer standing in it, so a lump on a
+ * belt burned in the room's oxygen. That coupling is gone (Stu, 2026-09-04) and this is where it
+ * lived. A packet reacts with what is in the packet.
+ */
 private fun supplyOf(
     species: Species,
+    store: Int,
     tile: TileIndex,
     air: MassArray,
     layers: List<StuffLayer>,
-): Long {
-    var sum = species.fluid?.let { air[tile, it] } ?: 0L
-    for (l in layers.indices) sum += layers[l][tile, species]
-    return sum
-}
+): Long =
+    if (store == AIR_STORE) species.fluid?.let { air[tile, it] } ?: 0L
+    else layers[store][tile, species]
 /**
  * [applyEnthalpy]'s twin for the atmosphere, and clamped for the same reason: a reaction may not
  * drive a cell below zero energy, which is below absolute zero and would read back as a nonsensical
