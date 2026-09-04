@@ -24,9 +24,9 @@ import org.emerge.demo.outofspace.world.materialBefore
 /**
  * Four networks on one tile grid, which is what [Conduit] always claimed and the storage never was.
  *
- * **Every layer rides under every other one.** Rail and pipe used to exclude each other, so the
+ * **Every layer rides under every other one.** Rail and cable used to exclude each other, so the
  * crossing case here was a wire under a rail; that rule is gone — see the note in `Conduits.swept` —
- * and a pipe crossing a rail is now an ordinary thing to draw, tested just below the wire.
+ * and a cable crossing a rail is now an ordinary thing to draw, tested just below the wire.
  *
  * The bug this pins is quiet and was documented as working: `layConduit` carried the comment "drawn
  * across a rail is a crossing, not a junction" while sharing one segment list with the track, so it
@@ -78,7 +78,7 @@ class ConduitLayersTest {
     /**
      * Track and plumbing compete for the floor: the drag stops at the belt instead of hopping it.
      *
-     * The run's *ends* are the trap here as much as they were for the old bug. A pipe dragged from
+     * The run's *ends* are the trap here as much as they were for the old bug. A cable dragged from
      * above the rail to below it must come out as two runs that do not meet, not as one run with a
      * gap that is still joined across — the join is what a network walk would follow.
      */
@@ -87,26 +87,26 @@ class ConduitLayersTest {
      * ⛔ **This used to assert the opposite**, and the rule it pinned is gone rather than moved.
      *
      * Track and plumbing excluded each other — the constraint the game is named after — until
-     * self-building plumbing made it unworkable: a pipe ghost cannot be fed by pipes, so it is fed by
+     * self-building plumbing made it unworkable: a cable ghost cannot be fed by pipes, so it is fed by
      * a rail port on its own tile and the two must coexist. See the note in `Conduits.swept`.
      *
-     * So a pipe now crosses a rail exactly as a wire does, and this asserts that it crosses
+     * So a cable now crosses a rail exactly as a wire does, and this asserts that it crosses
      * *unbroken* — the failure that would matter is a drag that lays the ends and quietly skips the
      * middle, which is the original bug this file was written for.
      */
-    fun `a pipe drawn across a rail crosses it`() {
+    fun `a cable drawn across a rail crosses it`() {
         var s = VesselState.empty(grid)
         s = drag(s, Conduit.Rail, y = 3, fromX = 2, toX = 8)
-        s = dragDown(s, Conduit.Pipe, x = 5, fromY = 1, toY = 5)
+        s = dragDown(s, Conduit.Power, x = 5, fromY = 1, toY = 5)
 
         val crossing = grid.tile(5, 3)
-        assertNotNull(s.conduits.at(Conduit.Rail, crossing), "the rail was evicted by the pipe")
-        val pipe = s.conduits.at(Conduit.Pipe, crossing)
-        assertNotNull(pipe, "the pipe stopped at the rail instead of crossing it")
+        assertNotNull(s.conduits.at(Conduit.Rail, crossing), "the rail was evicted by the cable")
+        val cable = s.conduits.at(Conduit.Power, crossing)
+        assertNotNull(cable, "the cable stopped at the rail instead of crossing it")
 
-        // Joined through, so the run is one pipe rather than two that happen to line up.
-        assertTrue(pipe.linkedTo(Direction.Up) && pipe.linkedTo(Direction.Down), "the pipe broke at the crossing")
-        assertTrue(!pipe.linkedTo(Direction.Left) && !pipe.linkedTo(Direction.Right), "the pipe took the rail's links")
+        // Joined through, so the run is one cable rather than two that happen to line up.
+        assertTrue(cable.linkedTo(Direction.Up) && cable.linkedTo(Direction.Down), "the cable broke at the crossing")
+        assertTrue(!cable.linkedTo(Direction.Left) && !cable.linkedTo(Direction.Right), "the cable took the rail's links")
     }
 
     @Test
@@ -164,7 +164,7 @@ class ConduitLayersTest {
      * **nothing**, because there is no contact for heat to cross at all. Not *exactly* ambient: it is
      * hanging in vacuum, so it radiates and ends up a little colder. Colder is the proof.
      *
-     * A wire and not a pipe, since the exclusion rule: the shared-tile case is only reachable at all
+     * A wire and not a cable, since the exclusion rule: the shared-tile case is only reachable at all
      * for the layers that are allowed to share a tile. The mechanism under test is the layer contact
      * in `bodiesOf`, which does not know one conduit from another.
      */

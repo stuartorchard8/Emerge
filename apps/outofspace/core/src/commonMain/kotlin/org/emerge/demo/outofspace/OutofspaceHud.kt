@@ -1422,7 +1422,6 @@ class OutofspaceHud {
             when (layer) {
                 InspectLayer.Deck -> deckLayer(controller, tile)
                 InspectLayer.Rail -> conduitLayer(controller, tile, Conduit.Rail)
-                InspectLayer.Pipe -> conduitLayer(controller, tile, Conduit.Pipe)
                 InspectLayer.Wire -> conduitLayer(controller, tile, Conduit.Signal)
                 InspectLayer.Power -> conduitLayer(controller, tile, Conduit.Power)
                 InspectLayer.Atmosphere -> atmosphereLayer(controller, tile)
@@ -1591,17 +1590,6 @@ class OutofspaceHud {
                         0x9A9A9AFFL,
                         if (k > Temperature.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
                     )
-                }
-            }
-            Conduit.Pipe -> {
-                val inside = s.pipeAir.mixtureAt(tile)
-                if (inside.isEmpty) {
-                    text("(empty)", 0x9A9A9AFFL)
-                } else {
-                    keyValue("INSIDE", mass(inside.total))
-                    compositionRows(controller, inside, maxEntries = 5)
-                    val k = s.pipeAir.kelvinAt(tile)
-                    keyValue("FLUID TEMPERATURE", "${k}K  (${k - 273}C)", 0x9A9A9AFFL, 0x9AC0E0FFL)
                 }
             }
             Conduit.Signal -> {

@@ -132,14 +132,9 @@ import org.emerge.demo.outofspace.world.airlockOpenness
 import org.emerge.demo.outofspace.world.millimolesOf
 import org.emerge.demo.outofspace.world.kelvinOf
 import org.emerge.demo.outofspace.world.VolumeField
-import org.emerge.demo.outofspace.world.PIPE_VOLUME
 import org.emerge.demo.outofspace.world.Share
-import org.emerge.demo.outofspace.world.exchangeLayers
-import org.emerge.demo.outofspace.world.pipeApertures
-import org.emerge.demo.outofspace.world.pipeVolumes
 import org.emerge.demo.outofspace.world.diffuseFluid
 import org.emerge.demo.outofspace.world.gasKelvin
-import org.emerge.demo.outofspace.world.valveOpenings
 import org.emerge.demo.outofspace.world.stepSolidHeat
 import org.emerge.demo.outofspace.world.offGas
 import org.emerge.demo.outofspace.world.react
@@ -616,10 +611,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val airKelvin = gasKelvin(w.airEnergy, w.masses)
             val cargo = listOf(w.rail.stuff, w.buffers.stuff)
             val inRooms = react(w.masses, w.airEnergy, airKelvin, cargo)
-            // ⚠️ **The cargo layers are not given to the pipes' pass.** A pipe has no cargo in it,
-            // so a reagent on a belt is not reachable from inside one, and handing the layers over
-            // would let a pipe full of CO2 eat the carbon off a belt it merely runs past.
-            val inPipes = react(w.pipeMass, w.pipeEnergy)
             // Then what the matter will no longer hold on to — the only pass that can put anything
             // into the air on its own account, and the only one told where the walls are. Chemistry
             // first, so a volatile made this tick can leave in the tick it was made rather than
@@ -651,7 +642,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // ⚠️ The off-gas passes are in this sum: since latent heat landed they report the energy
             // that went into breaking the bonds of whatever evaporated, which is negative and is
             // exactly the same kind of quantity a reaction enthalpy is.
-            val made = inRooms.releasedEnergy + inPipes.releasedEnergy + offRails.releasedEnergy
+            val made = inRooms.releasedEnergy + offRails.releasedEnergy
             if (made != 0L) w.reactionEnergy(made)
         }
         if (_c0) profiler.recordPhase("chemistry", _c!!.elapsedNow().inWholeNanoseconds)
@@ -659,29 +650,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val edges = EdgeGrid(state.grid)
         val conduits = w.conduitsSnapshot()
         val roomApertures = ApertureField.derive(edges, structure, openness)
-        val plumbing = pipeApertures(edges, conduits)
-        val volumes = pipeVolumes(state.grid, conduits)
 
-        // ── Valves + Pumps ────────────────────────────────────────────────────────
-        val _v0 = _prof0; val _v = if (_v0) TimeSource.Monotonic.markNow() else null
-        if (shouldRun(state.tick, PUMP_PERIOD, PUMP_OFFSET, frozen)) {
-            // Valves first: pressure propagates immediately, both layers see exchange
-            // (see [exchangeLayers]).
-            exchangeLayers(
-                openings = valveOpenings(state.grid, conduits, w.deck),
-                roomMass = w.masses,
-                roomEnergy = w.airEnergy,
-                pipeMass = w.pipeMass,
-                pipeEnergy = w.pipeEnergy,
-                pipeVolumes = volumes,
-            )
-
-            // ⛔ **The pump's half of this pass is gone with the pump's old job.** It fills its
-            // own store off the room and hands packets to a belt now — see [Pump] — so nothing
-            // pushes into plumbing any more, and only the valves' exchange is left here. The layer
-            // itself follows in `PLAN_fluid_thrusters.md` §9.
-        }
-        if (_v0) profiler.recordPhase("valves+pumps", _v!!.elapsedNow().inWholeNanoseconds)
+        /*
+         * ⛔ **A whole phase stood here: valves exchanging with the pipe layer, and pumps filling
+         * it.** Both are gone with the pipe network — see `PLAN_fluid_thrusters.md` §9. A diffusive
+         * network equalises and cannot deliver, so fluids ride rails instead, and a valve's job is
+         * now to say *where a run of track may let go of its volatiles* rather than to open a pipe.
+         */
 
         // ── What the boundary owed ────────────────────────────────────────────────
         //
@@ -724,14 +699,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val _f0 = _prof0; val _f = if (_f0) TimeSource.Monotonic.markNow() else null
         // When skipped, fluid state is carried forward from the previous tick.
         var fluidAir = Stuff(w.masses, w.airEnergy, w.airCohesion)
-        // ⛔ **The working copy, not `state.pipeAir`** — the same default the room air gets one line
-        // up, and for the same reason. This read from last tick's state, so anything that moved gas
-        // out of a pipe on a tick the fluid step skipped had the pipe's contents *restored*
-        // underneath it: `cutOpen` put the gas in the room and the pipe kept it too, which the
-        // shared ledger reports as gas minted out of nothing. `combust` in the pipes lost the same
-        // way. Nothing caught it because every subsystem that touches the pipe layer used to fire on
-        // the fluid's own tick, so the block below always overwrote this before it could be seen.
-        var pipeAirResult = Stuff(w.pipeMass, w.pipeEnergy, w.pipeCohesion)
         var fluidVentedMass = 0L
         var fluidVentedEnergy = 0L
         // Gas the vessel drew in from whatever it is flying through — see [Ambient].
@@ -760,7 +727,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // capacity sweep and a division per tile are not free twice; now that they are a tick
             // apart, sharing them would mean diffusing by yesterday's temperatures.
             val roomKelvin = gasKelvin(w.airEnergy, w.masses)
-            val pipeKelvin = gasKelvin(w.pipeEnergy, w.pipeMass)
             // With the temperatures, so the pass moves the vapour and leaves the frost and the
             // puddles where they are — see [diffuseFluid] and `PhaseTransportTest`.
             val ventSpeed = Flight.ventTilesPerTick(cfg.ticksPerSecond)
@@ -800,19 +766,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             ventImpulseX += result.ventImpulseX
             ventImpulseY += result.ventImpulseY
             ventTorque += result.ventTorque
-            // Pipes: same model, connectivity from player-drawn layout.
-            // A pipe that reaches the rim vents like a hole in the hull, and pushes like one.
-            // ⛔ **No drift in the pipes.** Plumbing is sealed and pumped; what is in a pipe goes
-            // where the pipe goes, and a puddle settling to the bottom of a horizontal run is not a
-            // thing this game models. Passing the gravity here would make pipes into slow tanks.
-            val pipes = diffuseFluid(
-                edges, plumbing, w.pipeMass, w.pipeEnergy, pipeKelvin,
-                ventSpeed = ventSpeed, about = w.about,
-            )
-            ventImpulseX += pipes.ventImpulseX
-            ventImpulseY += pipes.ventImpulseY
-            ventTorque += pipes.ventTorque
-
             // ── The ship and its air are two bodies ───────────────────────────
             //
             // The atmosphere is not in [VesselState.mass] — `forEachVesselMass` takes no air
@@ -848,13 +801,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // for the consistent split rather than applying a difference, because applying it
             // oscillates with a gain above one.
             val settledRoom = settleCohesion(w.masses, w.airEnergy, w.airCohesion)
-            val settledPipes = settleCohesion(w.pipeMass, w.pipeEnergy, w.pipeCohesion, volumes)
-            if (settledRoom != 0L || settledPipes != 0L) w.reactionEnergy(settledRoom + settledPipes)
-            pipeAirResult = Stuff(w.pipeMass, w.pipeEnergy, w.pipeCohesion)
-            // Pipes cannot vent to rim (ledger check).
-            require(pipes.ventedMass == 0L && pipes.ventedEnergy == 0L) {
-                "a sealed pipe network vented ${pipes.ventedMass}g — a rim face was open"
-            }
+            if (settledRoom != 0L) w.reactionEnergy(settledRoom)
         }
         if (_f0) profiler.recordPhase("fluid", _f!!.elapsedNow().inWholeNanoseconds)
 
@@ -1144,7 +1091,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Solid→air energy (see [SolidHeatStep]).
             solidToAirEnergy = state.solidToAirEnergy + conductedToAir,
             air = fluidAir,
-            pipeAir = pipeAirResult,
             airVentedMass = state.airVentedMass + fluidVentedMass + w.exhaustAirMass,
             // Separate from radiatedEnergy: cleaner ledger.
             airVentedEnergy = state.airVentedEnergy + fluidVentedEnergy + w.exhaustAirEnergy,
@@ -1160,7 +1106,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // there is no one angle that could undo it afterwards.
             exhaustMomentumX = state.exhaustMomentumX + exhaustX,
             exhaustMomentumY = state.exhaustMomentumY + exhaustY,
-            // Pipe pressure + pump momentum all push the ship (see [exchangeLayers], [applyPumps]).
             vesselImpulseX = state.vesselImpulseX + netImpulseX,
             vesselImpulseY = state.vesselImpulseY + netImpulseY,
             netImpulseX = netImpulseX,
@@ -1970,11 +1915,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val airEnergy: EnergyArray = state.air.copyEnergy()
         val airCohesion: EnergyArray = state.air.copyCohesion()
 
-        /** The pipes' own fluid, in the same four working arrays and for the same reasons. */
-        val pipeMass: MassArray = state.pipeAir.copyMass()
-        val pipeEnergy: EnergyArray = state.pipeAir.copyEnergy()
-        val pipeCohesion: EnergyArray = state.pipeAir.copyCohesion()
-
         // Motion log for renderer, built from pre-tick rail state.
         val motion: MotionLog = MotionLog(state.rails, state.rail)
 
@@ -2162,16 +2102,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             }
         }
 
-        // Cut pipe: release gas+heat into room (not deleted — shared ledger).
-        fun cutOpen(tile: TileIndex) {
-            pipeMass.forEachFluid(tile) { f, held ->
-                masses.add(tile, f, held)
-                pipeMass[tile, f] = 0L
-            }
-            airEnergy[tile] += pipeEnergy[tile]
-            pipeEnergy[tile] = 0L
-        }
-
         fun apply(edit: Edit) {
             when (edit) {
                 // The one place the two kinds of placement diverge, and the only place they need
@@ -2266,7 +2196,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // as its own entry because a player pointing at a bridge means the bridge.
                     DeleteLayer.Bridge -> removeMachine(edit.tile)
                     DeleteLayer.Rail -> removeConduit(edit.tile, Conduit.Rail)
-                    DeleteLayer.Pipe -> removeConduit(edit.tile, Conduit.Pipe)
                     DeleteLayer.Wire -> removeConduit(edit.tile, Conduit.Signal)
                     DeleteLayer.Deck -> removeMachine(edit.tile)
                     DeleteLayer.All -> {
@@ -2535,7 +2464,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          */
         private fun dropConduit(tile: TileIndex, c: Conduit) {
             val line = layer(c)
-            if (c == Conduit.Pipe) cutOpen(tile)
             line[tile.index] = null
             scrapped(tracks.clear(c, tile))
             // Cut far halves of joins (prevent phantom connections).

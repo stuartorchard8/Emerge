@@ -28,12 +28,12 @@ import org.emerge.demo.outofspace.world.materialBefore
 /**
  * **Pipes and wires build themselves too**, by the mechanism `GhostTest` pins for rails.
  *
- * The asymmetry these exist to hold down: plumbing cannot carry ingots, so a pipe ghost is not fed
- * by pipes. It is fed by a **rail port on its own tile** — the player runs temporary track over the
- * line, lets it build, and takes the track up again. That is why rail and pipe stopped excluding
+ * The asymmetry these exist to hold down: plumbing cannot carry ingots, so a cable ghost is not fed
+ * by cables. It is fed by a **rail port on its own tile** — the player runs temporary track over the
+ * line, lets it build, and takes the track up again. That is why rail and cable stopped excluding
  * each other, and why every test here lays two layers on the same tiles.
  *
- * ⛔ **Copper, not iron.** A pipe is copper and a rail is iron, so a tank of iron cannot build one
+ * ⛔ **Copper, not iron.** A cable is copper and a rail is iron, so a tank of iron cannot build one
  * and the door is right to refuse it — the first version of this file measured only that.
  */
 class ConduitGhostTest {
@@ -48,28 +48,28 @@ class ConduitGhostTest {
     }
 
     /**
-     * A tank of copper feeding a row of finished track, with a pipe ghost laid along the same tiles.
+     * A tank of copper feeding a row of finished track, with a cable ghost laid along the same tiles.
      *
-     * `Conduits.of` states finished conduit, so the pipe is made a ghost the way `GhostTest` makes
+     * `Conduits.of` states finished conduit, so the cable is made a ghost the way `GhostTest` makes
      * one — by taking the metal back out — rather than by driving the edit path, which is a
      * different thing to measure.
      */
     /**
      * ⚠️ `joinRow` lays `Segment(Conduit.Rail, material = materialBefore(Conduit.Rail))` whatever array it is handed — it is a rail fixture —
-     * so a pipe row has to be built here. A layer full of rail-typed segments looks right to
+     * so a cable row has to be built here. A layer full of rail-typed segments looks right to
      * everything that indexes by layer and wrong to everything that reads `Segment.conduit`.
      */
-    private fun pipeRow(pipes: Array<Segment?>, fromX: Int, toX: Int, y: Int) {
+    private fun cableRow(cables: Array<Segment?>, fromX: Int, toX: Int, y: Int) {
         for (x in fromX..toX) {
             var links = 0
             if (x > fromX) links = links or (1 shl Direction.Left.ordinal)
             if (x < toX) links = links or (1 shl Direction.Right.ordinal)
-            pipes[grid.tile(x, y).index] = Segment(Conduit.Pipe, links = links, material = materialBefore(Conduit.Pipe))
+            cables[grid.tile(x, y).index] = Segment(Conduit.Signal, links = links, material = materialBefore(Conduit.Signal))
         }
     }
 
     private fun tankAndPipedRun(
-        pipeAt: IntRange = 4..7,
+        cableAt: IntRange = 4..7,
         stored: Mixture = Mixture.of(Species.Copper to 12 * Capacity.PACKET_MASS, energy = 0),
         railUnder: Boolean = true,
     ): VesselState {
@@ -82,77 +82,77 @@ class ConduitGhostTest {
         deck += fixtureStorage(grid.tile(9, 3), Direction.Right)
         val rails = arrayOfNulls<Segment>(grid.size)
         if (railUnder) joinRow(grid, rails, 4, 8, 3)
-        val pipes = arrayOfNulls<Segment>(grid.size)
-        pipeRow(pipes, pipeAt.first, pipeAt.last, 3)
+        val cables = arrayOfNulls<Segment>(grid.size)
+        cableRow(cables, cableAt.first, cableAt.last, 3)
         val s = VesselState(
             grid,
             deck,
             conduits = Conduits.of(
                 grid.size,
                 Conduit.Rail to rails.toList(),
-                Conduit.Pipe to pipes.toList(),
+                Conduit.Signal to cables.toList(),
             ),
             buffers = BufferLayer.forDeck(grid, deck),
             rail = RailLayer.empty(grid.size),
         ).copy(creative = false).stocked(grid.tile(3, 3), stored)
-        for (x in pipeAt) s.conduits.tracks[Conduit.Pipe].release(grid.tile(x, 3))
+        for (x in cableAt) s.conduits.tracks[Conduit.Signal].release(grid.tile(x, 3))
         return s
     }
 
-    private fun pipeMass(s: VesselState, x: Int): Long = s.conduits.massAt(Conduit.Pipe, s.grid.tile(x, 3))
+    private fun cableMass(s: VesselState, x: Int): Long = s.conduits.massAt(Conduit.Signal, s.grid.tile(x, 3))
 
     @Test
-    fun `a pipe ghost is built by the rail running over it`() {
+    fun `a cable ghost is built by the rail running over it`() {
         var s = tankAndPipedRun()
-        assertEquals(0L, pipeMass(s, 5), "the pipe started with metal in it")
+        assertEquals(0L, cableMass(s, 5), "the cable started with metal in it")
 
         s = run(s, RAIL_PERIOD * 200)
 
         assertTrue(
-            (4..7).all { s.conduits.isComplete(Conduit.Pipe, s.grid.tile(it, 3)) },
-            "the pipe never finished: " + (4..7).joinToString { "$it=${pipeMass(s, it)}g" },
+            (4..7).all { s.conduits.isComplete(Conduit.Signal, s.grid.tile(it, 3)) },
+            "the cable never finished: " + (4..7).joinToString { "$it=${cableMass(s, it)}g" },
         )
         assertEquals(
-            conduitBillOfMaterials(Conduit.Pipe, materialBefore(Conduit.Pipe)).total,
-            pipeMass(s, 5),
-            "a finished pipe tile does not weigh a pipe tile",
+            conduitBillOfMaterials(Conduit.Signal, materialBefore(Conduit.Signal)).total,
+            cableMass(s, 5),
+            "a finished cable tile does not weigh a cable tile",
         )
     }
 
     /**
-     * ⛔ **The delivery is refused, not swallowed.** A pipe is copper; iron is not something it can
+     * ⛔ **The delivery is refused, not swallowed.** A cable is copper; iron is not something it can
      * be built from, and the door asks per species against the bill's own share.
      *
      * Without this the build test above proves only that *something* arrives.
      */
     @Test
-    fun `a pipe ghost refuses iron`() {
+    fun `a cable ghost refuses iron`() {
         var s = tankAndPipedRun(stored = Mixture.of(Species.Iron to 4 * Capacity.PACKET_MASS, energy = 0))
         s = run(s, RAIL_PERIOD * 200)
 
-        assertEquals(0L, pipeMass(s, 5), "iron was built into a copper pipe")
+        assertEquals(0L, cableMass(s, 5), "iron was built into a copper cable")
     }
 
     /**
-     * ⛔ **This is the bug that prompted the work.** Outside creative, deleting a pipe marked it and
+     * ⛔ **This is the bug that prompted the work.** Outside creative, deleting a cable marked it and
      * nothing ever scrapped it: the mark was set for every conduit but only rail was walked. The tile
      * sat `MARKED FOR DECONSTRUCTION` for ever and the delete silently did nothing, irreversibly.
      */
     @Test
-    fun `a marked pipe hands its copper back and goes`() {
+    fun `a marked cable hands its copper back and goes`() {
         var s = tankAndPipedRun()
         s = run(s, RAIL_PERIOD * 200)
-        assertTrue(s.conduits.isComplete(Conduit.Pipe, grid.tile(5, 3)), "nothing to deconstruct")
+        assertTrue(s.conduits.isComplete(Conduit.Signal, grid.tile(5, 3)), "nothing to deconstruct")
 
         s = OutofspaceReducer.reduce(
             cfg,
             s,
-            mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.Remove(grid.tile(5, 3), DeleteLayer.Pipe)))),
+            mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.Remove(grid.tile(5, 3), DeleteLayer.Wire)))),
         )
-        assertNotNull(s.conduits.at(Conduit.Pipe, grid.tile(5, 3)), "the delete took the tile straight out")
+        assertNotNull(s.conduits.at(Conduit.Signal, grid.tile(5, 3)), "the delete took the tile straight out")
 
         s = run(s, RAIL_PERIOD * 200)
-        assertNull(s.conduits.at(Conduit.Pipe, grid.tile(5, 3)), "the marked pipe never came apart")
+        assertNull(s.conduits.at(Conduit.Signal, grid.tile(5, 3)), "the marked cable never came apart")
     }
 
     /**
@@ -185,29 +185,29 @@ class ConduitGhostTest {
     }
 
     /**
-     * ⚠️ **A marked pipe with no road out waits, and stays waiting.**
+     * ⚠️ **A marked cable with no road out waits, and stays waiting.**
      *
-     * Copper leaves on the rail network, so a pipe with no track on its tile has nowhere to put what
+     * Copper leaves on the rail network, so a cable with no track on its tile has nowhere to put what
      * it is made of. The refusal has to be the reversible wait a rail already has — not a vanishing
      * act, which would destroy the metal, and not a crash.
      */
     @Test
-    fun `a marked pipe with no rail under it waits rather than vanishing`() {
+    fun `a marked cable with no rail under it waits rather than vanishing`() {
         var s = tankAndPipedRun(railUnder = false)
         // State it finished, since nothing can build it without track to deliver on.
-        for (x in 4..7) s.conduits.tracks.lay(Conduit.Pipe, grid.tile(x, 3), materialBefore(Conduit.Pipe))
-        val before = pipeMass(s, 5)
-        assertTrue(before > 0L, "the fixture did not fill the pipe")
+        for (x in 4..7) s.conduits.tracks.lay(Conduit.Signal, grid.tile(x, 3), materialBefore(Conduit.Signal))
+        val before = cableMass(s, 5)
+        assertTrue(before > 0L, "the fixture did not fill the cable")
 
         s = OutofspaceReducer.reduce(
             cfg,
             s,
-            mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.Remove(grid.tile(5, 3), DeleteLayer.Pipe)))),
+            mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.Remove(grid.tile(5, 3), DeleteLayer.Wire)))),
         )
         s = run(s, RAIL_PERIOD * 100)
 
-        assertNotNull(s.conduits.at(Conduit.Pipe, grid.tile(5, 3)), "the pipe went without handing anything back")
-        assertEquals(before, pipeMass(s, 5), "the copper left by a road that does not exist")
+        assertNotNull(s.conduits.at(Conduit.Signal, grid.tile(5, 3)), "the cable went without handing anything back")
+        assertEquals(before, cableMass(s, 5), "the copper left by a road that does not exist")
     }
 
     private fun wireMass(s: VesselState, x: Int): Long = s.conduits.massAt(Conduit.Signal, s.grid.tile(x, 3))
@@ -215,7 +215,7 @@ class ConduitGhostTest {
     private fun deckMass(s: VesselState, x: Int): Long = s.deck.stuff.massAt(s.grid.tile(x, 3))
 
     /**
-     * The piped run again, with a **wire** rather than a pipe and a **Sensor ghost** standing on one
+     * The piped run again, with a **wire** rather than a cable and a **Sensor ghost** standing on one
      * tile of it — a player wiring an instrument, which is the arrangement that found the bug.
      *
      * The Sensor is stated as a ghost the way `MachineGhostTest` states its own, rather than placed:

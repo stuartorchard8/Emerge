@@ -324,7 +324,7 @@ data class VesselState(
      *
      * Separate from [air] because a tile is not a thing: a corridor with a pipe along it has both a
      * roomful of air and a pipeful of whatever is being plumbed, and one cell per tile can hold one
-     * of them. See [pipeApertures] for why this is a second field rather than the sealed sub-region
+     * of them. See `PipeField`'s deleted apertures for why this was a second field rather than the sealed sub-region
      * of [air] the plan originally called for.
      *
      * Starts **empty**, everywhere, and stays empty until something puts gas in it. A pipe is laid
@@ -333,7 +333,6 @@ data class VesselState(
      *
      * Its heat lives inside it, for the reason [Stuff.gas] gives at length.
      */
-    val pipeAir: Stuff = Stuff.empty(grid.size),
     /**
      * What the atmosphere's energy started at — the gas's twin of [baselineAirMass], and checked the
      * same way: `airEnergy + airVentedEnergy == baselineAirEnergy` on every tick.
@@ -341,7 +340,7 @@ data class VesselState(
      * The air's heat lives inside [Stuff] rather than beside it here, and deliberately — see
      * [Stuff.gas]. It is the one arrangement `copy(air = …)` cannot desynchronise.
      */
-    val baselineAirEnergy: Long = air.totalEnergy + pipeAir.totalEnergy,
+    val baselineAirEnergy: Long = air.totalEnergy,
     /** Cumulative energy blown overboard with escaping gas. */
     val airVentedEnergy: Long = 0L,
     /**
@@ -609,13 +608,13 @@ data class VesselState(
      * ledgers — `atmosphere + airVented == baselineAir` is a cleaner statement than folding gas into
      * the ore balance, and a break in one does not obscure the other.
      *
-     * **[air] and [pipeAir] share this one ledger**, and that is a departure from the rule above
+     * ⛔ **[air] and the pipe layer shared this one ledger** until the pipes were deleted; the
      * rather than an oversight. Solids and gases get separate ledgers because they never interconvert;
      * room gas and pipe gas interconvert by design — that is what a vent is — so two baselines would
      * disagree the first time a single gram crossed between them, and the disagreement would look
      * exactly like a leak. What must not mix is what cannot mix.
      */
-    val baselineAirMass: Long = air.totalMass + pipeAir.totalMass,
+    val baselineAirMass: Long = air.totalMass,
     /**
      * The **cargo** the world started with — the twin of [baselineAirMass], for solids.
      *
@@ -778,7 +777,7 @@ data class VesselState(
         rail.totalEnergy
 
     /** Total atmosphere still aboard, in the rooms and in the pipes — the ledger quantity. */
-    val atmosphereMass: Long get() = air.totalMass + pipeAir.totalMass
+    val atmosphereMass: Long get() = air.totalMass
 
     /**
      * The heat that atmosphere is carrying, in the rooms and in the pipes — what [baselineAirEnergy]
@@ -792,7 +791,7 @@ data class VesselState(
      * share a baseline have to be summed the same way, and the second one is easy to forget because
      * nothing fails until something moves.
      */
-    val atmosphereEnergy: Long get() = air.totalEnergy + pipeAir.totalEnergy
+    val atmosphereEnergy: Long get() = air.totalEnergy
 
     /**
      * How far the air ledger is out: `atmosphere + vented − injected − baseline`, which is **zero**,
@@ -1410,7 +1409,7 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
     }
     val newDiverters = FlowCursors(remapCursors(diverters.snapshot()), remapCursors(diverters.mergeSnapshot()))
 
-    // ── 4. Dense field arrays: air / pipeAir (mass + energy) ────────────
+    // ── 4. Dense field arrays: air (mass + energy) ──────────────────────
     fun remapAirField(src: Stuff): Stuff {
         val newMass = MassArray(newGrid.size)
         val oldEnergy = src.copyEnergy()
@@ -1426,7 +1425,6 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         return Stuff.from(newMass, newEnergy)
     }
     val newAir = remapAirField(air)
-    val newPipeAir = remapAirField(pipeAir)
 
     // ⛔ Section 5 remapped two per-edge momentum fields across a resize. Both are deleted: the
     // gas's half of a pressure exchange no physics ever spent, retired when the hull's reaction
@@ -1471,8 +1469,8 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
     // ── 7. Vent whatever the new grid does not cover ─────────────────────
     // As a difference of totals rather than a walk of the discarded cells: exact by construction,
     // with no edge index to get wrong. Zero on a grow, so that needs no special case.
-    val ventedGas    = (air.totalMass + pipeAir.totalMass) - (newAir.totalMass + newPipeAir.totalMass)
-    val ventedEnergy = (air.totalEnergy + pipeAir.totalEnergy) - (newAir.totalEnergy + newPipeAir.totalEnergy)
+    val ventedGas    = air.totalMass - newAir.totalMass
+    val ventedEnergy = air.totalEnergy - newAir.totalEnergy
 
     // ── 8. Motion: dropped on resize (renderer will re-animate from zero)
     //    Baselines: passed through unchanged — they are conservation constants
@@ -1506,7 +1504,6 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         conduits = newConduits,
         diverters = newDiverters,
         air = newAir,
-        pipeAir = newPipeAir,
         bodies = newBodies,
         // Untouched — see step 6. A re-indexed grid is the same ship in the same place.
         positionX = positionX,

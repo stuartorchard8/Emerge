@@ -73,13 +73,14 @@ fun materialBefore(kind: DeckMachineKind): Species = when (kind) {
     -> Species.Titanium
     DeckMachineKind.Furnace -> Species.Firebrick
     DeckMachineKind.Bridge, DeckMachineKind.Gauge -> materialBefore(Conduit.Rail)
-    DeckMachineKind.Valve -> materialBefore(Conduit.Pipe)
+    // A valve stands over track now — it marks where a run may let go of its volatiles.
+    DeckMachineKind.Valve -> materialBefore(Conduit.Rail)
 }
 
 /** The same, for a length of conduit — see the overload above for what it is and is not. */
 fun materialBefore(conduit: Conduit): Species = when (conduit) {
     Conduit.Rail -> Species.Iron
-    Conduit.Pipe, Conduit.Power, Conduit.Signal -> Species.Copper
+    Conduit.Power, Conduit.Signal -> Species.Copper
 }
 
 /**
@@ -91,6 +92,14 @@ fun materialBefore(conduit: Conduit): Species = when (conduit) {
 object Save {
 
     /** Bump when a field's meaning changes. An old save is migrated, or refused rather than misread. */
+    /**
+     * What a pipe segment called itself, in files written before the network was deleted.
+     *
+     * Kept as a name rather than an enum entry precisely because there is no entry any more — see
+     * `PLAN_fluid_thrusters.md` §9. A reader has to recognise it to *ignore* it.
+     */
+    const val LEGACY_PIPE = "Pipe"
+
     const val VERSION = 25
 
     /**
@@ -323,12 +332,6 @@ object Save {
 
         // Packed like heat. Momentum saved because reloading without it resumes becalmed.
         // Pipes: same format, empty network = zero cost.
-        for (tile in state.grid.tiles) {
-            val mix = state.pipeAir.mixtureAt(tile)
-            if (mix.isEmpty) continue
-            out.append("pipeair ").append(tile.index).append(' ').append(writeMixture(mix)).append('\n')
-        }
-        writeSparse(out, "pipeairheat", state.pipeAir.copyEnergy().data)
 
 
         // Twelve impulse values (ledger grew). Appended, not versioned: absent reads as zero.
@@ -1045,6 +1048,24 @@ object Save {
                 // `rail` = v5 spelling; record carries conduit name, so old files land on the right layer.
                 "rail", "conduit" -> {
                     val t = tile(1)
+                    // ⛔ **A legacy PIPE segment is skipped, not refused.** The pipe network is
+                    // deleted (`PLAN_fluid_thrusters.md` §9) and a save written before that is still
+                    // a good save; failing on it would make every world that ever had plumbing in it
+                    // unloadable. What the pipe was *holding* is not lost — it joins the room on its
+                    // own tile, further down.
+                    //
+                    // ⚠️ **The fitting standing on it is kept, and that is the point of doing this
+                    // here rather than at the parse.** A valve was written as a flag on the pipe
+                    // record it stood over; dropping the record whole would take the player's
+                    // machine and its metal with it. It comes back on bare deck, which is a valve
+                    // that vents nothing until they lay track under it — see [Valve].
+                    if (tokens.getOrNull(2) == LEGACY_PIPE) {
+                        readMigratedFitting(tokens.drop(2), t, scale, ::fail)?.let { fitting ->
+                            if (deck[t] != null) fail("a fitting and a machine both stand at tile $t")
+                            deck.stand(fitting, withCasing = true, material = materialBefore(fitting.kind))
+                        }
+                        continue
+                    }
                     val segment = readSegment(tokens.drop(2), t, rail, version, scale, energyScale, ::fail)
                     // The heat is the layer's, and the layer does not exist until every segment has
                     // been read — so it is held aside by (conduit, tile) and applied below, once
@@ -1103,6 +1124,8 @@ object Save {
                 }
                 "trackstuff" -> {
                     val name = tokens.getOrNull(1) ?: fail("expected a conduit")
+                    // The metal of a deleted pipe, skipped with the segment that carried it.
+                    if (name == LEGACY_PIPE) continue
                     val conduit = Conduit.entries.firstOrNull { it.name == name }
                         ?: fail("unknown conduit '$name'")
                     val t = tile(2)
@@ -1282,8 +1305,37 @@ object Save {
         for ((key, energy) in segmentEnergy) {
             conduits.tracks.setEnergy(Conduit.entries[key.first], TileIndex(key.second), energy)
         }
-        val air = Stuff.from(airMass, airEnergy)
-        val pipeAir = Stuff.from(pipeMass, pipeEnergy)
+        // ⛔ **The pipe layer is gone, and what it was holding joins the room on its own tile.**
+        // `atmosphereMass` used to be `air + pipeAir`, so folding one into the other moves nothing:
+        // the air ledger is untouched and no save reads as a leak. Dropping it instead would make
+        // every world that ever had plumbing in it report the loss for the rest of its life. See
+        // `PLAN_fluid_thrusters.md` §9.
+        //
+        // ⚠️ **Except where there is no room to join.** A pipe threaded through a bulkhead has no
+        // gas cell on its tile, and putting gas inside a wall is the one thing `SealedTileGasTest`
+        // forbids outright — so that much is vented, which is a departure the ledger already has a
+        // term for.
+        val air: Stuff
+        var pipeVentedMass = 0L
+        var pipeVentedEnergy = 0L
+        run {
+            val sealed = StructureMap.derive(grid, deck)
+            for (i in 0 until grid.size) {
+                val tile = TileIndex(i)
+                val heat = pipeEnergy[tile]
+                var held = 0L
+                pipeMass.forEachFluid(tile) { _, mass -> held += mass }
+                if (held == 0L && heat == 0L) continue
+                if (sealed.blocksAir(tile)) {
+                    pipeVentedMass += held
+                    pipeVentedEnergy += heat
+                } else {
+                    pipeMass.forEachFluid(tile) { f, mass -> airMass.add(tile, f, mass) }
+                    airEnergy[tile] += heat
+                }
+            }
+            air = Stuff.from(airMass, airEnergy)
+        }
 
         // V9: body momentum moved from vessel frame to world frame. `p_world = p_vessel + m_body · v_ship`.
         val momentumFixed = if (version >= 9 || bodies.isEmpty()) bodies.toList() else {
@@ -1349,7 +1401,7 @@ object Save {
             ventedMass = vented,
             generatedEnergy = generated,
             radiatedEnergy = radiated,
-            airVentedMass = airVented,
+            airVentedMass = airVented + pipeVentedMass,
             structure = structure,
             occupancy = occupancy,
             creative = creative,
@@ -1388,13 +1440,12 @@ object Save {
             // computed from the world as it now is, so it already counts the bells.
             baselineEnergy = baselineEnergy?.plus(thrusters.energy) ?: solidEnergy(conduits),
             air = air,
-            pipeAir = pipeAir,
             // Both fields, because they share one ledger — see VesselState.baselineAirMass.
-            baselineAirMass = baselineAir ?: (air.totalMass + pipeAir.totalMass),
-            airVentedEnergy = airVentedEnergy,
+            baselineAirMass = baselineAir ?: air.totalMass,
+            airVentedEnergy = airVentedEnergy + pipeVentedEnergy,
             injectedAirMass = injectedAirMass,
             injectedAirEnergy = injectedAirEnergy,
-            baselineAirEnergy = baselineAirEnergy ?: (air.totalEnergy + pipeAir.totalEnergy),
+            baselineAirEnergy = baselineAirEnergy ?: air.totalEnergy,
             vesselImpulseX = impulseX,
             vesselImpulseY = impulseY,
             exhaustMomentumX = exhaustX,

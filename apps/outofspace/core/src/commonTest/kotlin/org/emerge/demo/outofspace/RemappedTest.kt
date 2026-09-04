@@ -77,7 +77,6 @@ class RemappedTest {
         val momX = LongArray(xEdges) { 10L }
         val momY = LongArray(yEdges) { 20L }
         // Pipe air: empty
-        val pipeAir = Stuff.gas(MassArray(grid.size))
         // One body
         val bodies = listOf(
             RigidBody.rockBlob(
@@ -92,7 +91,6 @@ class RemappedTest {
                         deck = deck,
             diverters = diverters,
             air = air,
-            pipeAir = pipeAir,
             bodies = bodies,
             buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
         )
@@ -111,8 +109,6 @@ class RemappedTest {
         assertEquals(s0.diverters.forkCursors, s1.diverters.forkCursors)
         assertEquals(s0.air.copyMass().data.contentToString(), s1.air.copyMass().data.contentToString())
         assertEquals(s0.air.copyEnergy().data.contentToString(), s1.air.copyEnergy().data.contentToString())
-        assertEquals(s0.pipeAir.copyMass().data.contentToString(), s1.pipeAir.copyMass().data.contentToString())
-        assertEquals(s0.pipeAir.copyEnergy().data.contentToString(), s1.pipeAir.copyEnergy().data.contentToString())
         assertEquals(s0.bodies, s1.bodies)
         assertEquals(s0.baselineAirMass, s1.baselineAirMass)
         assertEquals(s0.baselineAirEnergy, s1.baselineAirEnergy)
@@ -234,28 +230,6 @@ class RemappedTest {
         }
     }
 
-    @Test
-    fun `pipeAir field remaps correctly`() {
-        val s0 = populatedWorld()
-        val oldGrid = s0.grid
-        val newGrid = Grid(oldGrid.width + 2, oldGrid.height + 2)
-        val dx = 2
-        val dy = 2
-
-        val s1 = s0.remapped(newGrid, dx, dy)
-
-        for (x in 0 until oldGrid.width) {
-            for (y in 0 until oldGrid.height) {
-                val oldTile = oldGrid.tile(x, y)
-                val newTile = newGrid.tile(x + dx, y + dy)
-                for (s in Species.entries) {
-                    val oldMass = s0.pipeAir.massOf(oldTile, s)
-                    val newMass = s1.pipeAir.massOf(newTile, s)
-                    assertEquals(oldMass, newMass)
-                }
-            }
-        }
-    }
 
     // ⛔ Three tests stood here — that momentum's x-faces, its y-faces and the pipes' remap
     // correctly across a resize. The per-edge momentum fields they were about are deleted: they
@@ -438,8 +412,6 @@ class RemappedTest {
         assertEquals(s0.diverters.forkCursors, s2.diverters.forkCursors, "diverters should be identical")
         assertEquals(s0.air.copyMass().data.contentToString(), s2.air.copyMass().data.contentToString(), "air mass")
         assertEquals(s0.air.copyEnergy().data.contentToString(), s2.air.copyEnergy().data.contentToString(), "air energy")
-        assertEquals(s0.pipeAir.copyMass().data.contentToString(), s2.pipeAir.copyMass().data.contentToString(), "pipeAir mass")
-        assertEquals(s0.pipeAir.copyEnergy().data.contentToString(), s2.pipeAir.copyEnergy().data.contentToString(), "pipeAir energy")
         assertEquals(s0.bodies, s2.bodies, "bodies should be identical")
         assertEquals(s0.baselineAirMass, s2.baselineAirMass)
         assertEquals(s0.baselineAirEnergy, s2.baselineAirEnergy)

@@ -93,7 +93,6 @@ class GridVentTest {
             pipeMass[MassIndex(tile, Fluid.Oxygen)] = 11L * tile.index
             pipeEnergy[tile] = 900L + tile.index
         }
-        val pipeAir = Stuff.from(pipeMass, pipeEnergy)
 
         val edges = EdgeGrid(grid)
         // Signed, and asymmetric between the axes: the identity is a signed sum, so a field of
@@ -107,7 +106,6 @@ class GridVentTest {
             grid = grid,
                         deck = deck,
             air = air,
-            pipeAir = pipeAir,
             // The ship carries the counterpart of whatever the faces hold, because the identity is
             // a statement about the *signed total*: a world handed arbitrary face momentum and
             // nothing else is genuinely out of balance before anything resizes it, and the
@@ -174,21 +172,13 @@ class GridVentTest {
         EnergyLedgers.assertAirBalanced(after, "airEnergyBalance after a shrink")
     }
 
-    @Test
-    fun `the pipes are vented too, not just the rooms`() {
-        // `atmosphereMass` is rooms **plus** pipes, and the two were once summed at separate call
-        // sites with only one of them knowing about the pipes — see [VesselState.airBalance], which
-        // exists because of that. A vent that reads only `air` passes test 1 on a world with empty
-        // pipes and breaks the ledger on a real one.
-        val before = gassyWorld()
-        assertTrue(before.pipeAir.totalMass > 0L, "the fixture has no pipe gas to lose")
-
-        val after = before.remapped(Grid(12, 14), 0, 0)
-
-        assertTrue(after.pipeAir.totalMass < before.pipeAir.totalMass, "no pipe gas was discarded")
-        assertEquals(0L, after.airBalance, "airBalance with pipe gas discarded")
-        EnergyLedgers.assertAirBalanced(after, "airEnergyBalance with pipe gas discarded")
-    }
+    /*
+     * ⛔ **`the pipes are vented too, not just the rooms` stood here.** `atmosphereMass` was rooms
+     * *plus* pipes, and the two were once summed at separate call sites with only one knowing about
+     * the pipes — which is why `VesselState.airBalance` exists. There is one field now, so there is
+     * nothing left for the two to disagree about; the pipe network is deleted (see
+     * `PLAN_fluid_thrusters.md` §9).
+     */
 
     // ⛔ Two tests stood here — that a shrink books the face momentum it discards to the exhaust,
     // and that it books each axis independently. Both are **deleted rather than parked**: the

@@ -847,13 +847,9 @@ object OutofspaceAgentHarness {
                 // conduction couples the two -- and the one the fluid actually acts on.
                 "airtemp" -> { tile -> state.airKelvinAt(tile).toDouble() }
                 "air", "mass" -> { tile -> grams(state.air.mixtureAt(tile).total) }
-                // The pipes, which are a second fluid field on the same lattice and so map exactly
-                // like the room air. Worth having as its own view rather than folded into `air`: the
-                // whole question about a pipe is whether what is in it is in the PIPE, and a
-                // combined map cannot answer that.
-                "pipe" -> { tile -> grams(state.pipeAir.mixtureAt(tile).total) }
-                "pipetemp" -> { tile -> state.pipeAir.kelvinAt(tile).toDouble() }
-                "pipepressure" -> { tile -> state.pipeAir.pressureAt(tile).toDouble() }
+                // ⛔ `pipe`, `pipetemp` and `pipepressure` stood here. The pipe network is deleted
+                // — see `PLAN_fluid_thrusters.md` §9 — and a fluid is cargo now, so `rail` and the
+                // per-species maps are where it is asked about.
                 // One gas on its own. Bulk flow provably cannot mix or unmix, so the question
                 // "has the carbon dioxide settled?" is not answerable from `density` or `air`,
                 // which show the mixture — only from the species' own map.
@@ -1174,10 +1170,7 @@ object OutofspaceAgentHarness {
             "gridHeight" -> state.grid.height.toDouble()
             "originX" -> state.positionX.toDouble() / Flight.PER_TILE
             "originY" -> state.positionY.toDouble() / Flight.PER_TILE
-            // Rooms and pipes together, because they share one ledger and `airBalance` below is
-            // that ledger. `pipeMass` separates them for a script that cares which side gas is on.
             "airMass" -> grams(state.atmosphereMass)
-            "pipeMass" -> grams(state.pipeAir.totalMass)
             "airVented" -> grams(state.airVentedMass)
             // The flight loop's own number: what the gas leaving has pushed the ship by. Note it
             // counts the *reaction*, so venting to starboard makes this negative.

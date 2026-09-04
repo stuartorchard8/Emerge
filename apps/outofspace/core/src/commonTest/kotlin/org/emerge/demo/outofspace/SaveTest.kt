@@ -370,12 +370,19 @@ class SaveTest {
             outofspace 1
             grid 6 4
             conduit 9 Rail links=1
-            conduit 9 Pipe links=1
+            conduit 9 Signal links=1
+            conduit 10 Pipe links=1
         """.trimIndent()
         val back = Save.read(text)
         val crossing = TileIndex(9)
         assertEquals(Conduit.Rail, back.conduits.at(Conduit.Rail, crossing)?.conduit, "rail lost at the crossing")
-        assertEquals(Conduit.Pipe, back.conduits.at(Conduit.Pipe, crossing)?.conduit, "pipe lost at the crossing")
+        assertEquals(Conduit.Signal, back.conduits.at(Conduit.Signal, crossing)?.conduit, "wire lost at the crossing")
+        // ⛔ **And a legacy pipe is skipped rather than refused.** The network is deleted, and a save
+        // written before that is still a good save — see `PLAN_fluid_thrusters.md` §9. Failing here
+        // would make every world that ever had plumbing in it unloadable.
+        for (c in Conduit.entries) {
+            assertNull(back.conduits.at(c, TileIndex(10)), "a deleted pipe came back as a $c")
+        }
     }
 
     /**
@@ -391,14 +398,14 @@ class SaveTest {
             outofspace 5
             grid 6 4
             rail 8 Rail links=2
-            rail 9 Pipe links=1
+            rail 9 Signal links=1
         """.trimIndent() + "\n"
 
         val back = Save.read(text)
         assertEquals(Conduit.Rail, back.conduits.at(Conduit.Rail, TileIndex(8))?.conduit)
-        assertEquals(Conduit.Pipe, back.conduits.at(Conduit.Pipe, TileIndex(9))?.conduit)
-        assertNull(back.conduits.at(Conduit.Pipe, TileIndex(8)), "a rail was filed on the pipe layer")
-        assertNull(back.conduits.at(Conduit.Rail, TileIndex(9)), "a pipe was filed on the rail layer")
+        assertEquals(Conduit.Signal, back.conduits.at(Conduit.Signal, TileIndex(9))?.conduit)
+        assertNull(back.conduits.at(Conduit.Signal, TileIndex(8)), "a rail was filed on the signal layer")
+        assertNull(back.conduits.at(Conduit.Rail, TileIndex(9)), "a wire was filed on the rail layer")
     }
 
     // ── The bell migration ────────────────────────────────────────────────────

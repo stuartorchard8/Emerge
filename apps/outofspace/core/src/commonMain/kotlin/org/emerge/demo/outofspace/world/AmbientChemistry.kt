@@ -119,8 +119,8 @@ private fun airMassAt(air: MassArray, tile: TileIndex): Long {
  * take. What is already in the air counts against that ceiling, so a lump in a room that is already
  * thick with water vapour sheds nothing, and the same lump in a dry room sheds until it is not.
  *
- * That is a relaxation to equilibrium rather than a rate, which is [exchangeLayers]'s construction
- * and is here for the same reason: **a rate is a knob and equilibrium is not.** There is no number
+ * That is a relaxation to equilibrium rather than a rate, and it is here for a reason worth
+ * keeping: **a rate is a knob and equilibrium is not.** There is no number
  * in this function that anybody chose. A puddle in a sealed room evaporates until the room is
  * saturated and then stops, because that is what the dome says, not because a constant was tuned
  * until it looked right.

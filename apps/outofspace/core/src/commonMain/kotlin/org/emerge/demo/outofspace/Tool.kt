@@ -92,7 +92,7 @@ enum class Tool(val label: String) {
          * lays it yet, and a key that quietly reaches a fourth network is how a player loses a run
          * of cable without ever learning what did it.
          */
-        val CUTTABLE: List<Conduit> = listOf(Conduit.Rail, Conduit.Pipe, Conduit.Signal)
+        val CUTTABLE: List<Conduit> = listOf(Conduit.Rail, Conduit.Signal)
     }
 }
 
@@ -109,7 +109,6 @@ enum class DeleteLayer(val label: String) {
     Top("TOP"),
     Bridge("BRIDGE"),
     Rail("RAIL"),
-    Pipe("PIPE"),
 
     /**
      * The signal network — what the WIRE brush lays, and the layer most likely to be buried, since

@@ -254,8 +254,15 @@ Each ends at a green gate. Commit directly to main, one focused commit per step.
    *was* room-temperature hydrogen, so that is the fixture that measures the autopilot rather than
    the propellant — and it is the first place a propellant's worth has shown up as something a ship
    can feel.
-7. **Delete the pipe network** (§9). Last, because by here nothing needs it.
-8. **Valve as the vent marker** (§3.2), if it has not already fallen out of step 4.
+7. ✅ **DONE — the pipe network is deleted** (§9). `PipeField.kt`, `exchangeLayers`, `PIPE_VOLUME`,
+   `VesselState.pipeAir`, `Conduit.Pipe` and its layer, the tick's pipe pass and diffusion, the pipe
+   inspector layer, overlay, delete-tool and renderer, and the harness's three pipe maps.
+   ⚠️ **A legacy `PIPE` record is skipped, never refused** — a save written before this is still a
+   good save. **The fitting standing on it is kept**: a valve was a flag on the pipe record it stood
+   over, so dropping the record whole would take the player's machine and its metal with it. It comes
+   back on bare deck.
+   ✅ Verified on `hot.txt`, the one save carrying a `pipeair` line: it loads with `airBalance` at 0.
+8. ✅ **DONE at step 4 — the valve is the vent marker** (§3.2), and its pipe half went with §9.
 
 ⚠️ **Four tests are `@Ignore`d** on step 3's calibration and come back at step 6:
 `the autopilot stops a spin and then stops burning`, `an asymmetric ship goes forward on its rearward

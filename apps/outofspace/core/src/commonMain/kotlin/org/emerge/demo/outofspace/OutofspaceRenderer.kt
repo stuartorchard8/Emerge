@@ -370,14 +370,6 @@ class OutofspaceRenderer {
             }
         }
 
-        // Pipes under track (thinner, different depth).
-        for (y in mMinY..mMaxY) {
-            for (x in mMinX..mMaxX) {
-                val tile = grid.tile(x, y)
-                drawPipe(state, tile, x, y) // TODO highlight when I care
-            }
-        }
-
         // Track over buildings (on deck).
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
@@ -558,24 +550,6 @@ class OutofspaceRenderer {
         }
     }
 
-    private fun drawPipe(state: VesselState, tile: TileIndex, x: Int, y: Int) {
-        val segment = state.conduits.at(Conduit.Pipe, tile) ?: return
-        val cx = (x + 0.5f) * tilePx
-        val cy = (y + 0.5f) * tilePx
-        val color = conduitColor(state, Conduit.Pipe, tile)
-        for (dir in Direction.ALL) {
-            if (!segment.linkedTo(dir)) continue
-            rect(
-                cx + dir.dx * Visual.PIPE_ARM_OFFSET * tilePx, cy + dir.dy * Visual.PIPE_ARM_OFFSET * tilePx,
-                (if (dir.dx != 0) Visual.PIPE_ARM_LENGTH else Visual.PIPE_DIAMETER) * tilePx,
-                (if (dir.dy != 0) Visual.PIPE_ARM_LENGTH else Visual.PIPE_DIAMETER) * tilePx,
-                color,
-            )
-        }
-        rect(cx, cy, Visual.PIPE_DIAMETER * tilePx, Visual.PIPE_DIAMETER * tilePx, color)
-        // The valve that may be standing on this tile is a deck machine and draws itself — see
-        // [drawDeckMachine]. The pipe under it is just pipe.
-    }
 
     /**
      * What a length of conduit is drawn in, given how much of it is actually there.
@@ -941,7 +915,6 @@ class OutofspaceRenderer {
             is Brush.Run -> {
                 val gauge = when (brush.conduit) {
                     Conduit.Rail -> Visual.RAIL_DIAMETER
-                    Conduit.Pipe -> Visual.PIPE_DIAMETER
                     Conduit.Signal, Conduit.Power -> Visual.WIRE_DIAMETER
                 }
                 rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, gauge * tilePx, gauge * tilePx, edge)
@@ -1884,7 +1857,6 @@ class OutofspaceRenderer {
 /** Palette colour for a machine kind, shared by the renderer and the HUD's brush swatch. */
 fun kindColor(conduit: Conduit): Long = when (conduit) {
     Conduit.Rail -> 0x39445AFFL
-    Conduit.Pipe -> 0x7A5A3AFFL
     Conduit.Power, Conduit.Signal -> 0x4A7A5AFFL
 }
 

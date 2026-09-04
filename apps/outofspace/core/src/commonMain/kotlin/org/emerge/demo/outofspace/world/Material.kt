@@ -237,7 +237,6 @@ val Conduit.fillPermille: Int
     get() = when (this) {
         // Track and pipework, laid across a tile rather than filling it.
         Conduit.Rail -> 20
-        Conduit.Pipe -> 15
         // A cable.
         Conduit.Power, Conduit.Signal -> 2
     }

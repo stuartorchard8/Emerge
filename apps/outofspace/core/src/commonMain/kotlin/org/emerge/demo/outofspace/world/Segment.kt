@@ -2,10 +2,18 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.chem.Species
 
-/** Conduit layer: rail, pipe, power, signal. Four separate networks sharing one tile grid. */
+/**
+ * Which network a length of conduit belongs to. One layer per entry — see [Conduits].
+ */
 enum class Conduit(val label: String) {
     Rail("RAIL"),
-    Pipe("PIPE"),
+
+    /*
+     * ⛔ **`Pipe` stood here and is deleted.** A diffusive network equalises and cannot deliver, so
+     * fluids ride rails as packets instead — see `PLAN_fluid_thrusters.md` §1 and §9. An older save's
+     * PIPE segments are ignored on load and what they were holding joins the room on its own tile,
+     * so no world reads as a leak for having had plumbing in it.
+     */
     Power("POWER"),
     Signal("SIGNAL"),
 }

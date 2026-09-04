@@ -688,7 +688,6 @@ class OutofspaceController(
                 return true
             }
             InspectLayer.Rail -> Conduit.Rail
-            InspectLayer.Pipe -> Conduit.Pipe
             InspectLayer.Wire -> Conduit.Signal
             InspectLayer.Power -> Conduit.Power
             // There is no brush for a room. The air is the one layer the inspector always offers,
