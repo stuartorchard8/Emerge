@@ -2304,7 +2304,20 @@ class OutofspaceHud {
         // Thrust at *full* throttle, which is the machine's rating rather than what it is doing —
         // `ṁ·v_e`, in newtons, with the mass unit divided out once at the end.
         val flow = machine.massPerTick * controller.cfg.ticksPerSecond / Budget.KILOGRAM
-        keyValue("THRUST", "${flow * speed} N at full", 0x9A9A9AFFL, 0x9ED0B0FFL)
+        keyValue("THRUST", "${newtons(flow * speed)} at full", 0x9A9A9AFFL, 0x9ED0B0FFL)
+    }
+
+    /**
+     * A force, in the biggest unit that leaves a digit in front of the point.
+     *
+     * ⚠️ **Because a rocket is millions of newtons and the bitmap font has no thousands separator.**
+     * "4312320 N" is seven digits of the same width with nothing to group them by, which a reader
+     * has to count rather than read; "4.3 MN" is the number they were going to round it to anyway.
+     */
+    private fun newtons(n: Long): String = when {
+        n >= 1_000_000L -> "${n / 1_000_000L}.${n % 1_000_000L / 100_000L} MN"
+        n >= 1_000L -> "${n / 1_000L}.${n % 1_000L / 100L} kN"
+        else -> "$n N"
     }
 
     /**

@@ -1,6 +1,7 @@
 # Chemical rockets, and the electrolyzer that feeds them
 
-Status: **steps 1, 2 and 5 built** (2026-09-04); the rocket itself is still planned. Two machines, one new buffer role, one widened
+Status: **built** (2026-09-05), except the `Stream` rename of §3, which turned out not to be needed
+by either machine and is still worth doing on its own terms. Two machines, one new buffer role, one widened
 stream vocabulary. All of the chemistry already exists and none of it needs writing.
 
 A thruster stops being a hole that dumps warm water and becomes a rocket that *makes its own heat*:
@@ -260,27 +261,51 @@ Each ends at a green gate. Commit directly to main, one focused commit per step.
 1. ✅ **DONE — the hydrogen and ammonia enthalpies** (`6f1ff780`). Two rows released half their
    energy; `everyWrittenEnthalpyIsWorthWhatTheTextbookSaysItIs` is the check that now sees it.
 2. ✅ **DONE — output buffers stop borrowing the concentrator's words** (`ea4015e0`).
-3. **Widen `Stream`** (§3). Naming only, no behaviour. Gate: every existing port keeps the stream it
-   had, and the inspector reads the same on an unchanged save.
-4. **A fifth `BufferRole`** (§4). Gate: `BufferRoleTest` still holds `localBufferOffset` and `portsOf`
-   in agreement, and every existing machine's stores land where they did.
+3. ⏸ **NOT DONE, and not needed by either machine — `Stream`** (§3). It tags *outputs*, and the
+   rocket's two new doors are inputs, so nothing here forced it. The electrolyzer reuses
+   `Product`/`Waste` for hydrogen and oxygen, which is structurally correct and semantically a lie
+   that `labelOf` currently covers for. Still worth doing; no longer blocking anything.
+4. ✅ **DONE — `BufferRole.Oxidiser`** (§4), with `inputBufferRoleAt` beside it. The role alone was
+   not enough: `inputBufferRole` takes a machine and no place, which is a complete question only
+   while every kind has one mouth. Deliveries route by **the tile the packet arrived at** now, which
+   every caller already knew because a delivery is made through a port.
 5. ✅ **DONE — the electrolyzer** (`8110d729`, rate raised in a follow-up). 3×3, water in, H₂ and O₂
    out of separate ports into separate stores; `ElectrolyzerTest` holds the 1:8 split, the closed mass
    total, the pure-water appetite, and — only affordable at the raised rate — both mouths delivering
    into two tanks down two belts.
-6. **The chemical rocket** (§6) — footprint, two inputs, chamber, dial, igniter. Gate: a motor fed
-   H₂ and O₂ at 1:2 makes measurably more thrust than the same motor fed water, `chamberPush` reports
-   the chamber, and `vesselImpulse + exhaust + bodies + vented − debug == 0` still holds every tick of
-   a burn.
-7. **Fly it.** ⛔ **A panel is not done until screenshotted.** The v_e and thrust readouts the panel
-   still does not have (§8) are what make any of this legible.
+6. ✅ **DONE — the chemical rocket** (`ed7d0c39`). 3×3, two rear doors, a chamber, a mixture dial and
+   an igniter. `RocketTest` holds all twelve claims, including the one nobody believes —
+   `richer than stoichiometric throws faster`.
+
+   Two things the build found that the plan had wrong:
+
+   - ⛔ **`HEATER_POWER` cannot light a chamber.** A furnace's element is sized to raise a
+     *stationary* charge of rock; given this job it took **620 ticks — ten seconds — to light a
+     chamber that was not venting**, most of it lost into nine tiles of casing, and with the engine
+     actually firing it **never lit at all**, because a quarter of the chamber is replaced by cold
+     gas every tick and the equilibrium sat near 410 K. `Rocket.IGNITER_POWER` is derived instead
+     from this plan's own `T = T_in + P/(ṁ·cp)`, rearranged: the power to hold a *full mass flow* at
+     the onset. What falls out is the promise §6 makes — at full throttle the engine sits exactly at
+     ignition, and every notch below runs hotter up to the ceiling.
+   - ✅ **An `Engine` interface was the right size.** Four separate machines, one firing path: a
+     rate, a nozzle, a throttle it was told, and `propellantRole` — which is the whole of what
+     separates a cold gas thruster (throws what the belt handed it) from a rocket (throws what the
+     chamber became). `fire`, `chamberPush` and the flight balance are stated against it and are
+     otherwise unchanged.
+7. ✅ **DONE — flown, and photographed.** The panel reads FUEL / OXIDISER / CHAMBER by name, and
+   `EXHAUST 3369 M/S` / `THRUST 4.3 MN AT FULL` beneath the control it never had.
 
 ## 8. What this leaves open
 
-- ⛔ **The motor panel shows no exhaust velocity and no thrust.** `LISTENS TO`, `PUSHES`, `FIRING` and
-  nothing else, so "hot chamber, light molecule" is invisible to the player. `chamberPush` already
-  computes the number. This is the cheapest legibility win in the game and it should probably land
-  before step 6 rather than after.
+- ✅ **DONE — the motor panel reports exhaust velocity and thrust.** Every engine's, off the
+  propellant that is *in there now* rather than off a rating, so an empty one says so.
+- ⏸ **`Thruster.filter` still has no UI**, and the rocket did not build one: it has no filter at all.
+  Neither door is fussier than the other, so which of two fluids arrives at which is the player's
+  belt. That is honest and it is also the reason a rocket fed hydrogen at both doors is a legible
+  mistake rather than a refused one.
+- ⏸ **The inspector panel now overflows behind the stockpile readout** on a rocket, which has three
+  stores, a control section, a mixture section and wiring. The readouts are modal sheets
+  (`reference_oos_hud_layout`) and a taller panel is what exposed it.
 - ⏸ **Packets are still fixed mass** (`PLAN_fluid_thrusters.md` §7), so a hydrogen line delivers as
   many kg/s as an oxygen one. Until that changes, the only thing making a light propellant expensive
   is that there is less of it about.
