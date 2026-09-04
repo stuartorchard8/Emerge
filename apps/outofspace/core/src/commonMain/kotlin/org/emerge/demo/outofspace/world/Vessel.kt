@@ -1231,13 +1231,16 @@ private fun labelOf(machine: DeckMachine, role: BufferRole): String = when (mach
     is Storage -> "STORED"
     is Thruster -> "PROPELLANT"
 
-    // ⛔ **The concentrator's words, said by the concentrator**, and this is the entry the whole
-    // rewrite is about. CONCENTRATE and TAILINGS used to live in the fallback below, so **every**
-    // machine with a [BufferRole.Product] store inherited them: a furnace's finished charge, a
-    // pump's drawn gas and a docking port's purchases all read CONCENTRATE in the inspector.
-    // Three machines describing themselves in a fourth machine's vocabulary, which is worse than
-    // saying nothing — a player reading a pump does not learn that ore has been separated, they
-    // learn that the readout is not about their machine.
+    // ⛔ **The concentrator's words, said by the concentrator.** CONCENTRATE and TAILINGS used to
+    // live in the fallback below, so **every** machine with a [BufferRole.Product] store inherited
+    // them: a furnace's finished charge, a pump's drawn gas and a docking port's purchases all read
+    // CONCENTRATE. Three machines describing themselves in a fourth machine's vocabulary.
+    //
+    // ⚠️ **An entry here has to earn itself, and only a second output does.** A machine with one way
+    // in and one way out is fully described by INPUT and OUTPUT, and giving it prettier words is
+    // decoration that a reader then has to learn. The concentrator needs an entry because it has
+    // *two* outputs and the fallback cannot say which is which; the furnace, the pump and the dock
+    // do not, and briefly had one anyway.
     is Concentrator -> when (role) {
         BufferRole.Input -> "INPUT"
         BufferRole.Inside -> "PROCESSING"
@@ -1245,28 +1248,10 @@ private fun labelOf(machine: DeckMachine, role: BufferRole): String = when (mach
         BufferRole.Waste -> "TAILINGS"
     }
 
-    // A furnace's own words. The charge is the thing the machine is *about* — it is what the
-    // element heats, what the dwell holds, and what the chemistry happens to — so it is worth the
-    // one slot that can name it. FIRED rather than OUTPUT because what leaves is not a product the
-    // machine made: it is the same charge, changed by having been somewhere hot.
-    is Furnace -> when (role) {
-        BufferRole.Input -> "FEED"
-        BufferRole.Inside -> "CHARGE"
-        else -> "FIRED"
-    }
-
-    // "What it banks is what it has drawn out of the room and not yet handed to a belt" —
-    // `localBufferOffset`'s own description of this store, which is already the right word.
-    is Pump -> "DRAWN"
-
-    // The two sides of a counter, which is what a berth is. The names are the trade and not the
-    // plumbing: a player looking at a dock wants to know which pile is leaving and which arrived.
-    is DockingPort -> if (role == BufferRole.Input) "FOR SALE" else "BOUGHT"
-
     // ⚠️ **Neutral on purpose, and it must stay neutral.** This is what a machine with no entry of
-    // its own says, so anything specific written here is a claim made on behalf of every machine
-    // that has not been thought about yet — which is exactly how CONCENTRATE ended up on a pump.
-    // A new machine reads a little flatly until somebody gives it its words; it never reads wrong.
+    // its own says — which is most of them, deliberately — so anything specific written here is a
+    // claim made on behalf of every machine that has not been thought about yet. That is exactly how
+    // CONCENTRATE ended up on a pump.
     else -> when (role) {
         BufferRole.Input -> "INPUT"
         BufferRole.Inside -> "PROCESSING"
