@@ -426,12 +426,12 @@ class SaveTest {
         assertEquals(setOf(at, bell), motor.tiles(grid).toSet(), "it did not grow a bell")
         assertEquals(at, state.occupancy[bell], "the bell is not registered to the machine on it")
         assertTrue(state.deck.stuff.massAt(bell) > 0L, "the bell came back made of nothing")
-        // ⛔ **Its propellant does not come back, and the ledger is told.** A motor keeps no store
-        // now — its chamber is the pipe cell it stands on — so the five kilograms the file describes
-        // have nowhere to go. Dropped rather than migrated, exactly as an old extractor's jaws are;
-        // what must not happen is dropping it *quietly*, which is a leak the balance reads for ever.
-        assertNull(bufferTile(grid, motor, at, BufferRole.Input), "a loaded motor grew a store back")
-        assertEquals(0L, state.massBalance, "the dropped propellant left without the ledger being told")
+        // Its chamber is untouched: the store is where it always was, holding what it always held.
+        assertEquals(
+            5000L,
+            state.buffers.resourceAt(bufferTile(grid, motor, at, BufferRole.Input)!!)?.total,
+            "the propellant did not come back",
+        )
     }
 
     /**

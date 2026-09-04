@@ -25,7 +25,6 @@ import org.emerge.demo.outofspace.world.machine.InputKey
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.ThrusterControl
 import org.emerge.demo.outofspace.world.thrusterActivation
-import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -214,8 +213,7 @@ class FlightControlTest {
      * version of "no fuel is wasted" a player can check.
      */
     @Test
-    @Ignore // ⛔ **PARKED pending a calibration call — `PLAN_fluid_thrusters.md` §8.** A motor now empties its
-    fun `an asymmetric ship goes forward on its rearward motors alone`() {
+        fun `an asymmetric ship goes forward on its rearward motors alone`() {
         val cfg = OutofspaceConfig()
         val grid = cfg.initialGrid
         val near = grid.tile(MIDSHIPS + 2, HULL_BOTTOM)
@@ -279,8 +277,7 @@ class FlightControlTest {
      * arrival at it.
      */
     @Test
-    @Ignore // ⛔ **PARKED pending a calibration call — `PLAN_fluid_thrusters.md` §8.** A motor now empties its
-    fun `the autopilot stops a spin and then stops burning`() {
+        fun `the autopilot stops a spin and then stops burning`() {
         val cfg = OutofspaceConfig()
         val spun = turningShip(cfg.initialGrid)
         val controller = OutofspaceController(cfg, spun.copy(sas = true))
@@ -490,10 +487,7 @@ class FlightControlTest {
             air = Stuff.gas(MassArray(grid.size)),
             buffers = BufferLayer.forDeck(grid, deck),
             rail = RailLayer.empty(grid.size),
-            // The propellant is in the plumbing under the chamber, not in a tank — a motor has no
-            // store. Charged at construction so the air baseline counts it.
-            pipeAir = fuelledPipes(grid, Mixture.of(Species.Water to 4L * Capacity.PACKET_MASS, energy = 0), listOf(tile)),
-        )
+        ).stocked(tile, Mixture.of(Species.Water to 4L * Capacity.PACKET_MASS, energy = 0).atAmbient())
     }
 
     /**
@@ -518,17 +512,23 @@ class FlightControlTest {
             air = Stuff.gas(MassArray(grid.size)),
             buffers = BufferLayer.forDeck(grid, deck),
             rail = RailLayer.empty(grid.size),
-            pipeAir = fuelledPipes(
-                grid,
-                Mixture.of(Species.Water to 40L * Capacity.PACKET_MASS, energy = 0),
-                bays.map { grid.tile(HULL_RIGHT, it) },
-            ),
+        )
+        // ⛔ **Hydrogen, because a propellant is worth something now.** The flat 3 km/s this engine
+        // used to have was, to within a per cent, room-temperature hydrogen — see
+        // `PLAN_fluid_thrusters.md` §4 — so this is the fixture that leaves the *autopilot* being
+        // measured rather than the propellant. On water (1.04 km/s) the same run cuts the spin 255x
+        // and simply has not finished inside the window, which is a true thing about water and a
+        // distraction here.
+        for (y in bays) state.stocked(
+            grid.tile(HULL_RIGHT, y),
+            Mixture.of(Species.Hydrogen to 40L * Capacity.PACKET_MASS, energy = 0).atAmbient(),
         )
         return state.copy(angImpulse = SPUN)
     }
 
-    /** What is left in one motor's chamber — the pipe cell it stands on, which is its only tank. */
-    private fun tank(state: VesselState, tile: TileIndex): Long = state.chamberMass(tile)
+    /** What is left in one motor's propellant tank. */
+    private fun tank(state: VesselState, tile: TileIndex): Long =
+        state.inStore(tile, BufferRole.Input)?.total ?: 0L
 
     /** A box with two motors in the stern wall at unequal arms, and one in the starboard wall. */
     private fun threeMotorShip(grid: Grid, near: TileIndex, far: TileIndex, beam: TileIndex): VesselState {
@@ -546,12 +546,12 @@ class FlightControlTest {
             air = Stuff.gas(MassArray(grid.size)),
             buffers = BufferLayer.forDeck(grid, deck),
             rail = RailLayer.empty(grid.size),
-            pipeAir = fuelledPipes(
-                grid,
-                Mixture.of(Species.Water to 8L * Capacity.PACKET_MASS, energy = 0),
-                listOf(near, far, beam),
-            ),
-        )
+        ).also { state ->
+            for (tile in listOf(near, far, beam)) state.stocked(
+                tile,
+                Mixture.of(Species.Water to 8L * Capacity.PACKET_MASS, energy = 0).atAmbient(),
+            )
+        }
     }
 
     private companion object {

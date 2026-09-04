@@ -10,10 +10,7 @@ import org.emerge.demo.outofspace.num.isqrt
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.PIPE_VOLUME
-import org.emerge.demo.outofspace.world.Stuff
-import org.emerge.demo.outofspace.world.Temperature
-import org.emerge.demo.outofspace.world.VolumeField
+import org.emerge.demo.outofspace.world.SpeciesFilter
 import org.emerge.demo.outofspace.world.kelvinOf
 import org.emerge.demo.outofspace.world.millimolesOf
 import org.emerge.demo.outofspace.world.thermalMassOf
@@ -44,9 +41,9 @@ import org.emerge.demo.outofspace.world.Wiring
  *
  * ### Where the thrust comes from, and where it does not
  *
- * Firing throws whatever gas is in the pipe cell under the chamber out of the exit face at the
- * speed that gas is worth — see [exhaustVelocity]. The momentum that leaves is booked to
- * `exhaustMomentum` and the
+ * Firing throws [massPerTick] of whatever is in its store out of the exit face at the speed that
+ * propellant is worth — see [exhaustVelocity], which is where the whole mechanic lives: hot chamber,
+ * light molecule. The momentum that leaves is booked to `exhaustMomentum` and the
  * negative of it goes to the ship, so this adds **no new term** to the momentum ledger: it is the
  * same `+p` overboard / `−p` aboard pair that a venting breach already is, and
  * `vesselImpulse + exhaust + bodies + vented − debug == 0` still holds
@@ -67,15 +64,19 @@ import org.emerge.demo.outofspace.world.Wiring
 data class Thruster(
     override val center: TileIndex,
     override val facing: Direction,
-    /**
-     * The fraction of a unit of propellant left over from last tick's throttling — see `throttled`.
-     *
-     * ⛔ **Not a store, and there is no store.** A motor's chamber is the pipe cell it stands on:
-     * it burns what the plumbing has put under it this tick and holds nothing of its own. See
-     * `PLAN_fluid_thrusters.md` §8 — a machine buffer cannot hold a fluid, because `offGas` empties
-     * every fluid out of the buffer layer and into the room around it, correctly.
-     */
+    /** The fraction of a unit of propellant left over from last tick's throttling — see `throttled`. */
     val carry: Long = 0L,
+    /** Propellant thrown per tick at full activation, out of the store an input port fills. */
+    val massPerTick: Long = Capacity.PACKET_MASS / 200L,
+    /**
+     * What this motor will let in, or null for **any fluid**.
+     *
+     * ⛔ **Null is not "anything".** A motor unlocked takes any fluid and no solid, which is the
+     * rule that answers the standing question about a thruster fed gravel: there is nothing to
+     * refuse at the door because the network never routes a rock here. Locking it narrows that to
+     * one species at a purity, exactly as locking a [Storage] does — see `sinkAdmits`.
+     */
+    val filter: SpeciesFilter? = null,
     /**
      * Where this motor takes its orders from. Flight controls by default — see [ThrusterControl].
      */
@@ -98,6 +99,9 @@ data class Thruster(
     override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
     fun withControl(control: ThrusterControl): Thruster = copy(control = control)
 
+    /** Locked onto [filter], or unlocked when it is null — [Storage.withFilter]'s twin. */
+    fun withFilter(filter: SpeciesFilter?): Thruster = copy(filter = filter)
+
     /** The way the ship is pushed: the other way from the way the exhaust goes. */
     val thrust: Direction get() = facing.opposite
 
@@ -113,31 +117,6 @@ data class Thruster(
     override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
 
     companion object {
-
-        /**
-         * **The dial.** How hard a motor pushes at one atmosphere of chamber pressure, as an impulse
-         * per tick at full throttle.
-         *
-         * ### Why thrust is the dial and mass flow is not
-         *
-         * Choked flow through a throat is `ṁ ≈ C·p_c/v_e` once the two factors that barely move
-         * across the range of γ are folded into `C` — so `thrust = ṁ·v_e ≈ C·p_c`, and **the push
-         * barely depends on what the propellant is.** What the propellant decides is how much of it
-         * that push costs, which spans a factor of fourteen (see [exhaustVelocity]). Stating thrust
-         * here and deriving the mass flow from it is what puts that trade in the game: switching to
-         * hydrogen does not make a ship shove harder, it makes the shoving last four times longer.
-         *
-         * ⚠️ **Calibrated to leave the old engine where it was.** The flat model threw
-         * `PACKET_MASS/200` a tick at 3 km/s, which is this number — so a motor with a full
-         * atmosphere in its chamber pushes exactly as hard as every motor did before propellant
-         * meant anything.
-         *
-         * ⛔ **A motor will almost never see a full atmosphere**, and that is the mechanic rather
-         * than a miscalibration. The chamber is a pipe cell an eighth of a tile across, refilled by
-         * diffusion from whatever the player plumbed to it — so real thrust is a fraction of this,
-         * set by the plumbing. See `PLAN_fluid_thrusters.md` §8.
-         */
-        const val THRUST_PER_ATMOSPHERE: Long = 25_000_000_000L
 
         /**
          * How wide a tile is, in millimetres.
@@ -249,32 +228,6 @@ data class Thruster(
          * wants a cheap reference on the same law as its numerator, and both sides here are
          * `moles × kelvin / volume`, where the law cancels.
          */
-        /**
-         * **How hard a motor with this much gas at this temperature under it pushes**, as an impulse
-         * per tick at full throttle.
-         *
-         * `THRUST_PER_ATMOSPHERE × p_c`, with the chamber's pressure read as `moles × kelvin /
-         * volume` against a full tile of ordinary air and cross-multiplied so neither side has to
-         * form a pressure — [org.emerge.demo.outofspace.world.applyPumps]' shape, for its reason.
-         *
-         * ⛔ **One home, because two callers need the same answer and disagreeing would fly the ship
-         * crooked.** The motor spends this to work out how much propellant to throw; the flight
-         * solver reads it to balance one engine against another. If the balance were struck on a
-         * different number from the one the engine then delivers, a ship would turn while being told
-         * to go straight — which is `Gauge.lastMass`'s lesson and `flightPlan`'s own note about its
-         * guards matching the machine loop's.
-         */
-        fun chamberThrust(millimoles: Long, kelvin: Int): Long = scaledRatio(
-            millimoles * kelvin,
-            AMBIENT_MILLIMOLES_PER_TILE * Temperature.AMBIENT_KELVIN.toLong(),
-            THRUST_PER_ATMOSPHERE * VolumeField.FULL / PIPE_VOLUME,
-        )
-
-        val AMBIENT_MILLIMOLES_PER_TILE: Long = run {
-            var sum = 0L
-            for (s in Species.ALL) sum += millimolesOf(Stuff.AMBIENT_AIR[s], s)
-            sum
-        }
     }
 }
 

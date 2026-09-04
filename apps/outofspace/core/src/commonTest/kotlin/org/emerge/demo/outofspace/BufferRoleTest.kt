@@ -15,6 +15,7 @@ import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.Furnace
 import org.emerge.demo.outofspace.world.machine.Thruster
+import org.emerge.demo.outofspace.world.machine.Valve
 import org.emerge.demo.outofspace.world.portsOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -87,11 +88,10 @@ class BufferRoleTest {
 
     @Test
     fun `machines that hold nothing claim nothing`() {
-        // ⛔ **A pump left this list**: it banks what it has drawn out of the room until it has a
-        // whole packet to hand a belt, so it keeps a `Product` store like any other source. A
-        // thruster joined it, having lost the store it never really had — its chamber is the pipe
-        // cell it stands on. See `PLAN_fluid_thrusters.md` §3.1.
-        for (m in listOf(fixtureSensor(centre, Direction.Right), Thruster(centre, Direction.Right))) {
+        // ⛔ **A pump left this list** when it became a rail source: it banks what it has drawn out
+        // of the room until it has a whole packet to hand a belt, so it keeps a `Product` store like
+        // any other source. See `PLAN_fluid_thrusters.md` §3.1.
+        for (m in listOf(fixtureSensor(centre, Direction.Right), Valve(centre))) {
             assertEquals(emptyList(), bufferRolesOf(m), "$m claims a store")
             for (role in BufferRole.entries) assertNull(bufferTile(grid, m, centre, role))
         }

@@ -616,6 +616,15 @@ object Save {
             // [exhaustPath]; the propellant is a store, written by the role loop below.
             is Thruster -> {
                 put("carry", m.carry.toString())
+                put("rate", m.massPerTick.toString())
+                // Omitted when unlocked, like the wiring: the file shows the choices somebody made.
+                // The same three keys a locked warehouse writes, and read back the same way — a
+                // filter is a filter whichever machine is wearing it.
+                m.filter?.let {
+                    put("filter", it.species?.name)
+                    put("filterpct", it.minPercent.toString())
+                    it.belowPercent?.let { pct -> put("filterunder", pct.toString()) }
+                }
                 // Omitted at the default, like the wiring below it: the file shows the choices
                 // somebody actually made. ⚠️ A file written before the flight controls existed has
                 // no key here and so loads FLIGHT, which is the intended migration — see
@@ -1880,6 +1889,14 @@ object Save {
                 tile,
                 facing = facing(),
                 carry = massNum("carry", 0L),
+                massPerTick = rate(Thruster(tile, Direction.Right).massPerTick),
+                filter = f["filter"].let { name ->
+                    val species = Species.ALL.firstOrNull { it.name == name }
+                    val pct = f["filterpct"]?.toIntOrNull()
+                    val under = f["filterunder"]?.toIntOrNull()
+                    if (species == null && pct == null && under == null) null
+                    else SpeciesFilter(species, pct, under)
+                },
                 control = f["control"]?.let { name ->
                     ThrusterControl.ALL.firstOrNull { it.name == name } ?: fail("unknown thruster control '$name'")
                 } ?: ThrusterControl.Flight,
@@ -1916,12 +1933,6 @@ object Save {
             val store = bufferTile(grid, machine, tile, role) ?: continue
             buffers.put(store, res(storeKey(machine, role)))
         }
-        // ⛔ **A motor's propellant, from a file written when a motor had a store.** It keeps none
-        // now — its chamber is the pipe cell it stands on — so what the file describes has nowhere
-        // to go and is dropped. **Reported, not swallowed**: every gram that leaves the world has to
-        // be told to the ledger, or `massBalance` reads a leak for ever and everyone learns to
-        // ignore it. Booked exactly as a bell-less motor's cargo is, by re-anchoring the baseline.
-        if (machine is Thruster) res(storeKey(machine, BufferRole.Input))?.let { onDroppedCargo(it.total) }
         return machine.withWiring(wiring)
     }
 

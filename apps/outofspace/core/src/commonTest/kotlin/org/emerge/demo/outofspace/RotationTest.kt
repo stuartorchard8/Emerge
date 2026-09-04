@@ -28,7 +28,6 @@ import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.tileCentre
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.demo.outofspace.world.torqueAbout
-import kotlin.test.Ignore
 import org.emerge.demo.outofspace.num.isqrt
 import org.emerge.demo.outofspace.world.spinSpeed
 import org.emerge.demo.outofspace.num.scaledRatio
@@ -166,8 +165,7 @@ class RotationTest {
 
     /** A motor bolted well off the centreline spins the ship, in the direction its arm says. */
     @Test
-    @Ignore // ⛔ **PARKED pending a calibration call — `PLAN_fluid_thrusters.md` §8.** A motor now empties its
-    fun `an off-centre thruster spins the ship`() {
+        fun `an off-centre thruster spins the ship`() {
         val cfg = OutofspaceConfig()
         val controller = OutofspaceController(cfg, box(cfg.initialGrid, BAY_HIGH))
 
@@ -498,15 +496,12 @@ class RotationTest {
                         deck = deck,
             air = Stuff.gas(MassArray(grid.size)),
             buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
-            // ⛔ **Propellant is in the plumbing, not in a store — a motor has no store.** Charged at
-            // construction, because `baselineAirMass` is a defaulted field and `copy()` does not
-            // recompute one, so a world fuelled afterwards starts with its air ledger already out.
-            pipeAir = fuelledPipes(
-                grid,
-                Mixture.of(Species.Water to INITIAL_PROPELLANT, energy = 0),
-                bays.map { grid.tile(HULL_RIGHT, it) },
-            ),
-        )
+        ).also { state ->
+            for (y in bays) state.stocked(
+                grid.tile(HULL_RIGHT, y),
+                Mixture.of(Species.Water to INITIAL_PROPELLANT, energy = 0).atAmbient(),
+            )
+        }
     }
 
     /**

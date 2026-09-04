@@ -1205,11 +1205,7 @@ fun fullness(machine: DeckMachine?, centre: TileIndex, grid: Grid, buffers: Buff
         SignalField.FULL / Extractor.BUFFER_CAP).toInt()
     is Concentrator -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
     is Furnace -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP)).toInt()
-    // ⛔ **A motor holds nothing to read.** Its chamber is the pipe cell it stands on, not a store —
-    // see `PLAN_fluid_thrusters.md` §8 — so "how full is it" is a question about the plumbing, and a
-    // gauge on the pipe is where a player asks it. Reporting the empty store it no longer has would
-    // be a sensor that reads zero for ever and looks broken.
-    is Thruster -> 0
+    is Thruster -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / MACHINE_BUFFER_CAP).toInt()
     is Storage -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / Storage.CAP).toInt()
     is Sensor, is WireButton -> 0
     is Hull, is Airlock -> 0

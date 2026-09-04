@@ -290,37 +290,3 @@ fun VesselState.inStore(tile: TileIndex, role: BufferRole): Mixture? {
     return buffers.resourceAt(bufferTile(grid, m, tile, role) ?: return null)
 }
 
-/**
- * A pipe layer holding [propellant] at [tiles] and nothing anywhere else — **a motor's chamber,
- * fuelled**.
- *
- * ⚠️ **Passed to the constructor, never assigned afterwards.** `baselineAirMass` defaults to
- * `air.totalMass + pipeAir.totalMass` and `copy()` does not recompute a defaulted field, so a world
- * charged after it was built starts life with its air ledger already out by whatever was poured in.
- *
- * ⛔ **No pipe segments are laid, and none are needed.** A motor reads the gas in the cell under it;
- * gas cannot get into the pipe layer anywhere a player has not plumbed, so the segment adds nothing
- * a fixture can observe. What it *would* add is the two reduces per tile it takes to lay a run.
- */
-fun fuelledPipes(
-    grid: Grid,
-    propellant: Mixture,
-    tiles: List<TileIndex>,
-    kelvin: Int = Temperature.AMBIENT_KELVIN,
-): Stuff {
-    val mass = MassArray(grid.size)
-    for (tile in tiles) for (f in Fluid.ALL) {
-        val held = propellant[f.species]
-        if (held > 0L) mass[tile, f] = held
-    }
-    val energy = EnergyArray(grid.size)
-    for (tile in tiles) energy[tile] = energyAtKelvin(thermalMassAt(mass, tile), kelvin)
-    return Stuff.from(mass, energy)
-}
-
-/** What is in the pipe cell at [tile] — a motor's chamber, which is the only tank it has. */
-fun VesselState.chamberMass(tile: TileIndex): Long {
-    var sum = 0L
-    for (f in Fluid.ALL) sum += pipeAir.massOf(tile, f)
-    return sum
-}

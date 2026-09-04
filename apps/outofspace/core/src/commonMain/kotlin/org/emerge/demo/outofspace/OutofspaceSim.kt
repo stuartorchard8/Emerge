@@ -439,7 +439,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // it and [Work.flightPlan] writes nothing, so the two are independent.
             val stick = FlightIntent.of(heldKeys)
             val intent = if (w.sas) stick.withSas(angularVelocity(state.angImpulse, w.about)) else stick
-            val flight = w.flightPlan(intent)
+            val flight = w.flightPlan(cfg, intent)
 
             for (tile in w.grid.tiles) {
                 val m : DeckMachine = w[tile] ?: continue
@@ -1499,22 +1499,26 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
      * other kind of machine, and hoisting a predicate out of it would leave the two apart anyway.
      */
     /**
-     * What the motor at [tile] can push with right now, from the gas in the pipe cell under it.
+     * What the motor at [tile] can push with — its rate times what its propellant is worth.
      *
      * ⚠️ **Thrust, not mass flow, and the difference is a ship that turns while flying straight.**
      * The balance used to weight each motor by `massPerTick`, which was a fair proxy while every
-     * engine threw the same stuff at the same speed. It is not one any more: a hydrogen motor throws
-     * a quarter the mass of a nitrogen one for the same push, so weighting by mass would throttle
-     * back the engine that was pushing hardest. See `PLAN_fluid_thrusters.md` §5.1.
+     * engine threw the same stuff at the same speed. It is not one any more: hydrogen is worth 3.7x
+     * nitrogen, so weighting by mass would throttle back the engine pushing hardest. See
+     * `PLAN_fluid_thrusters.md` §5.1.
+     *
+     * ⛔ **Zero when the store is empty**, and that is the honest answer rather than an omission: a
+     * motor with nothing in it contributes nothing to a burn, and the balance should be struck
+     * between the engines that can actually fire.
      */
-    private fun Work.chamberPush(tile: TileIndex): Long {
-        var moles = 0L
-        pipeMass.forEachFluid(tile) { f, mass -> moles += millimolesOf(mass, f.species) }
-        if (moles <= 0L) return 0L
-        return Thruster.chamberThrust(moles, kelvinOf(pipeEnergy[tile], thermalMassAt(pipeMass, tile)))
+    private fun Work.chamberPush(cfg: OutofspaceConfig, m: Thruster, tile: TileIndex): Long {
+        val held = store(m, tile, BufferRole.Input) ?: return 0L
+        val speed = Thruster.exhaustVelocity(held)
+        if (speed <= 0L) return 0L
+        return m.massPerTick * Thruster.milliTilesPerTick(speed, cfg.ticksPerSecond) / 1000L
     }
 
-    private fun Work.flightPlan(intent: FlightIntent): IntArray {
+    private fun Work.flightPlan(cfg: OutofspaceConfig, intent: FlightIntent): IntArray {
         val plan = IntArray(grid.size)
         if (intent.isIdle) return plan
         val tiles = ArrayList<TileIndex>()
@@ -1536,7 +1540,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     thrust = m.thrust,
                     leverX = tileCentre(grid.xOf(bell)) - about.comMilliX,
                     leverY = tileCentre(grid.yOf(bell)) - about.comMilliY,
-                    push = chamberPush(tile),
+                    push = chamberPush(cfg, m, tile),
                 ),
             )
         }
@@ -1581,53 +1585,31 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         // ── What is in the chamber ────────────────────────────────────────────────
         //
-        // The pipe cell the machine stands on, read whole: its composition decides how fast the
-        // exhaust leaves and its pressure decides how much of it goes. A motor on bare deck has no
-        // chamber and cannot fire, which is the same sentence as "a pump with no pipe beneath it has
-        // nowhere to push".
-        var moles = 0L
-        val cellMasses = LongArray(Species.COUNT)
-        var held = 0L
-        pipeMass.forEachFluid(tile) { f, mass ->
-            cellMasses[f.species.ordinal] = mass
-            held += mass
-            moles += millimolesOf(mass, f.species)
-        }
-        if (held <= 0L || moles <= 0L) return told
-        val chamber = Mixture.of(cellMasses, pipeEnergy[tile])
-
-        val speed = Thruster.exhaustVelocity(chamber)
-        // ⛔ Zero is "too little to price", not "slow" — below about a millimole the mole table
-        // floors out. Dividing the thrust budget by it would be a divide by zero, so it is a reason
-        // not to fire rather than a number to use.
+        // Its own store, filled by a belt like any other machine's. What is in it decides how fast
+        // the exhaust leaves — see [Thruster.exhaustVelocity] — so a motor's thrust is a fact about
+        // what the player chose to deliver to it.
+        val input = store(m, tile, BufferRole.Input) ?: return told
+        val speed = Thruster.exhaustVelocity(input)
+        // ⛔ Zero is "too little to price", not "slow": below about a millimole the mole table floors
+        // out. A motor with a smear in it makes no thrust rather than dividing by nothing.
         if (speed <= 0L) return told
         val perTick = Thruster.milliTilesPerTick(speed, cfg.ticksPerSecond)
         if (perTick <= 0L) return told
 
-        // ── How much of it goes ───────────────────────────────────────────────────
-        //
-        // `thrust = THRUST_PER_ATMOSPHERE × p_c`, so the mass is that budget divided by what a
-        // kilogram of this propellant is worth. Pressure as `moles × kelvin / volume` against a full
-        // tile of ordinary air, cross-multiplied so neither side has to form a pressure — the same
-        // shape [applyPumps] uses, and for the same reason.
-        val kelvin = kelvinOf(chamber.energy, thermalMassOf(chamber))
-        val wanted = scaledRatio(Thruster.chamberThrust(moles, kelvin), perTick, 1000L)
-        val (allowance, carry) = throttled(wanted, activation, m.carry)
-        val chunkMass = minOf(allowance, held)
+        val (allowance, carry) = throttled(m.massPerTick, activation, m.carry)
+        val chunkMass = minOf(allowance, input.total)
         if (chunkMass <= 0L) return told.copy(carry = carry)
 
         val path = exhaustPath(grid, structure, m)
         heat(tile, heatOfWorking(chunkMass, m))
 
-        // ⚠️ Through [Mixture.take] and its complement, which sum back to the cell exactly — so what
-        // is written back below is the cell minus what left, to the microgram, with no share
-        // arithmetic to round. See `reference_oos_microgram_deadlock`.
-        val chunk = chamber.take(chunkMass)
-        val left = chamber - chunk
-        for (f in Fluid.ALL) pipeMass[tile, f] = left[f.species]
-        pipeEnergy[tile] = left.energy
-
+        // ⚠️ Through [Mixture.take], which is the only exact draw — the complement sums back to the
+        // store to the microgram, with no share arithmetic to round. See
+        // `reference_oos_microgram_deadlock`.
+        val chunk = input.take(chunkMass)
         val parcel = MassArray(1) { _, f -> chunk[f.species] }
+        var gaseousMass = 0L
+        for (f in Fluid.ALL) gaseousMass += chunk[f.species]
 
         // Everything standing in the plume, taken with it. A jet does not thread between the gas in
         // a corridor; it entrains it, which is why the whole path is walked and not just its ends.
@@ -1648,11 +1630,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val ejectedMass = chunkMass + scoopedMass
 
         if (path.isClear) {
-            // ⛔ **Propellant is atmosphere now, so it leaves on the air ledger and not the cargo
-            // one.** It came out of the pipe layer, which `atmosphereMass` counts, so `ventedMass`
-            // would be booking a departure from a ledger it was never on. The whole crossing the
-            // old solid-fed motor needed — `solidBecameGas`, and its mirror — is simply gone.
-            airVentedByExhaust(ejectedMass, chunk.energy + scoopedEnergy)
+            // The propellant is cargo, so spending it is the cargo ledger's business; the gas the
+            // jet scooped out of the corridor on its way is the air's.
+            ventedMass += chunkMass
+            airVentedByExhaust(scoopedMass, scoopedEnergy)
             val impulse = ejectedMass * perTick / 1000L
             val outX = impulse * m.facing.dx
             val outY = impulse * m.facing.dy
@@ -1670,14 +1651,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // ⚠️ [destination] and not [tile] — the gas and its heat land in the *same* place, and
             // splitting them is not a rounding error but a category one.
             for (f in Fluid.ALL) masses.add(destination, f, parcel[TileIndex(0), f])
-            // ⛔ **No `½mv²` added on top any more, and that is a correction rather than a
-            // simplification.** The exhaust's kinetic energy *is* the propellant's heat — `½v_e²` is
-            // exactly the specific enthalpy the velocity was derived from — so adding it again
-            // minted the energy twice. It lands as the heat it started as, which conserves, and a
-            // blocked motor still cooks the tile in front of it because that heat all arrives in one
-            // cell.
+            // ⛔ **No `½mv²` added on top, and that is a correction rather than a simplification.**
+            // The exhaust's kinetic energy *is* the propellant's heat — `½v_e²` is exactly the
+            // specific enthalpy the velocity was derived from — so adding it again minted the energy
+            // twice. It lands as the heat it started as, which conserves, and a blocked motor still
+            // cooks the tile in front of it because all of it arrives in one cell.
             airEnergy[destination] += chunk.energy + scoopedEnergy
+            // What could be a gas has become one; what could not went out of the nozzle as the solid
+            // it is. Both, or one of the two identities silently stops being zero.
+            solidBecameGas(gaseousMass, chunk.energy)
+            ventedMass += chunkMass - gaseousMass
         }
+
+        putStore(m, tile, BufferRole.Input, (input - chunk).orNull())
 
         return told.copy(carry = carry)
     }
@@ -4058,6 +4044,29 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 if (deck.isGhost(input.owner)) continue
                 val filter = storage.filter ?: continue
                 accepts.getOrPut(tile) { mutableListOf() }.add(Acceptance.filtered(filter))
+            }
+
+            // ── Motors: a fluid, or the one species the player locked it to ──
+            //
+            // ⛔ **This is what answers "should a thruster fed gravel refuse to fire".** It is not a
+            // rule at the door — the network simply never routes a rock here, which is this file's
+            // own principle: *kind comes back as something a sink asks for, rather than something it
+            // happens to reject at the door.* A belt of ore running past a motor now goes past it.
+            //
+            // ⚠️ **Unlocked is "any fluid", not "anything".** Stated as one acceptance per fluid
+            // because that is the shape [Acceptance] has, and they are OR'd at the door; a motor is
+            // one machine on a vessel, so the width costs nothing worth measuring.
+            for ((tile, at) in ports) {
+                if (rails[tile.index] == null) continue
+                val input = at.firstOrNull { it.kind == PortKind.Input } ?: continue
+                val motor = deck[input.owner] as? Thruster ?: continue
+                // A construction site is not a motor — see the warehouse note above, which is the
+                // same trap: a ghost's dials are set but its shell cannot hold a gram.
+                if (deck.isGhost(input.owner)) continue
+                val stated = motor.filter
+                val list = accepts.getOrPut(tile) { mutableListOf() }
+                if (stated != null) list.add(Acceptance.filtered(stated))
+                else for (f in Fluid.ALL) list.add(Acceptance.filtered(SpeciesFilter(f.species, minPercent = null)))
             }
 
             // ── Concentrators: ore, and never anything already pure ──────────

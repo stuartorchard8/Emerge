@@ -248,9 +248,12 @@ Each ends at a green gate. Commit directly to main, one focused commit per step.
    ("I'd imagine this is just pump work") and was right; it is checked rather than assumed by
    `a gas packet survives a save round trip`.
    `applyPumps`, `PumpDemand` and `pumpDemands` are deleted early — nothing else ever called them.
-6. **The motor back on rails, with a filter** (§3.4). Gate: **the four parked tests come back** — they
-   are parked on nothing but the missing rate. A motor refuses a packet its filter does not name, and
-   a belt run at one routes past it.
+6. ✅ **DONE — the motor back on rails, with a filter** (§3.4). All four parked tests are back and
+   green. ⚠️ **The autopilot fixture had to be given hydrogen**: on water (1.04 km/s against the old
+   flat 3 km/s) it cut a spin 255× and simply had not finished inside its window. The old constant
+   *was* room-temperature hydrogen, so that is the fixture that measures the autopilot rather than
+   the propellant — and it is the first place a propellant's worth has shown up as something a ship
+   can feel.
 7. **Delete the pipe network** (§9). Last, because by here nothing needs it.
 8. **Valve as the vent marker** (§3.2), if it has not already fallen out of step 4.
 

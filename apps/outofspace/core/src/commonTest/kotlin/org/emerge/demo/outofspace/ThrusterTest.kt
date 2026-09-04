@@ -102,32 +102,29 @@ class ThrusterTest {
      * the same store a vent uses, so `massBalance` does not move while the engine burns.
      */
     @Test
-    fun `firing spends propellant and the air ledger stays closed`() {
-        // ⛔ **The air ledger, not the cargo one, and that is the change rather than a slip.**
-        // Propellant used to be a solid off a belt, so spending it moved `inTransitMass` into
-        // `ventedMass`. It is a fluid out of the pipe cell under the chamber now, and the pipe layer
-        // is counted by `atmosphereMass` — so a burn moves the atmosphere overboard and the cargo
-        // ledger never hears about it at all. See `PLAN_fluid_thrusters.md` §8.
-        //
-        // What is asserted is unchanged in spirit: every unit that leaves the chamber appears
-        // overboard on the same tick, and the identity never moves while the engine burns.
+    fun `firing spends propellant and the mass ledger stays closed`() {
+        // Propellant is cargo again — a packet in the motor's own store, delivered by a belt — so
+        // spending it moves `inTransitMass` into `ventedMass`, and what must be true is that the
+        // identity does not *move*: every unit that leaves the tank appears overboard on the tick it
+        // leaves.
         val cfg = OutofspaceConfig()
         val controller = flying(cfg, hullWithThruster(cfg.initialGrid, Direction.Right))
-        val before = controller.state.atmosphereMass
+        val before = controller.state.inTransitMass
+        val opening = controller.state.let { it.inTransitMass + it.ventedMass - it.extractedMass }
 
         repeat(TICKS) {
             controller.stepOnce()
-            assertEquals(0L, controller.state.airBalance, "tick ${controller.state.tick}: the air ledger moved while the engine was burning")
-            assertEquals(0L, controller.state.massBalance, "tick ${controller.state.tick}: a fluid-fed motor touched the cargo ledger")
+            val s = controller.state
+            assertEquals(
+                opening,
+                s.inTransitMass + s.ventedMass - s.extractedMass,
+                "tick ${s.tick}: the mass ledger moved while the engine was burning",
+            )
         }
 
         val s = controller.state
-        assertTrue(s.atmosphereMass < before, "the chamber is as full as it started: $before")
-        assertEquals(
-            before - s.atmosphereMass, s.airVentedMass,
-            "what left the chamber is not what went overboard",
-        )
-        assertEquals(0L, s.ventedMass, "a fluid-fed motor spent cargo it never had")
+        assertTrue(s.inTransitMass < before, "the tank is as full as it started: $before")
+        assertEquals(0L, s.airBalance, "the air ledger moved while the engine was burning")
     }
 
     /**
@@ -244,12 +241,8 @@ class ThrusterTest {
         assertEquals(setOf(at, bell), m.tiles(grid).toSet(), "the footprint is those two tiles")
         assertEquals(at, s.occupancy[bell], "the bell does not point back at the machine standing on it")
         assertTrue(s.deck.stuff.massAt(bell) > 0L, "the bell is made of nothing")
-        // ⛔ **And it keeps no store at all**, which is the other half of what makes it two tiles of
-        // machine and nothing else. Its chamber is the pipe cell under it — see
-        // `PLAN_fluid_thrusters.md` §8 — so a buffer tile here would be a store no port can fill and
-        // no pass can empty, which is exactly the pairing `BufferRoleTest` forbids.
-        assertEquals(emptyList(), bufferRolesOf(m), "a motor grew a store back")
-        assertNull(bufferTile(grid, m, at, BufferRole.Input), "the chamber is plumbing, not a buffer tile")
+        // And the chamber is still where the propellant is put: the store did not move with the size.
+        assertEquals(at, bufferTile(grid, m, at, BufferRole.Input), "the input store left the chamber")
     }
 
     /**
@@ -416,13 +409,8 @@ class ThrusterTest {
             grid = grid,
                         deck = deck,
             air = Stuff.gas(MassArray(grid.size)),
-            // ⛔ **The propellant is in the plumbing, not in a tank.** A motor's chamber is the pipe
-            // cell it stands on and it has no store of its own — see `PLAN_fluid_thrusters.md` §8.
-            // Charged at construction so `baselineAirMass` counts it; poured in afterwards it would
-            // read as a leak for the rest of the world's life.
-            pipeAir = fuelledPipes(grid, Mixture.of(Species.Water to INITIAL_PROPELLANT, energy = 0), listOf(tile)),
             buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
-        )
+        ).stocked(tile, Mixture.of(Species.Water to INITIAL_PROPELLANT, energy = 0).atAmbient())
     }
 
     /** A creative-mode world with nothing in it: the shortest way to a machine standing somewhere. */
