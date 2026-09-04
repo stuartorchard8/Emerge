@@ -1,6 +1,13 @@
 # Fluid thrusters, and fluids on rails
 
-Status: **REDIRECTED 2026-09-04 — steps 1–2 built, step 3 built and to be reverted.**
+Status: **COMPLETE 2026-09-04 — all eight steps built. One thing open, §7.**
+
+A thruster burns what a belt delivers, priced by molar mass and chamber temperature; a pump turns a
+room into cargo; off-gassing happens where the player put a valve and nowhere else; a store reacts
+only with itself; and the pipe network is gone.
+
+⚠️ **The balance consequence nobody has felt yet:** every existing vessel's engines are about a third
+as strong unless they are fed hydrogen. Fly a save before deciding what is next.
 
 A thruster stops being a hole that eats gravel at a flat 3 km/s and becomes a rocket: what it burns
 decides how fast the exhaust leaves. Hot chamber, light molecule, a fourteenfold spread in what a
