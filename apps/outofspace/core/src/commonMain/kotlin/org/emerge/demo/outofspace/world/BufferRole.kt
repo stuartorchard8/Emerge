@@ -7,6 +7,7 @@ import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.Furnace
+import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.machine.Thruster
 
 /**
@@ -120,6 +121,10 @@ internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
             BufferRole.Product -> pack(r, 0)
             BufferRole.Waste -> NO_OFFSET
         }
+        // One store, on the one port it has — a pump is one tile, so both are its anchor. What it
+        // banks is what it has drawn out of the room and not yet handed to a belt.
+        is Pump -> if (role == BufferRole.Product) pack(0, 0) else NO_OFFSET
+
         is Storage -> if (role == BufferRole.Inside) pack(0, 0) else NO_OFFSET
 
         is DockingPort -> when (role) {

@@ -1214,7 +1214,7 @@ fun fullness(machine: DeckMachine?, centre: TileIndex, grid: Grid, buffers: Buff
     is Sensor, is WireButton -> 0
     is Hull, is Airlock -> 0
     is Vent -> 0
-    is Pump -> 0
+    is Pump -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / Pump.BUFFER_CAP).toInt()
 }.coerceIn(0, SignalField.FULL)
 
 /**

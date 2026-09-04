@@ -1,37 +1,45 @@
 package org.emerge.demo.outofspace
 
-import org.emerge.demo.outofspace.world.RailLayer
-import org.emerge.demo.outofspace.world.BufferLayer
-import org.emerge.demo.outofspace.OutofspaceReducer.PUMP_PERIOD
+import org.emerge.demo.outofspace.chem.Fluid
+import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.logistics.Capacity
+import org.emerge.demo.outofspace.world.BufferLayer
+import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.Pump
+import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.Save
-import org.emerge.demo.outofspace.world.VesselState
-import org.emerge.demo.outofspace.world.PIPE_VOLUME
 import org.emerge.demo.outofspace.world.TileIndex
-import org.emerge.demo.outofspace.world.VolumeField
+import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
+import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * The pump: gas moved **uphill**, out of a room and into a pipe.
+ * **A room's gas becomes cargo, and rides a belt like anything else.**
  *
- * That one word is the whole difference from a valve, and most of what is below is about pinning it.
- * A valve stops when the two sides agree; a pump keeps going past that until it stalls, and if it did
- * not, there would be no reason for it to exist.
+ * The pump is the only continuum-to-packet converter for a fluid, and it is the piece that makes the
+ * whole rail-borne fluid direction work: everything downstream of it — demand, filters, bridges,
+ * twenty-tonne tanks — already exists and does not care that the packet is a gas.
+ *
+ * ⚠️ **The crossing is what is worth pinning**, not the drawing. Matter leaves the air identity and
+ * joins the cargo one, and neither notices by itself. See `PLAN_fluid_thrusters.md` §3.1.
  */
 class PumpTest {
 
     private val grid = Grid(20, 12)
     private val cfg = OutofspaceConfig(initialGrid = grid)
+
+    private val row = 6
+    private val pumpAt = grid.tile(5, row)
+    private val tankAt = grid.tile(14, row)
 
     private fun hulled(): DeckArray {
         val deck = DeckArray(grid)
@@ -55,203 +63,188 @@ class PumpTest {
         return s
     }
 
-    private fun pipeRun(state: VesselState, y: Int, fromX: Int, toX: Int): VesselState {
-        var s = state
-        for (x in fromX until toX) s = edit(s, fixtureLay(grid.tile(x, y), grid.tile(x + 1, y), Conduit.Pipe))
-        return s
+    /**
+     * A sealed box, a pump facing the room above it, and a run of track from it to a tank.
+     *
+     * ⚠️ **The room is a collection bay, not a cabin, and that is what makes the pump run.** Its
+     * throughput is bounded by how fast gas reaches the one tile it draws from, and a room is a
+     * diffusive medium — measured, a pump in ordinary ambient air manages about **1.5 g a tick**
+     * against a dial of 250, because it strips its intake tile and then waits. At forty atmospheres
+     * it hits the dial exactly. That is the shape the machine is meant to have (see [Pump]) and
+     * `a pump in thin air is limited by what reaches it` pins the other end of it.
+     */
+    private fun plant(withTank: Boolean = true, atmospheres: Long = 40L): VesselState {
+        var s = VesselState(
+            grid, hulled(),
+            gravity = VesselState.PLATING_ONE_G,
+            buffers = BufferLayer.forDeck(grid, hulled()),
+            rail = RailLayer.empty(grid.size),
+        ).copy(creative = true)
+        s = edit(s, fixturePlace(pumpAt, Brush.Building(DeckMachineKind.Pump), Direction.Up))
+        if (withTank) s = edit(s, fixturePlace(tankAt, Brush.Building(DeckMachineKind.Storage), Direction.Right))
+        for (x in 5 until 14) s = edit(s, fixtureLay(grid.tile(x, row), grid.tile(x + 1, row), Conduit.Rail))
+        return if (atmospheres <= 1L) s else pressurised(s, atmospheres)
     }
 
-    private fun pipeMass(s: VesselState, tile: TileIndex): Long {
-        var sum = 0L
-        for (sp in Species.ALL) sum += s.pipeAir.massOf(tile, sp)
-        return sum
-    }
-
-    private fun roomMass(s: VesselState, tile: TileIndex): Long {
-        var sum = 0L
-        for (sp in Species.ALL) sum += s.air.massOf(tile, sp)
-        return sum
-    }
-
-    /** ⚠️ The energy half is **PARKED** for the unit rescale — see [EnergyLedgers]. Mass is not. */
-    private fun assertBalanced(s: VesselState, what: String) {
-        assertEquals(
-            s.baselineAirMass,
-            s.atmosphereMass + s.airVentedMass,
-            "$what: rooms plus pipes plus vented no longer accounts for the air the world started with",
+    /** The same world with [times] as much air in every room — an asteroid off-gassing into a hold. */
+    private fun pressurised(s: VesselState, times: Long): VesselState {
+        val air = s.air.copyMass()
+        val energy = s.air.copyEnergy()
+        for (t in grid.tiles) {
+            if (s.structure.blocksAir(t)) continue
+            for (f in Fluid.ALL) {
+                val held = air[t, f]
+                if (held > 0L) air[t, f] = held * times
+            }
+            energy[t] = energy[t] * times
+        }
+        return VesselState(
+            grid, s.deck,
+            conduits = s.conduits, buffers = s.buffers, rail = s.rail,
+            air = org.emerge.demo.outofspace.world.Stuff.from(air, energy),
+            gravity = VesselState.PLATING_ONE_G, creative = true,
         )
-        EnergyLedgers.assertAirBalanced(s, what)
     }
 
-    /** A pipe run with a pump on it at [pumpX], drawing from the room above (facing Up). */
-    private fun pumped(pumpX: Int = 6, y: Int = 6, facing: Direction = Direction.Up): VesselState {
-        var s = VesselState(grid, hulled(), gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.empty(grid.size), rail = RailLayer.empty(grid.size))
-        s = pipeRun(s, y, 4, 15)
-        return edit(s, fixturePlace(grid.tile(pumpX, y), Brush.Building(DeckMachineKind.Pump), facing))
+    private fun banked(s: VesselState): Long = s.inStore(pumpAt, BufferRole.Product)?.total ?: 0L
+    private fun tank(s: VesselState): Long = s.inStore(tankAt, BufferRole.Inside)?.total ?: 0L
+
+    private fun onBelts(s: VesselState): Long {
+        var sum = 0L
+        for (tile in grid.tiles) for (sp in Species.ALL) sum += s.rail.stuff[tile, sp]
+        return sum
+    }
+
+    private fun assertBalanced(s: VesselState, what: String) {
+        assertEquals(0L, s.airBalance, "$what: the air ledger is out")
+        assertEquals(0L, s.massBalance, "$what: the cargo ledger is out")
+    }
+
+    // ── The draw ─────────────────────────────────────────────────────────────
+
+    @Test
+    fun `a pump turns the room it faces into cargo`() {
+        // ⚠️ Measured as a delta, not against zero: the fixture builds through the reducer, so the
+        // pump has already been running for the handful of ticks the edits took.
+        val start = plant()
+        val airBefore = start.atmosphereMass
+        val bankedBefore = banked(start)
+
+        val after = run(start, 40)
+
+        assertTrue(banked(after) > bankedBefore || onBelts(after) > 0L, "the pump drew nothing at all")
+        assertTrue(after.atmosphereMass < airBefore, "cargo appeared without the room losing any air")
+        assertBalanced(after, "a pump drawing")
     }
 
     @Test
-    fun `a pump fills the pipe it stands on from the room it faces`() {
-        val start = pumped()
+    fun `what the room lost is what the world gained, to the gram`() {
+        val start = plant()
+        val airBefore = start.atmosphereMass
+        val cargoBefore = start.inTransitMass
+
         val after = run(start, 200)
 
-        assertTrue(after.pipeAir.totalMass > 0L, "the pump moved nothing")
-        assertTrue(pipeMass(after, grid.tile(13, 6)) > 0L, "gas was pumped in but never ran along the pipe")
-        assertBalanced(after, "a pump filling a pipe")
+        val lost = airBefore - after.atmosphereMass
+        assertTrue(lost > 0L, "nothing crossed, so nothing is being measured")
+        assertEquals(lost, after.inTransitMass - cargoBefore, "the cargo did not gain what the air lost")
+        assertBalanced(after, "a crossing")
     }
 
-    /**
-     * The assertion that separates a pump from a fast valve.
-     *
-     * A valve settles at equal **pressure**, which for an eighth-of-a-tile cell means about an eighth
-     * of the neighbouring room's mass. A pump has to beat that, and by roughly [Pump.STALL_RATIO]. If
-     * this ever reads at the valve's equilibrium, whatever is in the tick is a hole, however it is
-     * named.
-     */
     @Test
-    fun `a pump pushes past the pressure a valve would stop at`() {
-        val after = run(pumped(), 600*PUMP_PERIOD)
+    fun `the gas arrives carrying its heat`() {
+        // ⚠️ Silent when dropped: a store full of gas at zero joules reads AMBIENT_KELVIN through
+        // `kelvinOf`, so cold cargo looks perfectly healthy while the room it came from is short.
+        val after = run(plant(), 60)
+        val held = after.inStore(pumpAt, BufferRole.Product) ?: after.inStore(tankAt, BufferRole.Inside)
 
-        val intake = grid.tile(6, 5)
-        val pipe = grid.tile(6, 6)
-        val room = roomMass(after, intake)
-        val held = pipeMass(after, pipe)
-        assertTrue(room > 0L, "the pump emptied the room entirely, which is not what this measures")
+        assertTrue(held != null && held.total > 0L, "fixture: something should have been drawn")
+        assertTrue(held!!.energy > 0L, "the gas arrived with no heat in it")
+    }
 
-        val valveWould = room * PIPE_VOLUME / VolumeField.FULL
+    // ── And onto the belt ────────────────────────────────────────────────────
+
+    @Test
+    fun `it ships whole packets down a belt into a tank`() {
+        // The whole point of the direction: a fluid is cargo, and cargo already has a logistics
+        // system. Nothing between the pump and the tank knows or cares that this is a gas.
+        val after = run(plant(), 4000)
+
+        assertTrue(tank(after) > 0L, "nothing reached the tank")
         assertTrue(
-            held > valveWould * 2,
-            "the pipe settled at ${held}g where a plain valve would have left about ${valveWould}g — " +
-                "gas is not being pushed uphill, so this is a hole rather than a pump",
+            tank(after) >= Capacity.PACKET_MASS,
+            "less than one belt-load arrived, so packets are not being shipped whole: ${tank(after)}",
         )
-        assertBalanced(after, "a pump against its stall")
+        assertBalanced(after, "a tank filling from a pump")
     }
 
-    /**
-     * And it does not push for ever: [Pump.STALL_RATIO] is a real ceiling, not a slow approach to one.
-     *
-     * Checked by running a long time and then a lot longer, because "it stalls" and "it is still
-     * climbing slowly" look identical at any single moment. Without a ceiling this is a machine that
-     * compresses without limit.
-     */
     @Test
-    fun `a pump stalls rather than compressing without limit`() {
-        // A single length of pipe with nowhere to run to, which is the only arrangement that can
-        // show a stall at all. On a long run the pump never stalls and should not: what it pushes in
-        // flows away down the network, the cell under it stays well below its ceiling, and the pump
-        // keeps working until the whole run is full. That is the machine behaving correctly, and it
-        // is also indistinguishable from a stall that does nothing.
-        var s = VesselState(grid, hulled(), gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.empty(grid.size), rail = RailLayer.empty(grid.size))
-        s = edit(s, fixturePlace(grid.tile(6, 6), Brush.Run(Conduit.Pipe), Direction.Right))
-        s = edit(s, fixturePlace(grid.tile(6, 6), Brush.Building(DeckMachineKind.Pump), Direction.Up))
-        val early = run(s, 400*PUMP_PERIOD)
-        val late = run(early, 1_200)
+    fun `a tank of gas keeps it, rather than breathing it back out`() {
+        // ⛔ This is what step 4 bought and it is worth pinning here too: a hopper never off-gasses,
+        // so a tonne of gas is a tonne of gas. Without that the whole direction is unreachable.
+        val filled = run(plant(), 4000)
+        val held = tank(filled)
+        assertTrue(held > 0L, "fixture: the tank should have something in it")
 
-        val pipe = grid.tile(6, 6)
-        val a = pipeMass(early, pipe)
-        val b = pipeMass(late, pipe)
-        assertTrue(a > 0L, "nothing was pumped at all")
+        val later = run(filled, 2000)
         assertTrue(
-            b <= a * 12 / 10,
-            "the pipe held ${a}g and then ${b}g twelve hundred ticks later — the pump is still " +
-                "compressing, so the stall does nothing",
+            tank(later) >= held,
+            "the tank leaked its gas back into the room: $held then ${tank(later)}",
         )
-        assertBalanced(late, "a stalled pump")
+        assertBalanced(later, "a tank sitting on its gas")
     }
 
     @Test
-    fun `a pump with no pipe beneath it has nowhere to push`() {
-        var s = VesselState(grid, hulled(), gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.empty(grid.size), rail = RailLayer.empty(grid.size))
-        s = edit(s, fixturePlace(grid.tile(6, 6), Brush.Building(DeckMachineKind.Pump), Direction.Up))
-        val roomBefore = s.air.totalMass
+    fun `a pump in thin air is limited by what reaches it, not by its own rate`() {
+        // ⛔ **The property that makes an intake worth building well.** A pump draws from one tile,
+        // and a room is diffusive — so in ordinary cabin air it strips that tile and then waits,
+        // managing a fraction of a per cent of its rate. Measured at about 1.5 g a tick against 250.
+        // A bay thick with an asteroid's off-gas is what a pump is *for*, and the comparison is what
+        // says so.
+        val thin = run(plant(atmospheres = 1L), 2000)
+        val thick = run(plant(), 2000)
 
-        val after = run(s, 200)
-
-        assertEquals(0L, after.pipeAir.totalMass, "gas was pumped into plumbing that is not there")
-        assertEquals(roomBefore, after.air.totalMass, "the room lost gas to nowhere")
-        assertBalanced(after, "a pump with no pipe")
+        assertTrue(
+            banked(thick) + tank(thick) > (banked(thin) + tank(thin)) * 4L,
+            "a dense bay did not out-pump a thin cabin: ${banked(thick) + tank(thick)} against " +
+                "${banked(thin) + tank(thin)}",
+        )
+        assertBalanced(thin, "a pump in thin air")
     }
 
-    /**
-     * Facing means intake, so turning a pump changes which room it empties.
-     *
-     * Built on two **sealed** chambers, which took a wrong turn to arrive at. The obvious version
-     * puts the pump in one big room and watches the tile it faces, and it measures nothing: a room
-     * is connected to itself, so the air the pump draws off one tile is replaced from the
-     * neighbouring tiles within a tick or two and the difference never accumulates. It has to be a
-     * chamber that cannot be refilled before draining it means anything.
-     *
-     * Comparing the two orientations rather than checking one, because a pump that ignored facing
-     * entirely and always drew from some fixed neighbour would satisfy any single-orientation test
-     * that only asked whether gas moved.
-     */
     @Test
-    fun `which room a pump empties is the one it faces`() {
-        // A bulkhead across the middle with the pump set into it, so the only way out of either
-        // chamber is through the machine.
-        fun split(facing: Direction): VesselState {
-            var s = VesselState(grid, hulled(), gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.empty(grid.size), rail = RailLayer.empty(grid.size))
-            for (x in 1 until grid.width - 1) {
-                if (x == 6) continue
-                s = edit(s, fixturePlace(grid.tile(x, 6), Brush.Building(DeckMachineKind.Hull), Direction.Right))
-            }
-            s = edit(s, fixturePlace(grid.tile(6, 6), Brush.Run(Conduit.Pipe), Direction.Right))
-            return run(edit(s, fixturePlace(grid.tile(6, 6), Brush.Building(DeckMachineKind.Pump), facing)), 400)
+    fun `a pump with nowhere to send it fills up and stops`() {
+        val after = run(plant(withTank = false), 4000)
+
+        assertTrue(banked(after) > 0L, "the pump banked nothing")
+        assertTrue(
+            banked(after) <= Pump.BUFFER_CAP,
+            "the pump banked ${banked(after)} against a cap of ${Pump.BUFFER_CAP}",
+        )
+        assertBalanced(after, "a pump with no tank")
+    }
+
+    // ── Through a save ───────────────────────────────────────────────────────
+
+    @Test
+    fun `a gas packet survives a save round trip`() {
+        // ⚠️ The one place the old code genuinely could not carry a fluid: the writer emits `F:` for
+        // a `FluidPacket` and the reader dropped it on the floor. Nothing ever made one, so nothing
+        // ever noticed — and a lost packet is a leak the ledger reports for ever.
+        // ⚠️ **Caught mid-journey, not at a fixed tick.** A packet crosses nine tiles in about
+        // seventy ticks, so "run 600 and look" lands on an empty belt as often as not — and an empty
+        // belt makes this test pass while proving nothing.
+        var filled = plant()
+        repeat(4000) {
+            if (onBelts(filled) > 0L) return@repeat
+            filled = run(filled, 1)
         }
+        assertTrue(onBelts(filled) > 0L, "fixture: nothing ever rode the belt")
 
-        fun chamber(s: VesselState, rows: IntRange): Long {
-            var sum = 0L
-            for (y in rows) for (x in 1 until grid.width - 1) sum += roomMass(s, grid.tile(x, y))
-            return sum
-        }
+        val reloaded = Save.read(Save.write(filled))
 
-        val up = split(Direction.Up)
-        val down = split(Direction.Down)
-
-        // Each chamber against ITSELF under the two orientations, never upper against lower: the
-        // vessel has gravity and the air is stratified, so the lower chamber holds more whatever any
-        // pump is doing, and comparing the two would measure that and call it facing.
-        assertTrue(
-            chamber(up, 1..5) < chamber(down, 1..5),
-            "the upper chamber held as much with the pump facing away from it as facing into it, " +
-                "so facing is being ignored",
-        )
-        assertTrue(
-            chamber(down, 7..10) < chamber(up, 7..10),
-            "the lower chamber held as much with the pump facing away from it as facing into it, " +
-                "so facing is being ignored",
-        )
+        assertEquals(onBelts(filled), onBelts(reloaded), "what was on the belt did not come back")
+        assertEquals(filled.atmosphereMass, reloaded.atmosphereMass, "the air did not come back")
+        assertBalanced(reloaded, "a reloaded world")
     }
-
-    @Test
-    fun `a pump and its facing survive a save`() {
-        val after = run(pumped(facing = Direction.Down), 50)
-        val back = Save.read(Save.write(after))
-
-        val pump = back.deck[grid.tile(6, 6)] as? Pump
-        assertTrue(pump != null, "the pump did not come back")
-        assertEquals(Direction.Down, pump.facing, "it came back facing somewhere else")
-        assertEquals(after.pipeAir, back.pipeAir, "what it had pumped came back as something else")
-    }
-
-    @Test
-    fun `a pump does not push the ship, because both ends of it are aboard`() {
-        // ⛔ **The inverse of what stood here**, and deliberately. A pump used to shift the vessel's
-        // impulse, via the hull reaction the pressure solver booked on the pipe field. That was
-        // never a real force: a pump moves gas from a room into a pipe and both are inside the same
-        // hull, so it is an internal exchange and internal forces cannot move a centre of mass.
-        // Believing otherwise is the same mistake that let a sealed ship spin itself up — see
-        // [VesselState.angularBalance]. What a pump may do is push the ship *transiently* while it
-        // accelerates the gas, and give it back when the gas stops; with the atmosphere carrying no
-        // momentum of its own, that transient is exactly zero.
-        val idle = run(VesselState(grid, hulled(), gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.empty(grid.size), rail = RailLayer.empty(grid.size)), 300)
-        val working = run(pumped(facing = Direction.Left), 300)
-
-        assertEquals(
-            idle.vesselImpulseX, working.vesselImpulseX,
-            "a running pump pushed the ship, which would be a reactionless drive",
-        )
-        assertBalanced(working, "a pump pushing on the ship")
-    }
-
 }

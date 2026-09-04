@@ -126,7 +126,6 @@ import org.emerge.demo.outofspace.world.heatCapacityAt
 import org.emerge.demo.outofspace.world.ApertureField
 import org.emerge.demo.outofspace.world.EnergyArray
 import org.emerge.demo.outofspace.world.MassArray
-import org.emerge.demo.outofspace.world.PumpDemand
 import org.emerge.demo.outofspace.world.TileArray
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.airlockOpenness
@@ -134,7 +133,7 @@ import org.emerge.demo.outofspace.world.millimolesOf
 import org.emerge.demo.outofspace.world.kelvinOf
 import org.emerge.demo.outofspace.world.VolumeField
 import org.emerge.demo.outofspace.world.PIPE_VOLUME
-import org.emerge.demo.outofspace.world.applyPumps
+import org.emerge.demo.outofspace.world.Share
 import org.emerge.demo.outofspace.world.exchangeLayers
 import org.emerge.demo.outofspace.world.pipeApertures
 import org.emerge.demo.outofspace.world.pipeVolumes
@@ -460,7 +459,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // Inert: none of these is run by the tick. A gauge is read after the conduit
                     // step (see [readGauges]) and a valve is a hole, not a mechanism.
                     is Hull, is Airlock, is Vent, is Storage, is Bridge, is Gauge, is Valve,
-                    is Sensor, is WireButton, is Pump -> m
+                    is Sensor, is WireButton -> m
+                    is Pump -> w.suck(m, on, tile)
                     // A thruster on flight control answers the pilot's stick, not the wire — see
                     // [ThrusterControl]. Worked out per motor from where it sits and which way it
                     // points, so the ship needs no allocation of engines to axes anywhere.
@@ -676,15 +676,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 pipeVolumes = volumes,
             )
 
-            // Pumps alongside valves, before either layer is diffused (see [applyPumps]).
-            applyPumps(
-                demands = pumpDemands(state.grid, w.deck, conduits, state.signals),
-                roomMass = w.masses,
-                roomEnergy = w.airEnergy,
-                pipeMass = w.pipeMass,
-                pipeEnergy = w.pipeEnergy,
-                pipeVolumes = volumes,
-            )
+            // ⛔ **The pump's half of this pass is gone with the pump's old job.** It fills its
+            // own store off the room and hands packets to a belt now — see [Pump] — so nothing
+            // pushes into plumbing any more, and only the valves' exchange is left here. The layer
+            // itself follows in `PLAN_fluid_thrusters.md` §9.
         }
         if (_v0) profiler.recordPhase("valves+pumps", _v!!.elapsedNow().inWholeNanoseconds)
 
@@ -1259,27 +1254,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     /** Full snapshots on the wire; a demo sending partial state would merge here instead. */
     override fun patchState(state: VesselState, delta: VesselState): VesselState = delta
 
-    /** Pump demands: room→pipe. Both ends optional (missing pump excluded). Activation applied here, not in [applyPumps]. */
-    private fun pumpDemands(
-        grid: Grid,
-        deck: DeckArray,
-        conduits: Conduits,
-        signals: SignalField,
-    ): List<PumpDemand> {
-        var demands: MutableList<PumpDemand>? = null
-        for (i in 0 until deck.size) {
-            val tile = TileIndex(i)
-            val pump = deck[tile] as? Pump ?: continue
-            if (conduits.at(Conduit.Pipe, tile) == null) continue
-            val intake = grid.neighbour(tile, pump.facing)
-            if (intake == TileIndex.NONE) continue
-            if (!pump.wiring.isOn(Action.Run, signals.at(tile))) continue
-            val moles = Pump.MILLIMOLES_PER_TICK
-            if (moles <= 0L) continue
-            (demands ?: ArrayList<PumpDemand>(4).also { demands = it }).add(PumpDemand(intake, tile, moles))
-        }
-        return demands ?: emptyList()
-    }
 
     // ── Machine behaviour ─────────────────────────────────────────────────────
 
@@ -2877,6 +2851,59 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * Only the mass of it is obvious, and the other two are exactly the kind of half-exchange
          * the ledgers exist to catch.
          */
+        /**
+         * One tick of a [Pump]: take gas out of the room it faces and bank it as cargo.
+         *
+         * The mirror of [liftFrost] and of a bite — a continuum becoming a heap — and it books the
+         * same crossing they do. What it banks is handed to the belt by the ordinary output-port
+         * machinery, whole packets only, so the rail meters what leaves exactly as it meters an
+         * extractor.
+         *
+         * ⚠️ **A share of the room, species by species, and a share of its heat with it.** Taking a
+         * mass and reassembling a temperature on the far side is the rounding [handOver] exists to
+         * avoid; the gas that arrives in the store is the gas that left the room, at its temperature.
+         *
+         * ⛔ **Books `gasBecameSolid`, or the ledgers part company.** Matter is leaving the air
+         * identity and joining the cargo one, and neither notices by itself — the note on
+         * [VesselState.massBalance] is about exactly this.
+         */
+        fun suck(m: Pump, on: Boolean, tile: TileIndex): Pump {
+            if (!on) return m
+            val store = bufferTile(grid, m, tile, BufferRole.Product)!!
+            val held = buffers.resourceAt(store)
+            val room = Pump.BUFFER_CAP - (held?.total ?: 0L)
+            if (room <= 0L) return m
+
+            val intake = grid.neighbour(tile, m.facing)
+            if (intake == TileIndex.NONE) return m
+            var available = 0L
+            masses.forEachFluid(intake) { _, mass -> available += mass }
+            if (available <= 0L) return m
+
+            val wanted = minOf(Pump.MASS_PER_TICK, room, available)
+            if (wanted <= 0L) return m
+            val share = Share(wanted, available)
+
+            val drawn = LongArray(Species.COUNT)
+            var taken = 0L
+            masses.forEachFluid(intake) { f, mass ->
+                val take = share.of(mass)
+                if (take != 0L) {
+                    masses[intake, f] = mass - take
+                    drawn[f.species.ordinal] += take
+                    taken += take
+                }
+            }
+            if (taken <= 0L) return m
+            val heat = share.of(airEnergy[intake])
+            airEnergy[intake] -= heat
+
+            gasBecameSolid(taken, heat)
+            val packed = Mixture.of(drawn, heat)
+            buffers.put(store, held?.plus(packed) ?: packed)
+            return m
+        }
+
         fun leech(m: Extractor, on: Boolean, tile: TileIndex): Extractor {
             // Backed up: stop biting. What is not taken is still in the rock — or still on the floor
             // — which is a better place for it than a buffer; nothing is forfeit by waiting.

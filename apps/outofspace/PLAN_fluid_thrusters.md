@@ -117,6 +117,17 @@ port. A continuum-to-packet converter, which is what an extractor already is for
 - ⚠️ Loses `MILLIMOLES_PER_TICK`'s molar framing. A packet is a mass, so a pump's rate is a mass;
   molar was right when the destination was a pressure, and it is not the unit a belt counts in.
 
+✅ **BUILT.** `MASS_PER_TICK` is a quarter of a kilogram — 16 kg/s, a packet every six seconds, some
+fifty pumps to saturate one belt.
+
+⛔ **And it is diffusion-limited in thin air, which is the machine's real shape.** Measured: a pump in
+ordinary cabin air manages about **1.5 g a tick** — it strips the one tile it faces and then waits for
+the room to refill it — against **250 g a tick**, its full rate, in a hold at forty atmospheres. The
+dial is not what bounds it; *what is around it* is. That is the right story for the thing it is for —
+a bay an asteroid is off-gassing into, which stays thick — and it makes an intake something worth
+building well rather than a fitting to bolt on. Pinned by `a pump in thin air is limited by what
+reaches it, not by its own rate`.
+
 ### 3.2 Valve — the one place a run may off-gas
 
 A permeable deck machine standing over **track**, marking that tile as a place volatiles may leave
@@ -230,9 +241,13 @@ Each ends at a green gate. Commit directly to main, one focused commit per step.
    else can be tested without it** — a fluid packet evaporates off the belt on its first tick
    otherwise. Gate: a tonne of liquid oxygen sits in a storage indefinitely; ore over a valve tile
    still degasses; the air and cargo ledgers both stay closed.
-5. **Fluids ride rails end to end**, with the pump as the source (§3.1) and the `SolidPacket`
-   assertions removed (§2). Gate: a pump fills a storage across a run, through demand and a filter,
-   and a `FluidPacket` survives a save round trip — which it does not today.
+5. ✅ **DONE — fluids ride rails end to end**, with the pump as the source (§3.1).
+   ⚠️ **The `SolidPacket` assertions needed no removing.** `RailLayer` stores a bare `Mixture` and
+   everything on a belt is wrapped as a `SolidPacket` whatever it holds, so a gas already rode and
+   already survived a save — the `F:`/`FluidPacket` path is simply never taken. Stu called this
+   ("I'd imagine this is just pump work") and was right; it is checked rather than assumed by
+   `a gas packet survives a save round trip`.
+   `applyPumps`, `PumpDemand` and `pumpDemands` are deleted early — nothing else ever called them.
 6. **The motor back on rails, with a filter** (§3.4). Gate: **the four parked tests come back** — they
    are parked on nothing but the missing rate. A motor refuses a packet its filter does not name, and
    a belt run at one routes past it.

@@ -49,7 +49,10 @@ enum class DeckMachineKind(
     Storage("STORAGE", preventThoroughfare = true, gatesOutput = true),
     Sensor("SENSOR"),
     KeyInput("BUTTON"),
-    Pump("PUMP"),
+    // Whole packets, for an extractor's reason: a pump's store is a hopper filling at a rate,
+    // not a pair of finished packets, so a runt lump shipped off the bottom of it would own a
+    // tile for good. See `reference_oos_packets_never_merge`.
+    Pump("PUMP", shipsWholePackets = true),
     /**
      * A rocket motor: two tiles end to end, and the only kind whose anchor is **not** the middle of
      * its own footprint — see `FootprintShape.Nose`.

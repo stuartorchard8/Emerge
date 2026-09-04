@@ -129,12 +129,17 @@ private fun localPorts(machine: DeckMachine): List<LocalPort> {
         )
         is Hull, is Airlock -> emptyList()
 
-        // A pump's traffic is gas: it draws from the room it faces and pushes into the pipe on
-        // its own tile, neither of which is a port. Track arriving at one would have nothing to hand
-        // over.
-        // No ports at all: a gauge only watches the run under it, and a valve only opens onto the
-        // room it stands in. Neither is a place material can be handed to.
-        is Sensor, is WireButton, is Pump, is Gauge, is Valve -> emptyList()
+        // ⛔ **On its own tile, because a pump is one tile.** Its reach is zero, so `±r` is the
+        // anchor either way — a rail is threaded underneath it exactly as one runs under an
+        // extractor. Drawn facing *away* from the intake, which is the only thing `side` decides.
+        //
+        // The intake is not a port: it is a room, and a room is not somewhere a belt can hand
+        // anything over.
+        is Pump -> listOf(LocalPort(0, 0, Direction.Left, PortKind.Output))
+
+        // No ports at all: a gauge only watches the run under it, and a valve only says that what
+        // passes over it may let go of its volatiles. Neither is a place material can be handed to.
+        is Sensor, is WireButton, is Gauge, is Valve -> emptyList()
     }
 }
 
