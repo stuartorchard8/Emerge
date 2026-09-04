@@ -232,9 +232,18 @@ private val WRITTEN: List<Reaction> = listOf(
         reagents = listOf(Species.Ammonia to 2),
         products = listOf(Species.Nitrogen to 1, Species.Hydrogen to 3),
         onsetKelvin = 1100,
-        // +46 kJ per 2 mol of ammonia, which is 34 g of it — the figure the row carried in
-        // [DECOMPOSITIONS], quoted against the same formula mass so the move changes no number.
-        enthalpyPerKg = 46L * kJPerMolAt(34),
+        // +92 kJ per 2 mol of ammonia, which is 34 g of it: ΔH_f(NH₃) is −46 kJ/mol, and this row
+        // cracks **two** of them.
+        //
+        // ⛔ **It said 46 until 2026-09-04, and the reason is written into the comment it replaces**
+        // — *"the figure the row carried in [DECOMPOSITIONS], quoted against the same formula mass
+        // so the move changes no number"*. The old row's principal was one ammonia; this one's is
+        // two. Keeping the number while doubling the divisor is exactly how a per-mole figure
+        // becomes a half-strength per-reaction one, and `everyEnthalpyIsQuotedAgainstItsOwnFormulaMass`
+        // could not see it because a halved numerator over a doubled denominator is still a whole
+        // number of kJ/mol. See `everyFireIsWorthWhatTheTableSaysItIs`, which is the check that
+        // does.
+        enthalpyPerKg = 92L * kJPerMolAt(34),
         baseRate = COMBUSTION_BASE_RATE,
     ),
 
@@ -336,7 +345,19 @@ private val WRITTEN: List<Reaction> = listOf(
         reagents = listOf(Species.Hydrogen to 2, Species.Oxygen to 1),
         products = listOf(Species.Water to 2),
         onsetKelvin = 773,
-        enthalpyPerKg = -242L * kJPerMolAt(4),
+        // −484 kJ per 2 mol of hydrogen, which is 4 g of it — two waters at −242 kJ/mol each.
+        //
+        // ⛔ **It said 242 until 2026-09-04**, which is per mole of *water* over the mass of *two
+        // moles of hydrogen*: the row released half the energy hydrogen actually carries, on the one
+        // fuel a vessel is most likely to burn on purpose. Every other row here is already quoted
+        // per reaction as written — methane −802/16 g, CO −566/56 g, H₂S −1036/68 g, NH₃ −1267/68 g
+        // — so this was the odd one out rather than a convention.
+        //
+        // ⚠️ **Lower heating value, like its neighbours**: the water leaves as a gas, so the −572 kJ
+        // that condensing it would also give back is not on offer. The game has one specific heat
+        // per species and no condensation enthalpy in a fire, so LHV is the figure that matches what
+        // the products can actually hold.
+        enthalpyPerKg = -484L * kJPerMolAt(4),
         baseRate = COMBUSTION_BASE_RATE,
     ),
     // 2 CO + O2 -> 2 CO2. Carbon monoxide is what a starved fire makes, so this is the second half

@@ -101,7 +101,7 @@ class AmmoniaCrackingTest {
 
     @Test
     fun `cracking takes heat out of the room`() {
-        // +46 kJ/mol: endothermic, so the air must end up holding *less* energy than it started
+        // +92 kJ per 2 mol: endothermic, so the air must end up holding *less* energy than it started
         // with, and the pass must report a negative number. ⛔ `releasedEnergy` is positive when a
         // reaction gives energy back; a sign error here reads as a room that heats itself by
         // cracking its own ammonia, which is a perpetual motion machine that looks like it works.
