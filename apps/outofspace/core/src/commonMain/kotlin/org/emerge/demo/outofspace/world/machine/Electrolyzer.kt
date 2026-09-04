@@ -2,8 +2,8 @@ package org.emerge.demo.outofspace.world.machine
 
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.kJPerMolAt
+import org.emerge.demo.outofspace.logistics.Capacity.PACKET_MASS
 import org.emerge.demo.outofspace.num.Budget
-import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
@@ -65,33 +65,36 @@ data class Electrolyzer(
          * if somebody re-prices burning hydrogen and forgets this, the numbers stop being each
          * other's mirror and a test can say so.
          *
-         * ⚠️ **Nothing pays it.** See [org.emerge.demo.outofspace.chem.electrolyse] — the energy is
-         * minted, as a furnace's element mints its own, and the ledger stays closed because chemical
-         * potential is not a pool the game tracks. It is here because it is what sets [MASS_PER_TICK],
-         * not because anything is debited.
+         * ⚠️ **Nothing pays it, and since `MASS_PER_TICK` stopped being derived from it, nothing
+         * reads it.** See [org.emerge.demo.outofspace.chem.electrolyse] — the energy is minted, as a
+         * furnace's element mints its own, and the ledger stays closed because chemical potential is
+         * not a pool the game tracks. It stays because it is the price a power grid would charge,
+         * and because [MASS_PER_TICK] quotes its implied draw to say how far out of line this
+         * machine currently is.
          */
         val ENTHALPY_PER_KG: Long = 484L * kJPerMolAt(2L * Species.Water.molarMass)
 
         /**
-         * **The dial.** How much water it takes apart in a tick, at full activation.
+         * **The dial.** How much water it takes apart in a tick, at full activation: one belt-load.
          *
-         * ⛔ **Derived, not chosen: it is [HEATER_POWER]'s worth of [ENTHALPY_PER_KG].** This machine
-         * is given the same element a [Furnace] has, because there is no reason yet for it to have a
-         * different one — and a rate derived from an already-calibrated number is one that moves
-         * correctly when that number does, rather than one that has to be remembered.
+         * ⛔ **Chosen, not derived — and knowingly overpowered.** It used to be [HEATER_POWER]'s
+         * worth of [ENTHALPY_PER_KG], about 27 g a tick, and that number was defensible on paper and
+         * indefensible in play: the light half is a **ninth** of the mass, and because the machine
+         * ships whole packets the hydrogen mouth opened roughly once every **nine minutes**. A mouth
+         * that slow does not read as a plant filling tanks between burns, it reads as a machine that
+         * is broken. So this is [PACKET_MASS] — the quantum everything else in the logistics layer is
+         * a small whole number of — and the hydrogen mouth opens every nine ticks instead.
          *
-         * What falls out is about **27 g a tick — 1.7 kg/s**, and that is the number to argue with
-         * if this machine feels wrong. A motor at full throttle eats 32 kg/s, so **one engine is
-         * nineteen electrolyzers**, which is deliberately not a ratio anybody builds. A chemical
-         * rocket is meant to burn from tanks that filled slowly while the ship was doing something
-         * else; a plant that could feed an engine live would make propellant a tap rather than a
-         * thing you stockpile.
+         * ⚠️ **Expected to come back down.** Implied draw is [ENTHALPY_PER_KG] × [PACKET_MASS], some
+         * **1.3 GJ a tick — around 3700 furnace elements** — against a motor's 32 kg/s appetite that
+         * a *third* of one of these now feeds. Nothing charges for it, so nothing stops it; the lever
+         * when a power grid exists is this constant and that arithmetic, not a new mechanism.
          *
-         * ⚠️ That is the same shape [Pump.MASS_PER_TICK] chose — *"a gas supply is a plant a player
-         * builds, not a fitting they bolt on"* — and the same argument as the fifty pumps it takes
-         * to saturate one belt.
+         * ⚠️ **The rate is not the throughput.** The split stalls whenever *either* output store is
+         * at [BUFFER_CAP], so what the machine actually does is set by whichever of its two belts
+         * drains slower — and one of them is carrying eight times the mass of the other.
          */
-        val MASS_PER_TICK: Long = scaledRatio(HEATER_POWER, ENTHALPY_PER_KG, Budget.KILOGRAM)
+        val MASS_PER_TICK: Long = PACKET_MASS
 
         /**
          * How much of either gas it banks before it stops splitting.

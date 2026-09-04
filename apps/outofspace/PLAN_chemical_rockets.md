@@ -1,6 +1,6 @@
 # Chemical rockets, and the electrolyzer that feeds them
 
-Status: **planned, nothing built** (2026-09-04). Two machines, one new buffer role, one widened
+Status: **steps 1, 2 and 5 built** (2026-09-04); the rocket itself is still planned. Two machines, one new buffer role, one widened
 stream vocabulary. All of the chemistry already exists and none of it needs writing.
 
 A thruster stops being a hole that dumps warm water and becomes a rocket that *makes its own heat*:
@@ -144,11 +144,23 @@ precedent rather than an oversight.
 corrected in `6f1ff780`, which is a pleasing check on that fix. Per `heatBuffer`, that energy is
 minted; see §1.
 
-⏸ **Rate is open.** The furnace's `HEATER_POWER` is 360 kJ/tick, so one electrolyzer's worth of that
-splits about 27 g of water a tick — roughly 1.7 kg/s, against a motor's 32 kg/s appetite. That ratio
-wants deciding deliberately rather than inheriting: either the electrolyzer is much stronger than a
-furnace, or a rocket is fed from tanks that fill slowly between burns, which is arguably the better
-game. **Decide this before building, it sets the shape of every vessel that uses one.**
+✅ **Rate decided: one belt-load a tick** (`PACKET_MASS`, 100 kg). It was first derived from the
+furnace's `HEATER_POWER` — about 27 g a tick, 1.7 kg/s — and that number was defensible on paper and
+indefensible in play. The light half is a **ninth** of the mass and the machine ships whole packets,
+so the hydrogen mouth opened roughly **once every nine minutes**; that does not read as a plant
+filling tanks between burns, it reads as a machine that is broken. At a belt-load a tick it opens
+every nine ticks.
+
+⚠️ **Knowingly overpowered, and expected to come back down.** The implied draw is 484 kJ/36 g ×
+100 kg ≈ **1.3 GJ a tick, some 3700 furnace elements**, against a motor's 32 kg/s appetite that a
+*third* of one of these now feeds. Nothing charges for it, so nothing stops it — and when a power
+grid exists the lever is `Electrolyzer.MASS_PER_TICK` and that arithmetic, not a new mechanism.
+
+⚠️ **The rate is not the throughput.** The split stalls whenever *either* output store is at
+`BUFFER_CAP`, so what the machine actually does is set by whichever belt drains slower — and the
+oxygen belt is carrying eight times the mass of the hydrogen one. Measured: two tonnes of water in a
+hand-stocked feed spends most of 300 ticks gated by the oxygen belt, and delivers exactly two
+hydrogen packets and seventeen oxygen ones.
 
 ### Where oxygen comes from today, for comparison
 
@@ -252,9 +264,10 @@ Each ends at a green gate. Commit directly to main, one focused commit per step.
    had, and the inspector reads the same on an unchanged save.
 4. **A fifth `BufferRole`** (§4). Gate: `BufferRoleTest` still holds `localBufferOffset` and `portsOf`
    in agreement, and every existing machine's stores land where they did.
-5. **The electrolyzer** (§5) — 3×3, water in, H₂ and O₂ out of separate ports into separate stores.
-   ⚠️ **Decide the rate first.** Gate: a tonne of water becomes hydrogen and oxygen in the right mass
-   ratio, both ledgers stay closed, and the two products never meet.
+5. ✅ **DONE — the electrolyzer** (`8110d729`, rate raised in a follow-up). 3×3, water in, H₂ and O₂
+   out of separate ports into separate stores; `ElectrolyzerTest` holds the 1:8 split, the closed mass
+   total, the pure-water appetite, and — only affordable at the raised rate — both mouths delivering
+   into two tanks down two belts.
 6. **The chemical rocket** (§6) — footprint, two inputs, chamber, dial, igniter. Gate: a motor fed
    H₂ and O₂ at 1:2 makes measurably more thrust than the same motor fed water, `chamberPush` reports
    the chamber, and `vesselImpulse + exhaust + bodies + vented − debug == 0` still holds every tick of

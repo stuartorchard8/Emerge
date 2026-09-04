@@ -12,6 +12,7 @@ import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.Segment
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Electrolyzer
@@ -53,13 +54,14 @@ class ElectrolyzerTest {
     /**
      * An electrolyzer with a charge of water in its feed and two belts leading away from it.
      *
-     * ⚠️ **The assertions are on the machine's own two stores, not on the tanks those belts reach,
-     * and that is a fact about the dial rather than a shortcut.** At [Electrolyzer.MASS_PER_TICK] a
-     * hydrogen packet is nine hundred kilograms of water away — **thirty-four thousand ticks**, some
-     * eighty seconds of test — because the machine ships whole packets and the hydrogen side is an
-     * eighth of the oxygen side. The two stores say everything the tanks would and cost two hundred
-     * ticks. See `PLAN_chemical_rockets.md` §5, where the rate is still an open question; if it ever
-     * rises far enough that a belt-level test is affordable, this is the fixture that should grow one.
+     * ⚠️ **Two kinds of assertion hang off this, and the difference is the [Electrolyzer.MASS_PER_TICK]
+     * dial.** What the machine *makes* is visible in its own two stores within a handful of ticks and
+     * is checked there. What actually **leaves** costs a whole packet of the light half — nine hundred
+     * kilograms of water, because the machine ships whole packets and hydrogen is a ninth of the mass
+     * — so at the machine's first rate of 27 g a tick that was thirty-four thousand ticks and could
+     * not be written. At a belt-load a tick it is nine, and `both mouths open` is the test that
+     * became affordable. ⛔ **If the dial ever comes back down, that test is the one that will start
+     * timing out, and its charge is the thing to grow — not its patience.**
      */
     private fun plant(feed: Mixture): VesselState {
         val deck = DeckArray(grid)
@@ -113,6 +115,16 @@ class ElectrolyzerTest {
 
     private fun fed(s: VesselState): Long = s.inStore(plantAt, BufferRole.Input)?.total ?: 0L
 
+    /**
+     * What a tank at the end of a belt is holding.
+     *
+     * ⚠️ **A [org.emerge.demo.outofspace.world.machine.Storage] keeps its cargo in `Inside`, not
+     * `Input`** — it *is* the store, it does not feed one. Reading `Input` returns null forever and
+     * a belt-level test then reports an empty tank no matter what arrived.
+     */
+    private fun tank(s: VesselState, at: TileIndex): Mixture =
+        s.inStore(at, BufferRole.Inside) ?: Mixture.EMPTY
+
     // ── The split ────────────────────────────────────────────────────────────
 
     @Test
@@ -132,6 +144,31 @@ class ElectrolyzerTest {
         assertEquals(oxygen!!.total, oxygen[Species.Oxygen], "something other than oxygen is in the oxygen store")
         // And no water survived into either: what comes out has been taken apart.
         assertEquals(0L, hydrogen[Species.Water] + oxygen[Species.Water], "water passed through intact")
+    }
+
+    @Test
+    fun `both mouths open, and each fills a different tank`() {
+        // ⛔ **The end-to-end claim, and the one the rate exists to make true.** Everything else here
+        // watches the machine's own stores; this watches two belts and the tanks at the end of them,
+        // which is what a player sees. A hydrogen packet is nine hundred kilograms of water away, so
+        // the charge is twenty belt-loads — enough for two of them, and enough that the run spends
+        // most of its length gated by the oxygen belt rather than by the dial.
+        val after = run(plant(water(20)), 300)
+
+        val hydrogen = tank(after, hydrogenTank)
+        val oxygen = tank(after, oxygenTank)
+
+        // Each belt carried one gas the whole way. A crossed port would show up here and nowhere else.
+        assertEquals(hydrogen.total, hydrogen[Species.Hydrogen], "the hydrogen belt delivered something else")
+        assertEquals(oxygen.total, oxygen[Species.Oxygen], "the oxygen belt delivered something else")
+
+        // ⛔ **Exact, because whole packets make it exact.** Two tonnes of water is 222 kg of hydrogen
+        // and 1778 kg of oxygen, and a machine that ships whole packets rounds each *down*: two
+        // packets and seventeen, with the remainders still sitting in the stores behind the doors.
+        // That is the arithmetic a player is doing when they size a tank, so it is worth pinning as
+        // an equality rather than as "something arrived".
+        assertEquals(2L * Capacity.PACKET_MASS, hydrogen.total, "the hydrogen tank is not two packets")
+        assertEquals(17L * Capacity.PACKET_MASS, oxygen.total, "the oxygen tank is not seventeen packets")
     }
 
     @Test
