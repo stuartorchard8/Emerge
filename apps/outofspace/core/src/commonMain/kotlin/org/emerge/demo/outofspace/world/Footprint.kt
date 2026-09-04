@@ -15,6 +15,10 @@ val DeckMachineKind.diameter: Int
         DeckMachineKind.Concentrator, DeckMachineKind.Furnace -> 3
         // A room-sized installation with three mouths on three different faces.
         DeckMachineKind.Electrolyzer -> 3
+        // Two doors at the back, a chamber in the middle, a bell on the front face. Square rather
+        // than [FootprintShape.Nose]: at reach 1 the front-centre tile *is* one step facing-ward of
+        // the anchor, so `Engine.bell` lands on it and the exhaust walk needs no new geometry.
+        DeckMachineKind.Rocket -> 3
         // A collar big enough to berth against, and the same three tiles a storage claims.
         DeckMachineKind.DockingPort -> 3
         // Five: it should dominate the deck it sits on, and its heat should have somewhere to be.

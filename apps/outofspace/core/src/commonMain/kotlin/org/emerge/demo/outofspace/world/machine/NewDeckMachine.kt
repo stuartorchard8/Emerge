@@ -29,6 +29,7 @@ fun newDeckMachine(kind: DeckMachineKind, tile: TileIndex, facing: Direction): D
     DeckMachineKind.Pump -> Pump(tile, facing)
     DeckMachineKind.Electrolyzer -> Electrolyzer(tile, facing)
     DeckMachineKind.Thruster -> Thruster(tile, facing)
+    DeckMachineKind.Rocket -> Rocket(tile, facing)
     DeckMachineKind.Concentrator -> Concentrator(tile, facing)
     DeckMachineKind.Furnace -> Furnace(tile, facing)
     DeckMachineKind.Extractor -> Extractor(tile, facing)

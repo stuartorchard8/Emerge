@@ -4,6 +4,8 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.machine.InputKey
+import org.emerge.demo.outofspace.world.machine.Engine
+import org.emerge.demo.outofspace.world.machine.Rocket
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.ThrusterControl
 import org.emerge.demo.outofspace.world.machine.WireButton
@@ -804,8 +806,36 @@ class OutofspaceController(
      * edit says what the player asked for rather than "whatever the opposite turns out to be".
      */
     fun toggleThrusterControl(tile: TileIndex) {
-        val m = state.machineCovering(tile) as? Thruster ?: return
+        // Every engine listens to the same two things, so this asks for [Engine] and not for the
+        // kind that happened to have the switch first.
+        val m = state.machineCovering(tile) as? Engine ?: return
         pending.add(Edit.SetThrusterControl(tile, m.control.next))
+    }
+
+    /** Steps a rocket's mixture through [Rocket.RATIOS], wrapping. */
+    fun cycleRocketMixture(tile: TileIndex, delta: Int) {
+        val m = state.machineCovering(tile) as? Rocket ?: return
+        val all = Rocket.RATIOS
+        val at = all.indexOf(m.fuelPermille).let {
+            if (it >= 0) it else all.indexOfLast { rung -> rung <= m.fuelPermille }.coerceAtLeast(0)
+        }
+        pending.add(Edit.TuneRocket(tile, all[wrap(at + delta, all.size)], m.setTemperature))
+    }
+
+    /**
+     * Steps a rocket's chamber ceiling through [Furnace.SETPOINTS], wrapping.
+     *
+     * ⚠️ **The furnace's ladder, deliberately.** It is a ladder of round temperatures with headroom
+     * above the onsets, which is exactly what this dial wants too — and a second list of round
+     * numbers would be two things to keep in step for no gain.
+     */
+    fun cycleRocketTemperature(tile: TileIndex, delta: Int) {
+        val m = state.machineCovering(tile) as? Rocket ?: return
+        val all = Furnace.SETPOINTS
+        val at = all.indexOf(m.setTemperature).let {
+            if (it >= 0) it else all.indexOfLast { rung -> rung <= m.setTemperature }.coerceAtLeast(0)
+        }
+        pending.add(Edit.TuneRocket(tile, m.fuelPermille, all[wrap(at + delta, all.size)]))
     }
 
     /** Steps a decomposer's residence time through [Furnace.DWELLS], wrapping. */

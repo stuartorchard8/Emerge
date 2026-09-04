@@ -31,6 +31,8 @@ import org.emerge.demo.outofspace.world.machine.DockingPort
 import org.emerge.demo.outofspace.world.Prices
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.machine.Furnace
+import org.emerge.demo.outofspace.world.machine.Engine
+import org.emerge.demo.outofspace.world.machine.Rocket
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.ThrusterControl
 import org.emerge.demo.outofspace.world.SpeciesFilter
@@ -1500,9 +1502,13 @@ class OutofspaceHud {
         if (decomposer != null) {
             section("furnace", "FURNACE", open = true) { decomposerControls(controller, tile, decomposer) }
         }
-        val thruster = machine as? Thruster
-        if (thruster != null) {
-            section("thruster", "CONTROL", open = true) { thrusterControls(controller, tile, thruster) }
+        val engine = machine as? Engine
+        if (engine != null) {
+            section("thruster", "CONTROL", open = true) { thrusterControls(controller, tile, engine, anchor) }
+        }
+        val rocket = machine as? Rocket
+        if (rocket != null) {
+            section("rocket", "MIXTURE", open = true) { rocketControls(controller, tile, rocket, anchor) }
         }
         val dockingPort = machine as? DockingPort
         if (dockingPort != null) {
@@ -2248,7 +2254,8 @@ class OutofspaceHud {
     private fun PanelBuilder.thrusterControls(
         controller: OutofspaceController,
         tile: TileIndex,
-        machine: Thruster,
+        machine: Engine,
+        anchor: TileIndex,
     ) {
         button(
             listOf("LISTENS TO  " to 0x9A9A9AFFL, machine.control.label to 0xFFFFFFFFL),
@@ -2260,7 +2267,7 @@ class OutofspaceHud {
                 text("WSAD moves  ·  QE turns  ·  press F to fly", 0x9A9A9AFFL)
                 // What the motor makes of the stick right now, which is the readout that turns a
                 // badly placed engine from a mystery into something a player can see is idle.
-                // Read off the machine and never recomputed here — see [Thruster.firing]. On a
+                // Read off the machine and never recomputed here — see [Engine.firing]. On a
                 // ship whose engines were throttled against each other to keep a burn straight, the
                 // single-motor answer is the wrong number and it is wrong in the flattering
                 // direction.
@@ -2268,6 +2275,94 @@ class OutofspaceHud {
             }
             ThrusterControl.Wire -> text("driven by its WIRING, below", 0x9A9A9AFFL)
         }
+        exhaustReadout(controller, machine, anchor)
+    }
+
+    /**
+     * ⛔ **What the engine is actually worth right now**, which the panel could not say at all until
+     * this — it showed who a motor listened to and how hard it was firing, and nothing whatever
+     * about the one thing engines differ by.
+     *
+     * `v_e = √(K·R·T/M)`: **hot chamber, light molecule**, and the whole game of propellant is
+     * reading those two numbers against each other. A player feeding water sees 1040 m/s; the same
+     * motor on hydrogen sees nearly four times that, and without this readout the difference is
+     * invisible until they notice the ship accelerating differently.
+     *
+     * ⚠️ **Off the propellant that is in there now, not off a rating.** An engine with an empty
+     * store is worth nothing and says so, which is the same answer the flight balance gives it.
+     */
+    private fun PanelBuilder.exhaustReadout(controller: OutofspaceController, machine: Engine, anchor: TileIndex) {
+        val s = controller.state
+        val store = bufferTile(s.grid, machine, anchor, machine.propellantRole) ?: return
+        val held = s.buffers.resourceAt(store)
+        val speed = if (held == null) 0L else Thruster.exhaustVelocity(held)
+        if (speed <= 0L) {
+            keyValue("EXHAUST", "(nothing to throw)", 0x9A9A9AFFL, 0x9A9A9AFFL)
+            return
+        }
+        keyValue("EXHAUST", "$speed m/s", 0x9A9A9AFFL, 0xE0864AFFL)
+        // Thrust at *full* throttle, which is the machine's rating rather than what it is doing —
+        // `ṁ·v_e`, in newtons, with the mass unit divided out once at the end.
+        val flow = machine.massPerTick * controller.cfg.ticksPerSecond / Budget.KILOGRAM
+        keyValue("THRUST", "${flow * speed} N at full", 0x9A9A9AFFL, 0x9ED0B0FFL)
+    }
+
+    /**
+     * A rocket's two dials: what mixture it makes, and how hard it lights it.
+     *
+     * ⛔ **The mixture is the mechanic and the panel has to say so.** The obvious setting — the
+     * textbook `1:8` that burns everything — is the *worst* one here, because unburnt hydrogen drags
+     * the mean molar mass down faster than the enthalpy it did not release costs. A player who is
+     * never told that will run stoichiometric for ever and give up 15% of their exhaust velocity. So
+     * the ratio is shown as a ratio (`1:2`), not as a percentage, and the readout above it is the
+     * exhaust velocity that ratio is currently buying.
+     */
+    private fun PanelBuilder.rocketControls(
+        controller: OutofspaceController,
+        tile: TileIndex,
+        machine: Rocket,
+        anchor: TileIndex,
+    ) {
+        val s = controller.state
+        button(
+            listOf("FUEL TO OXIDISER  " to 0x9A9A9AFFL, ratioLabel(machine.fuelPermille) to 0xFFFFFFFFL),
+            0x2E5A6BFFL,
+        ) { controller.cycleRocketMixture(tile, 1) }
+        button(
+            listOf("IGNITE AT  " to 0x9A9A9AFFL, "${machine.setTemperature} K" to 0xFFFFFFFFL),
+            0x2E5A6BFFL,
+        ) { controller.cycleRocketTemperature(tile, 1) }
+
+        val chamber = bufferTile(s.grid, machine, anchor, BufferRole.Inside)
+        val kelvin = chamber?.let { s.buffers.stuff.kelvinAt(it) } ?: 0
+        if (chamber != null && s.buffers.resourceAt(chamber) != null) {
+            // ⚠️ **Not coloured by whether it reached the setpoint**, unlike a furnace's charge: the
+            // setpoint is a ceiling here and a running engine is *supposed* to sit under it. What
+            // matters is whether it is lit, and 773 K is where hydrogen starts to burn.
+            keyValue(
+                "CHAMBER",
+                "$kelvin K  (${kelvin - 273}C)",
+                0x9A9A9AFFL,
+                if (kelvin >= Rocket.IGNITION_KELVIN) 0xE0864AFFL else 0x9AC0E0FFL,
+            )
+        } else {
+            keyValue("CHAMBER", "(empty)", 0x9A9A9AFFL, 0x9A9A9AFFL)
+        }
+        text("richer is cooler and faster  ·  1:2 is the peak", 0x7A7A7AFFL)
+    }
+
+    /**
+     * A fuel fraction written the way a rocket engineer says it: `1:2`, fuel to oxidiser.
+     *
+     * ⚠️ **Not a percentage**, because the number a player is comparing against is the
+     * stoichiometric `1:8` and nobody carries "11.1%" around in their head as the mixture that burns
+     * clean.
+     */
+    private fun ratioLabel(fuelPermille: Int): String {
+        val oxidiser = 1000 - fuelPermille
+        // One decimal, so 1:8 and 1:5 and 1:1.5 all read as themselves rather than rounding together.
+        val tenths = oxidiser * 10L / fuelPermille.coerceAtLeast(1)
+        return if (tenths % 10L == 0L) "1:${tenths / 10}" else "1:${tenths / 10}.${tenths % 10}"
     }
 
     /** Wiring editor: WHEN/PLUS terms (tap channel/weight to cycle, x to delete). */

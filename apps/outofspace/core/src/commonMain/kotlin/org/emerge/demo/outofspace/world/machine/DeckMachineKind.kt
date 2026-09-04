@@ -62,6 +62,15 @@ enum class DeckMachineKind(
      * that held the air out could not exhaust into anything.
      */
     Thruster("THRUSTER", preventThoroughfare = true),
+    /**
+     * A bipropellant rocket: three tiles square, two doors at the back, a chamber in the middle and
+     * a bell on the front face — see `Rocket`.
+     *
+     * Permeable to gas for the thruster's reason: the bell is a tile of the machine, and a nozzle
+     * that held the air out could not exhaust into anything. ⚠️ **Not `gatesOutput`** — it has no
+     * output port to gate. What it does with no signal is not fire, which is its throttle's business.
+     */
+    Rocket("ROCKET", preventThoroughfare = true),
     Concentrator("CONCENTRATOR", preventThoroughfare = true, gatesOutput = true),
     /**
      * Water in, hydrogen out of one face and oxygen out of another — see `Electrolyzer`.

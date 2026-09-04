@@ -25,6 +25,7 @@ import org.emerge.demo.outofspace.world.machine.DirectedDeckMachine
 import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.Electrolyzer
 import org.emerge.demo.outofspace.world.machine.Pump
+import org.emerge.demo.outofspace.world.machine.Rocket
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.DockingPort
@@ -71,8 +72,9 @@ fun materialBefore(kind: DeckMachineKind): Species = when (kind) {
     // unreachable and is here only because the `when` is exhaustive. Titanium keeps it consistent
     // with every other installation rather than inventing an answer for a case that cannot arise.
     DeckMachineKind.DockingPort,
-    // Unreachable for the docking port's reason: it did not exist at version 21 either.
+    // Unreachable for the docking port's reason: neither existed at version 21 either.
     DeckMachineKind.Electrolyzer,
+    DeckMachineKind.Rocket,
     -> Species.Titanium
     DeckMachineKind.Furnace -> Species.Firebrick
     DeckMachineKind.Bridge, DeckMachineKind.Gauge -> materialBefore(Conduit.Rail)
@@ -532,7 +534,10 @@ object Save {
         role == BufferRole.Input -> "in"
         role == BufferRole.Inside -> "inside"
         role == BufferRole.Product -> "out"
-        else -> "waste"
+        role == BufferRole.Waste -> "waste"
+        // The one key that was named after its role rather than before it, because it arrived after
+        // them — see [BufferRole.Oxidiser].
+        else -> "oxid"
     }
 
     private fun writeDeckMachine(m: DeckMachine, grid: Grid, buffers: BufferLayer): String {
@@ -640,6 +645,18 @@ object Save {
                 if (m.control != ThrusterControl.Flight) put("control", m.control.name)
                 // A readout rather than a setting, and saved for the reason a gauge's last reading
                 // is: a loaded world should show what it was doing, not a panel full of zeroes.
+                if (m.firing != 0) put("firing", m.firing.toString())
+            }
+            // ⚠️ **No rate**, unlike the thruster above: a rocket's is a constant on the companion
+            // rather than a field, so writing one would pin a balance decision into every save and
+            // make the constant unmovable. The two dials are the state, and the three stores are
+            // written by the role loop below.
+            is Rocket -> {
+                put("carry", m.carry.toString())
+                // Omitted at the defaults, like the wiring: the file shows the choices somebody made.
+                if (m.fuelPermille != Rocket.DEFAULT_FUEL_PERMILLE) put("mix", m.fuelPermille.toString())
+                if (m.setTemperature != Rocket.DEFAULT_SETPOINT) put("temp", m.setTemperature.toString())
+                if (m.control != ThrusterControl.Flight) put("control", m.control.name)
                 if (m.firing != 0) put("firing", m.firing.toString())
             }
         }
@@ -1955,6 +1972,17 @@ object Save {
                     if (species == null && pct == null && under == null) null
                     else SpeciesFilter(species, pct, under)
                 },
+                control = f["control"]?.let { name ->
+                    ThrusterControl.ALL.firstOrNull { it.name == name } ?: fail("unknown thruster control '$name'")
+                } ?: ThrusterControl.Flight,
+                firing = num("firing", 0L).toInt(),
+            )
+            DeckMachineKind.Rocket -> Rocket(
+                tile,
+                facing = facing(),
+                carry = massNum("carry", 0L),
+                fuelPermille = num("mix", Rocket.DEFAULT_FUEL_PERMILLE.toLong()).toInt(),
+                setTemperature = num("temp", Rocket.DEFAULT_SETPOINT.toLong()).toInt(),
                 control = f["control"]?.let { name ->
                     ThrusterControl.ALL.firstOrNull { it.name == name } ?: fail("unknown thruster control '$name'")
                 } ?: ThrusterControl.Flight,

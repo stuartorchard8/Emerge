@@ -20,6 +20,7 @@ import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.Furnace
+import org.emerge.demo.outofspace.world.machine.Rocket
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.demo.outofspace.world.machine.WireButton
@@ -1206,6 +1207,11 @@ fun fullness(machine: DeckMachine?, centre: TileIndex, grid: Grid, buffers: Buff
     is Concentrator -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
     is Furnace -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP)).toInt()
     is Thruster -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / MACHINE_BUFFER_CAP).toInt()
+    // ⛔ **Against the two feeds and NOT the chamber.** A chamber is a few kilograms that empty every
+    // few ticks while the engine runs, so folding it in would have a sensor on a firing rocket
+    // flicker. What a sensor is asked here is "are my propellant lines backing up", which is a
+    // question about the doors.
+    is Rocket -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / (MACHINE_BUFFER_CAP * 2)).toInt()
     is Storage -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / Storage.CAP).toInt()
     is Sensor, is WireButton -> 0
     is Hull, is Airlock -> 0
@@ -1247,10 +1253,20 @@ private fun labelOf(machine: DeckMachine, role: BufferRole): String = when (mach
     // *two* outputs and the fallback cannot say which is which; the furnace, the pump and the dock
     // do not, and briefly had one anyway.
     is Concentrator -> when (role) {
-        BufferRole.Input -> "INPUT"
-        BufferRole.Inside -> "PROCESSING"
         BufferRole.Product -> "CONCENTRATE"
         BufferRole.Waste -> "TAILINGS"
+        BufferRole.Inside -> "PROCESSING"
+        else -> "INPUT"
+    }
+
+    // Two *inputs*, which clears the same bar from the other side: the fallback would say INPUT to
+    // both doors of a machine whose entire mechanic is that they hold different things. ⚠️ These are
+    // the only names telling the player which of the two rear ports is which — the drawing cannot,
+    // and a belt laid to the wrong one builds a very expensive cold gas thruster.
+    is Rocket -> when (role) {
+        BufferRole.Input -> "FUEL"
+        BufferRole.Oxidiser -> "OXIDISER"
+        else -> "CHAMBER"
     }
 
     // Two outputs, which is the bar an entry has to clear — and here the fallback would be worse
@@ -1268,10 +1284,12 @@ private fun labelOf(machine: DeckMachine, role: BufferRole): String = when (mach
     // claim made on behalf of every machine that has not been thought about yet. That is exactly how
     // CONCENTRATE ended up on a pump.
     else -> when (role) {
-        BufferRole.Input -> "INPUT"
         BufferRole.Inside -> "PROCESSING"
         BufferRole.Product -> "OUTPUT"
         BufferRole.Waste -> "WASTE"
+        // A second input on a machine that never said it had one: whatever it turns out to mean,
+        // "input" is true of it. Nothing but the rocket reaches here.
+        BufferRole.Input, BufferRole.Oxidiser -> "INPUT"
     }
 }
 

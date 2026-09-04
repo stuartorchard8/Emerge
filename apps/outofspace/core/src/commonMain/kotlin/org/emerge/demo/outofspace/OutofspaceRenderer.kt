@@ -39,6 +39,7 @@ import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.FlowField
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.Rotation
+import org.emerge.demo.outofspace.world.machine.Rocket
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.massIn
@@ -825,6 +826,18 @@ class OutofspaceRenderer {
                 footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Thruster))
                 val bell = m.bell(state.grid)
                 edgeMark(state.grid.xOf(bell), state.grid.yOf(bell), m.facing, Colors.VENT_CORE)
+            }
+
+            // The same nozzle mark on a body three times the size, plus a bar for the chamber. ⚠️
+            // **The bar is the chamber and not the feeds**, because the chamber is the part a player
+            // watches: full and hot is an engine about to push, and empty while the doors are backed
+            // up is a mixture the dial is refusing to make.
+            is Rocket -> {
+                footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Rocket))
+                val bell = m.bell(state.grid)
+                edgeMark(state.grid.xOf(bell), state.grid.yOf(bell), m.facing, Colors.VENT_CORE)
+                fillBar(x, y, n, (state.buffers.resourceAt(bufferTile(state.grid, m, tile, BufferRole.Inside)!!)?.total ?: 0L)
+                    .toFloat() / Rocket.CHAMBER_CAP)
             }
 
             // A button: its face lights up while it is held, and its key is written on it by the
@@ -1884,6 +1897,9 @@ fun kindColor(kind: DeckMachineKind): Long = when (kind) {
     // Warmer than the hull it sits in, so a berth reads as a way out rather than as more wall.
     DeckMachineKind.DockingPort -> 0x7A6A9AFFL
     DeckMachineKind.Thruster -> 0xC04A30FFL
+    // Hotter and deeper than the cold gas thruster it stands next to in the menu: the same family
+    // of red, at the end of it that burns.
+    DeckMachineKind.Rocket -> 0x8E2418FFL
     DeckMachineKind.Concentrator -> 0x2E5A6BFFL
     DeckMachineKind.Furnace -> 0x5E5A3BFFL
     // Cool blue-green: the electrical machine in a room full of hot ones.

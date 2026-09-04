@@ -42,6 +42,7 @@ data class MachineSettings(
     val ticksPerAction: Setting<Int>,
     val efficiencyPermille: Setting<Int>,
     val control: Setting<ThrusterControl>,
+    val fuelPermille: Setting<Int>,
 ) {
     override fun toString(): String = buildString {
         append(kind.label).append(" [")
@@ -54,6 +55,7 @@ data class MachineSettings(
         append(',').append("tpa=").append(if (ticksPerAction is Setting.Present) ticksPerAction.value else ticksPerAction)
         append(',').append("eff=").append(if (efficiencyPermille is Setting.Present) efficiencyPermille.value else efficiencyPermille)
         append(',').append("control=").append(if (control is Setting.Present) control.value else control)
+        append(',').append("mix=").append(if (fuelPermille is Setting.Present) fuelPermille.value else fuelPermille)
         append(']')
     }
 }
@@ -94,8 +96,13 @@ fun DeckMachine.toMachineSettings(): MachineSettings = MachineSettings(
         is Storage -> Setting.Present(filter)
         else -> Setting.Absent
     },
+    // ⛔ **Shared with the furnace on purpose.** A chamber ceiling and a kiln setpoint are the same
+    // setting — "hold this at that" — so copying one onto the other does what a player pressing **C**
+    // between two machines with a temperature dial would expect. What is *not* shared is the dwell,
+    // because a chamber has no residence time to serve.
     setTemperature = when (this) {
         is Furnace -> Setting.Present(setTemperature)
+        is Rocket -> Setting.Present(setTemperature)
         else -> Setting.Absent
     },
     dwellTicks = when (this) {
@@ -111,7 +118,11 @@ fun DeckMachine.toMachineSettings(): MachineSettings = MachineSettings(
         else -> Setting.Absent
     },
     control = when (this) {
-        is Thruster -> Setting.Present(control)
+        is Engine -> Setting.Present(control)
+        else -> Setting.Absent
+    },
+    fuelPermille = when (this) {
+        is Rocket -> Setting.Present(fuelPermille)
         else -> Setting.Absent
     },
 )
@@ -163,6 +174,17 @@ fun DeckMachine.withSettings(settings: MachineSettings): DeckMachine {
             if (settings.wiring is Setting.Present) result = result.copy(wiring = settings.wiring.value)
             if (settings.facing is Setting.Present) result = result.copy(facing = settings.facing.value)
             if (settings.control is Setting.Present) result = result.copy(control = settings.control.value)
+            result
+        }
+        // Everything a rocket is tuned by, which is one more dial than an engine has ever had.
+        DeckMachineKind.Rocket -> {
+            base as Rocket
+            var result = base
+            if (settings.wiring is Setting.Present) result = result.copy(wiring = settings.wiring.value)
+            if (settings.facing is Setting.Present) result = result.copy(facing = settings.facing.value)
+            if (settings.control is Setting.Present) result = result.copy(control = settings.control.value)
+            if (settings.setTemperature is Setting.Present) result = result.withSetTemperature(settings.setTemperature.value)
+            if (settings.fuelPermille is Setting.Present) result = result.withFuelPermille(settings.fuelPermille.value)
             result
         }
         DeckMachineKind.KeyInput -> {

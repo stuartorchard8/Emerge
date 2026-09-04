@@ -20,6 +20,7 @@ import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.inputBufferRole
+import org.emerge.demo.outofspace.world.inputBufferRoleAt
 import org.emerge.demo.outofspace.world.outputBufferRole
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.machine.Valve
@@ -120,6 +121,8 @@ import org.emerge.demo.outofspace.world.TrackLayers
 import org.emerge.demo.outofspace.world.FlightIntent
 import org.emerge.demo.outofspace.world.Motor
 import org.emerge.demo.outofspace.world.flightActivations
+import org.emerge.demo.outofspace.world.machine.Engine
+import org.emerge.demo.outofspace.world.machine.Rocket
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.ThrusterControl
 import org.emerge.demo.outofspace.world.machine.exhaustPath
@@ -470,12 +473,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // accident — but it is their ship, so this is a switch that starts in the
                     // position that does not wreck anything rather than a rule. See
                     // [VesselState.dockedThrustAllowed].
-                    is Thruster -> w.fire(
-                        cfg, m,
-                        if (!state.assembly.isEmpty && !state.dockedThrustAllowed) 0
-                        else flight[tile.index].takeIf { m.control == ThrusterControl.Flight }
-                            ?: if (on) SignalField.FULL else 0,
-                        tile, structure,
+                    is Thruster -> w.fire(cfg, m, w.throttleOf(state, m, on, flight, tile), tile, structure)
+                    // ⚠️ **The chamber is filled and lit before it is fired from, in that order and
+                    // in the same tick.** A rocket that mixed after firing would throw last tick's
+                    // charge for ever and never spend the fresh one; one that heated after firing
+                    // would spend the element on gas that had already left.
+                    is Rocket -> w.fire(
+                        cfg, w.burn(m, tile), w.throttleOf(state, m, on, flight, tile), tile, structure,
                     )
                     is Electrolyzer -> w.split(m, on, tile)
                     is Concentrator -> w.refine(cfg, m, on, tile)
@@ -1459,8 +1463,38 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
      * motor with nothing in it contributes nothing to a burn, and the balance should be struck
      * between the engines that can actually fire.
      */
-    private fun Work.chamberPush(cfg: OutofspaceConfig, m: Thruster, tile: TileIndex): Long {
-        val held = store(m, tile, BufferRole.Input) ?: return 0L
+    /**
+     * How hard the engine at [tile] has been told to fire this tick, in permille.
+     *
+     * The three sources, in the order that decides them:
+     *
+     *  - ⛔ **Interlocked while berthed**, unless the player has said otherwise. Firing a motor
+     *    against a station you are bolted to is not a manoeuvre, it is an accident — but it is their
+     *    ship, so this is a switch that starts in the position that does not wreck anything rather
+     *    than a rule. See [VesselState.dockedThrustAllowed].
+     *  - **On flight control**, the pilot's stick, worked out per motor from where it sits and which
+     *    way it points — so the ship needs no allocation of engines to axes anywhere. ⚠️ The one
+     *    place a machine is still handed a *number*, and it does not come from the wire: the flight
+     *    solver throttles each motor by how much of the pilot's demand it is placed to answer.
+     *  - **On the wire**, all or nothing like everything else.
+     */
+    private fun Work.throttleOf(
+        state: VesselState,
+        m: Engine,
+        on: Boolean,
+        flight: IntArray,
+        tile: TileIndex,
+    ): Int =
+        if (!state.assembly.isEmpty && !state.dockedThrustAllowed) 0
+        else flight[tile.index].takeIf { m.control == ThrusterControl.Flight }
+            ?: if (on) SignalField.FULL else 0
+
+    private fun Work.chamberPush(cfg: OutofspaceConfig, m: Engine, tile: TileIndex): Long {
+        // ⛔ **Through [Engine.propellantRole], which is the one thing the balance has to ask the
+        // machine.** A thruster's push is what a belt handed it; a rocket's is what its chamber has
+        // become, which is a hotter and lighter parcel behind a combustion. Reading the input store
+        // of a rocket would weigh it by the cold gas queued at its doors.
+        val held = store(m, tile, m.propellantRole) ?: return 0L
         val speed = Thruster.exhaustVelocity(held)
         if (speed <= 0L) return 0L
         return m.massPerTick * Thruster.milliTilesPerTick(speed, cfg.ticksPerSecond) / 1000L
@@ -1473,7 +1507,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val motors = ArrayList<Motor>()
         for (tile in grid.tiles) {
             if (deck.isGhost(tile) || tile in scrapping) continue
-            val m = deck[tile] as? Thruster ?: continue
+            val m = deck[tile] as? Engine ?: continue
             if (m.control != ThrusterControl.Flight) continue
             tiles.add(tile)
             // ⚠️ **From the bell, not from the tile the motor is stored at.** A [Motor]'s lever arm
@@ -1520,15 +1554,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
      */
     private fun Work.fire(
         cfg: OutofspaceConfig,
-        m: Thruster,
+        m: Engine,
         activation: Int,
         tile: TileIndex,
         structure: StructureMap,
-    ): Thruster {
+    ): Engine {
         // Recorded before any of the reasons it might not run, because "told to fire, had nothing to
         // fire" is a different fault from "not asked", and the panel is where a player finds out
         // which of the two they have built.
-        val told = m.copy(firing = activation)
+        val told = m.told(activation, m.carry)
         if (activation <= 0) return told
 
         // ── What is in the chamber ────────────────────────────────────────────────
@@ -1536,7 +1570,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // Its own store, filled by a belt like any other machine's. What is in it decides how fast
         // the exhaust leaves — see [Thruster.exhaustVelocity] — so a motor's thrust is a fact about
         // what the player chose to deliver to it.
-        val input = store(m, tile, BufferRole.Input) ?: return told
+        val input = store(m, tile, m.propellantRole) ?: return told
         val speed = Thruster.exhaustVelocity(input)
         // ⛔ Zero is "too little to price", not "slow": below about a millimole the mole table floors
         // out. A motor with a smear in it makes no thrust rather than dividing by nothing.
@@ -1546,7 +1580,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         val (allowance, carry) = throttled(m.massPerTick, activation, m.carry)
         val chunkMass = minOf(allowance, input.total)
-        if (chunkMass <= 0L) return told.copy(carry = carry)
+        if (chunkMass <= 0L) return m.told(activation, carry)
 
         val path = exhaustPath(grid, structure, m)
         heat(tile, heatOfWorking(chunkMass, m))
@@ -1611,9 +1645,70 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             ventedMass += chunkMass - gaseousMass
         }
 
-        putStore(m, tile, BufferRole.Input, (input - chunk).orNull())
+        putStore(m, tile, m.propellantRole, (input - chunk).orNull())
 
-        return told.copy(carry = carry)
+        return m.told(activation, carry)
+    }
+
+    /**
+     * One tick of a [Rocket]'s chamber: draw the dialled mixture off the two feeds and hold an
+     * element to it.
+     *
+     * Everything after this is [fire]'s, unchanged, because by then the chamber is a parcel of
+     * matter at a temperature like any other. What this pass adds is the two things a bipropellant
+     * has that a cold gas thruster does not: a **mixer** and an **igniter**.
+     *
+     * ### ⛔ It refills to a cap, it does not gate on one
+     *
+     * The chamber is topped up towards [Rocket.CHAMBER_CAP] every tick whatever is happening, and
+     * fired from in the same tick if the pilot asked. It is deliberately **not** "fill, heat, check,
+     * release": see `Rocket`, which holds the argument — a release gate makes firing a duty cycle,
+     * and two motors cycling out of phase make the flight balance wobble the ship.
+     *
+     * ⚠️ **A short feed is not a refusal.** Half the fuel it wanted and all the oxidiser gives a
+     * leaner chamber than the dial asked for, which is a worse engine and not a stopped one. Stating
+     * it the other way — draw nothing unless both are there — would make an engine that stalls
+     * outright the moment one belt hiccups, and a pilot mid-burn has no way to see why.
+     *
+     * ### Where the heat comes from
+     *
+     * The same element a [Furnace] has, capped the same way at the shortfall so a nearly-full
+     * chamber cannot be blown past its setpoint. ⚠️ **Minted** — see [Work.heatBuffer] — as every
+     * element in the game is, because there is no power system to draw from. The combustion's own
+     * enthalpy is *not* minted: the chemistry pass fires `2 H₂ + O₂ → 2 H₂O` in this store on its own
+     * schedule, and that energy is a real reaction's.
+     */
+    private fun Work.burn(m: Rocket, tile: TileIndex): Rocket {
+        val chamberTile = bufferTile(grid, m, tile, BufferRole.Inside)!!
+        val held = store(m, tile, BufferRole.Inside)
+        val room = Rocket.CHAMBER_CAP - (held?.total ?: 0L)
+
+        if (room > 0L) {
+            // The dial, spent here and nowhere else. Permille of the *refill*, not of the chamber:
+            // what is already in there has been burning and is no longer either reactant.
+            val wantFuel = room * m.fuelPermille / 1000L
+            drawInto(m, tile, BufferRole.Input, chamberTile, wantFuel)
+            drawInto(m, tile, BufferRole.Oxidiser, chamberTile, room - wantFuel)
+        }
+
+        // ⚠️ **After the refill, so the element is sized against what is actually in there.** Heating
+        // first and then pouring cold gas on top would report a chamber at temperature that is not.
+        val shortfall = buffers.stuff.heatCapacityAt(chamberTile) *
+            (m.setTemperature - buffers.stuff.kelvinAt(chamberTile))
+        if (shortfall > 0L) heatBuffer(chamberTile, minOf(shortfall, Rocket.IGNITER_POWER))
+        return m
+    }
+
+    /** Moves up to [want] out of the machine's [from] store and into [into]. */
+    private fun Work.drawInto(m: Rocket, tile: TileIndex, from: BufferRole, into: TileIndex, want: Long) {
+        if (want <= 0L) return
+        val feed = store(m, tile, from) ?: return
+        // ⚠️ [Mixture.take] and never a scaling — it is the only exact draw, and the complement sums
+        // back to the store to the microgram. See `reference_oos_microgram_deadlock`.
+        val drawn = feed.take(minOf(want, feed.total))
+        if (drawn.total <= 0L) return
+        putStore(m, tile, from, (feed - drawn).orNull())
+        buffers.put(into, buffers.resourceAt(into)?.plus(drawn) ?: drawn)
     }
 
 /**
@@ -2336,7 +2431,20 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Edit.SetThrusterControl -> {
                     val tile = originAt(edit.tile) ?: return
                     val m = deck[tile]
-                    if (m is Thruster) deck[tile] = m.withControl(edit.control)
+                    // Every engine listens to the same two things, so the switch is stated against
+                    // [Engine] and not against the kind that happened to have it first.
+                    if (m is Engine) deck[tile] = m.withControl(edit.control)
+                }
+                is Edit.TuneRocket -> {
+                    val tile = originAt(edit.tile) ?: return
+                    val m = deck[tile]
+                    // ⚠️ **No charge is discarded and no progress is reset**, which is the whole
+                    // difference from retuning a furnace: a chamber has no dwell to invalidate, and
+                    // the mixture the player just asked for applies to the *next* refill. Changing
+                    // the dial mid-burn is the point of the dial.
+                    if (m is Rocket) deck[tile] = m
+                        .withFuelPermille(edit.fuelPermille)
+                        .withSetTemperature(edit.setTemperature)
                 }
                 is Edit.TuneDecomposer -> {
                     val tile = originAt(edit.tile) ?: return
@@ -4027,11 +4135,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             for ((tile, at) in ports) {
                 if (rails[tile.index] == null) continue
                 val input = at.firstOrNull { it.kind == PortKind.Input } ?: continue
-                val motor = deck[input.owner] as? Thruster ?: continue
+                val motor = deck[input.owner] as? Engine ?: continue
                 // A construction site is not a motor — see the warehouse note above, which is the
                 // same trap: a ghost's dials are set but its shell cannot hold a gram.
                 if (deck.isGhost(input.owner)) continue
-                val stated = motor.filter
+                // ⚠️ **Stated once per door, so a [Rocket] states it twice** — the loop is over port
+                // tiles and a rocket has two, which is exactly the shape a two-input machine needs
+                // and needed no widening to get. ⛔ **Neither door is fussier than the other.** A
+                // rocket has no filter and asks both mouths for any fluid, so which of them the
+                // hydrogen arrives at is the player's belt and not this machine's opinion — feed
+                // both the same thing and you have built an expensive cold gas thruster, which is a
+                // legible thing to have built by mistake. What stops a *rock* reaching either is the
+                // same thing that stops one reaching a thruster: nothing routes it here.
+                val stated = (motor as? Thruster)?.filter
                 val list = accepts.getOrPut(tile) { mutableListOf() }
                 if (stated != null) list.add(Acceptance.filtered(stated))
                 else for (f in Fluid.ALL) list.add(Acceptance.filtered(SpeciesFilter(f.species, minPercent = null)))
@@ -4457,7 +4573,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         /** Offers a passing packet to whatever owns [port]. Returns what was not taken. */
         private fun offerTo(port: Port, packet: Packet): Packet? {
             val dest = deck[port.owner] ?: return packet
-            return if (deliver(port.owner.index, dest, packet)) null else packet
+            return if (deliver(port, dest, packet)) null else packet
         }
 
         /** Take packets (limit caps to available room). */
@@ -4470,7 +4586,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         private fun Mixture.orNull(): Mixture? = if (isEmpty) null else this
 
-        private fun deliver(target: Int, destination: DeckMachine, packet: Packet): Boolean {
+        private fun deliver(port: Port, destination: DeckMachine, packet: Packet): Boolean {
             return when (destination) {
                 // A lump stepping onto a bridge goes into the near-end slot.
                 //
@@ -4529,9 +4645,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Sensor, is WireButton, is Pump, is Gauge, is Valve -> false
                 // Both take a feed, and both take it the way every buffered kind does — by role
                 // tile, kind-blind. See the machine-list twin above.
+                // All take a feed, and all take it the way every buffered kind does — by role tile,
+                // kind-blind. ⚠️ **By the door it arrived at**, which matters for exactly one of
+                // them: a rocket has two, and they mean different things. See [inputBufferRoleAt].
                 is Thruster, is Concentrator, is Furnace,
-                is DockingPort, is Extractor, is Electrolyzer -> {
-                    val role = inputBufferRole(destination) ?: return false
+                is DockingPort, is Extractor, is Electrolyzer, is Rocket -> {
+                    val role = inputBufferRoleAt(grid, destination, port.tile) ?: return false
                     val store = bufferTile(grid, destination, destination.center, role) ?: return false
                     val merged = acceptInto(destination, buffers.resourceAt(store), packet) ?: return false
                     buffers.put(store, merged)

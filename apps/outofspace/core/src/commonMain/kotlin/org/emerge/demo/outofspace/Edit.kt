@@ -130,6 +130,15 @@ sealed interface Edit {
     data class SetThrusterControl(val tile: TileIndex, val control: ThrusterControl) : Edit
 
     /**
+     * A [org.emerge.demo.outofspace.world.machine.Rocket]'s mixture and its chamber ceiling.
+     *
+     * ⚠️ **The mixture is the interesting half**, and it is why this is a separate edit from
+     * [TuneDecomposer] rather than a reuse of it: a furnace's two dials are how long and how hot, and
+     * a rocket's are how hot and *what*. Absolute rather than a step, for [TuneDecomposer]'s reason.
+     */
+    data class TuneRocket(val tile: TileIndex, val fuelPermille: Int, val setTemperature: Int) : Edit
+
+    /**
      * Turns the autopilot on or off — see [org.emerge.demo.outofspace.world.Sas].
      *
      * A vessel-wide switch and so an edit with no tile. Absolute rather than a toggle, for

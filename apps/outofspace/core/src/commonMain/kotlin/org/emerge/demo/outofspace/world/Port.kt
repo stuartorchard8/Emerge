@@ -13,6 +13,7 @@ import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.Valve
 import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.Pump
+import org.emerge.demo.outofspace.world.machine.Rocket
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.Furnace
@@ -86,6 +87,22 @@ private fun localPorts(machine: DeckMachine): List<LocalPort> {
         // unlocked motor takes any fluid and no solid, which is what answers the old question about
         // a thruster fed gravel.
         is Thruster -> listOf(LocalPort(0, 0, Direction.Left, PortKind.Input))
+
+        // ⛔ **Two doors on the one face, which is the docking port's pattern and its precedent.**
+        // Both at the back, because everything forward of the anchor is chamber and bell — and both
+        // on the *same* side rather than one per flank, so an engine can be built against a hull
+        // with its two supply lines coming from the same place. Fuel is the door anticlockwise of
+        // the facing, oxidiser the one clockwise of it, and that is fixed rather than dialled: a
+        // machine whose doors swapped meaning would be one you have to inspect before you can lay a
+        // belt to it.
+        //
+        // ⚠️ **Which is which cannot be read off the drawing**, so the inspector names them — see
+        // `labelOf`. That is the whole reason [BufferRole.Oxidiser] exists rather than a second use
+        // of `Waste`.
+        is Rocket -> listOf(
+            LocalPort(-r, -r, Direction.Left, PortKind.Input),
+            LocalPort(-r, +r, Direction.Left, PortKind.Input),
+        )
 
 
         // In at the back, concentrate out the front, tailings out of the floor.

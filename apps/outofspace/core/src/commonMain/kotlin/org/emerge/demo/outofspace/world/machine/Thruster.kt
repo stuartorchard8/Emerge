@@ -8,6 +8,7 @@ import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.num.isqrt
 import org.emerge.demo.outofspace.num.scaledRatio
+import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.SpeciesFilter
@@ -64,10 +65,15 @@ import org.emerge.demo.outofspace.world.Wiring
 data class Thruster(
     override val center: TileIndex,
     override val facing: Direction,
-    /** The fraction of a unit of propellant left over from last tick's throttling — see `throttled`. */
-    val carry: Long = 0L,
-    /** Propellant thrown per tick at full activation, out of the store an input port fills. */
-    val massPerTick: Long = Capacity.PACKET_MASS / 200L,
+    override val carry: Long = 0L,
+    /**
+     * Propellant thrown per tick at full activation, out of the store an input port fills.
+     *
+     * ⚠️ **A field rather than a constant, unlike every other engine's**, because it was one before
+     * there was more than one engine and saves carry it. See [Rocket.MASS_PER_TICK] for the shape
+     * the newer machines use.
+     */
+    override val massPerTick: Long = Capacity.PACKET_MASS / 200L,
     /**
      * What this motor will let in, or null for **any fluid**.
      *
@@ -80,7 +86,7 @@ data class Thruster(
     /**
      * Where this motor takes its orders from. Flight controls by default — see [ThrusterControl].
      */
-    val control: ThrusterControl = ThrusterControl.Flight,
+    override val control: ThrusterControl = ThrusterControl.Flight,
     /**
      * What it was actually told to do last tick, in permille — a readout, not a setting.
      *
@@ -91,28 +97,24 @@ data class Thruster(
      * 100% at an engine running at 40. Recorded where it was decided, and read from there — the same
      * trade [Gauge.lastMass] makes.
      */
-    val firing: Int = 0,
+    override val firing: Int = 0,
     override val wiring: Wiring = Wiring.RUNNING,
-) : DirectedDeckMachine {
+) : Engine {
     override val kind: DeckMachineKind get() = DeckMachineKind.Thruster
     override fun rotated(): DeckMachine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
-    fun withControl(control: ThrusterControl): Thruster = copy(control = control)
+    override fun withControl(control: ThrusterControl): Engine = copy(control = control)
+    override fun told(activation: Int, carry: Long): Engine = copy(firing = activation, carry = carry)
+
+    /**
+     * ⛔ **The store its own input port fills, and there is nothing between the two.** A cold gas
+     * thruster throws exactly what the belt handed it, which is the whole of what makes it the cheap
+     * engine — see [Rocket.propellantRole] for the other answer.
+     */
+    override val propellantRole: BufferRole get() = BufferRole.Input
 
     /** Locked onto [filter], or unlocked when it is null — [Storage.withFilter]'s twin. */
     fun withFilter(filter: SpeciesFilter?): Thruster = copy(filter = filter)
-
-    /** The way the ship is pushed: the other way from the way the exhaust goes. */
-    val thrust: Direction get() = facing.opposite
-
-    /**
-     * The nozzle: the second tile of the footprint, one step [facing]-ward of the chamber.
-     *
-     * Derived rather than stored, for the reason the footprint is — a tile index means a different
-     * place on a different lattice. A standing thruster always has one, because a footprint that did
-     * not fit was refused at placement.
-     */
-    fun bell(grid: Grid): TileIndex = grid.neighbour(center, facing)
 
     override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
 
@@ -270,12 +272,12 @@ class ExhaustPath(val path: Array<TileIndex>, val blocker: TileIndex, val destin
  * The exhaust path of [m] — see [ExhaustPath].
  *
  * ⚠️ **It takes the machine and not a tile, and the ray below is private for that reason.** The
- * walk starts at the [Thruster.bell], never at the chamber, and a caller that had to remember which
+ * walk starts at the [Engine.bell], never at the tile the machine is fed at, and a caller that had to remember which
  * of a motor's two tiles to hand over would eventually hand over the wrong one — silently, since the
  * chamber is a perfectly plausible place to start a ray from and the answer it gives is merely one
  * tile too long.
  */
-fun exhaustPath(grid: Grid, structure: StructureMap, m: Thruster): ExhaustPath =
+fun exhaustPath(grid: Grid, structure: StructureMap, m: Engine): ExhaustPath =
     exhaustPath(grid, structure, m.bell(grid), m.facing)
 
 /**

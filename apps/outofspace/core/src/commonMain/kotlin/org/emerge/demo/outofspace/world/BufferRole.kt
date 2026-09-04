@@ -9,6 +9,7 @@ import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.Furnace
 import org.emerge.demo.outofspace.world.machine.Pump
+import org.emerge.demo.outofspace.world.machine.Rocket
 import org.emerge.demo.outofspace.world.machine.Thruster
 
 /**
@@ -16,10 +17,23 @@ import org.emerge.demo.outofspace.world.machine.Thruster
  * store in the vessel lives on [BufferLayer] — so a role plus a machine's centre tile is a complete
  * address for anything a machine is holding.
  *
- * The four cover every buffer in the game: what is waiting to go in, what is being worked on, what
- * is waiting to come out, and what came out that nobody wanted.
+ * The five cover every buffer in the game: what is waiting to go in, what is waiting to go in
+ * *alongside* it, what is being worked on, what is waiting to come out, and what came out that
+ * nobody wanted.
+ *
+ * ### ⛔ Why there is a second input rather than a reused [Waste]
+ *
+ * A [Rocket] needs fuel, oxidiser and a chamber, which is three stores, and [Inside] is spoken for
+ * by the chamber. Handing the oxidiser [Waste] would fit the tile rule perfectly and would be a lie
+ * in the one place a reader looks — the inspector would label a full oxidiser tank WASTE, and the
+ * next person to add a machine would have no way to tell which of the two meanings was meant. This
+ * codebase deleted `Material` and `MachineKind` rather than live with a name that lies.
+ *
+ * ⚠️ **Adding one is cheap and stays cheap**, which is the property to preserve: [BufferLayer] is
+ * keyed by *tile*, not by (machine, role), so a role costs a distinct tile of the machine's own
+ * footprint and nothing else. A 3×3 has nine and the rocket uses three.
  */
-enum class BufferRole { Input, Inside, Product, Waste }
+enum class BufferRole { Input, Oxidiser, Inside, Product, Waste }
 
 /**
  * Where the [role] store of the machine at [centre] stands, or null if it keeps no such store.
@@ -31,8 +45,8 @@ enum class BufferRole { Input, Inside, Product, Waste }
  * machine ever touches it — so it takes the centre tile, which no port of a machine bigger than one
  * tile ever claims.
  *
- * That is what lets every buffer in the vessel share a single layer without a slot index: the four
- * roles of one machine resolve to four distinct tiles of its own footprint. A [Storage] is the
+ * That is what lets every buffer in the vessel share a single layer without a slot index: the roles
+ * of one machine resolve to as many distinct tiles of its own footprint. A [Storage] is the
  * degenerate case and the reason [BufferRole.Inside] is named for the volume rather than for
  * processing — a warehouse's contents are the volume of the building, not a queue at either door.
  *
@@ -78,6 +92,35 @@ fun inputBufferRole(machine: DeckMachine): BufferRole? = when (machine) {
     else -> if (localBufferOffset(machine, BufferRole.Input) != NO_OFFSET) BufferRole.Input else null
 }
 
+/**
+ * The store the input port **at [at]** fills, or null if nothing behind that tile takes deliveries.
+ *
+ * ⛔ **A machine with two doors cannot answer [inputBufferRole], and asking it is the bug.** That
+ * function takes a machine and no place, which was a complete question while every kind had at most
+ * one mouth; a [Rocket] has two and they mean different things. Everything that routes material now
+ * asks *which door did this arrive at* — which it always knew, because a delivery is made through a
+ * port and a port has a tile.
+ *
+ * The general rule does the work: a store sits on the port it serves, so the door and the store are
+ * the same tile and the answer is a lookup rather than a table. [Storage] is the one exception, and
+ * it is the exception here for the same reason it is one above — its pooled store is the volume of
+ * the building, not a queue at either door.
+ */
+fun inputBufferRoleAt(grid: Grid, machine: DeckMachine, at: TileIndex): BufferRole? {
+    if (machine is Storage) return BufferRole.Inside
+    for (role in INPUT_ROLES) {
+        if (localBufferOffset(machine, role) == NO_OFFSET) continue
+        if (bufferTile(grid, machine, machine.center, role) == at) return role
+    }
+    // A door that is not on a store's tile: every machine but the rocket has exactly one input and
+    // the port it is drawn at need not coincide with it. Fall back to the kind-blind answer, which
+    // is the whole of the behaviour that existed before two doors did.
+    return inputBufferRole(machine)
+}
+
+/** The roles a *delivery* may land in, in the order [inputBufferRoleAt] considers them. */
+private val INPUT_ROLES: List<BufferRole> = listOf(BufferRole.Input, BufferRole.Oxidiser)
+
 /** The store that drains out through an output port carrying [stream], or null. */
 fun outputBufferRole(machine: DeckMachine, stream: Stream): BufferRole? {
     val role = when {
@@ -114,6 +157,17 @@ internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
             BufferRole.Inside -> pack(0, 0)
             BufferRole.Product -> pack(r, 0)
             BufferRole.Waste -> pack(0, r)
+            BufferRole.Oxidiser -> NO_OFFSET
+        }
+
+        // Fuel in at one back corner, oxidiser in at the other, and the chamber between them at the
+        // anchor. ⛔ **The bell is `pack(r, 0)` and is deliberately NOT a store** — it is the tile
+        // the exhaust starts from, and a store there would be propellant sitting in the nozzle.
+        is Rocket -> when (role) {
+            BufferRole.Input -> pack(-r, -r)
+            BufferRole.Oxidiser -> pack(-r, r)
+            BufferRole.Inside -> pack(0, 0)
+            BufferRole.Product, BufferRole.Waste -> NO_OFFSET
         }
         // ⛔ **No [BufferRole.Inside], and that is the machine rather than an omission.** An
         // electrolyzer works at a rate straight out of its feed into its two hoppers; there is no
@@ -123,13 +177,13 @@ internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
             BufferRole.Input -> pack(-r, 0)
             BufferRole.Product -> pack(r, 0)
             BufferRole.Waste -> pack(0, r)
-            BufferRole.Inside -> NO_OFFSET
+            BufferRole.Inside, BufferRole.Oxidiser -> NO_OFFSET
         }
         is Furnace -> when (role) {
             BufferRole.Input -> pack(-r, 0)
             BufferRole.Inside -> pack(0, 0)
             BufferRole.Product -> pack(r, 0)
-            BufferRole.Waste -> NO_OFFSET
+            BufferRole.Waste, BufferRole.Oxidiser -> NO_OFFSET
         }
         // One store, on the one port it has — a pump is one tile, so both are its anchor. What it
         // banks is what it has drawn out of the room and not yet handed to a belt.
@@ -151,7 +205,7 @@ internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
             BufferRole.Input -> pack(-r, 0)
             BufferRole.Inside -> pack(0, 0)
             BufferRole.Product -> pack(r, 0)
-            BufferRole.Waste -> NO_OFFSET
+            BufferRole.Waste, BufferRole.Oxidiser -> NO_OFFSET
         }
         else -> NO_OFFSET
     }
