@@ -1,0 +1,29 @@
+# The concentrator, end to end: ore in one side, ONE SPECIES out the other.
+#
+# It used to be a chain. Purity climbed 41 -> 65 -> 86 -> 94 -> 97 -> 100 across five machines, half
+# the mass lost at each, and nothing downstream had a use for the steps in between: a build wants
+# 100%, an electrolyzer wants pure water, a sale is priced per species. So it draws instead -- three
+# quarters of the charge's dominant species, pure -- and banks it until it has a whole packet.
+#
+# What to read in the shots:
+#   `bank`     -- the concentrator's inspector. INPUT and PROCESSING are the ore body, 41% iron;
+#                 CONCENTRATE is 100% IRON and part of a packet -- the bank, filling; TAILINGS is
+#                 43% QUARTZ, because drawing the iron out left quartz the dominant species. That
+#                 last line is the tailings cascade in one reading: reprocess it and quartz is what
+#                 comes out next, with nobody having told the machine to do that.
+#   `arrived`  -- the tank at the end of the concentrate run, 100% IRON and one packet heavier than
+#                 it was (10.0T -> 10.1T, cross-check the STOCKPILE panel). Not 65%, and not after
+#                 five machines: after one.
+new 0
+# A rock onto the extractor plate: without one the mining line has nothing to chew and the
+# concentrator downstream of it never sees a charge.
+rock extractor extractor
+run 6000
+
+inspect concentrator concentrator DECK
+shot bank
+
+inspect storage storage DECK
+shot arrived
+
+expect massBalance = 0

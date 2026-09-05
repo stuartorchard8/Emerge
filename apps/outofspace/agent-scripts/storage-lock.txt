@@ -1,0 +1,23 @@
+# The warehouse lock panel, after the purity axis collapsed to a state.
+#
+# A filter used to carry a percentage the player cycled through 25/50/75/90/95/100. There is no
+# middle any more -- the concentrator draws one species out pure in a single pass -- so the dial says
+# one of three things and the panel has to say them in words rather than in a number.
+#
+# What to read in the shots:
+#   `lock-open`    -- an unlocked tank offers LOCK TO <what it holds>, or LOCK TO PURE when empty;
+#   `lock-shut`    -- LOCKED TO IRON, and beneath it the purity state as a clause and not a percent;
+#   `lock-cycled`  -- the same clause one step on, which is what tapping it does.
+new 0
+run 600
+
+inspect storage storage DECK
+shot lock-open
+
+# Locks to what is actually in there: the species, plus PURE only if the tank holds one species.
+tap LOCK TO
+shot lock-shut
+
+# And the purity state cycles: no opinion -> pure -> mixed -> round again.
+tap TAKES
+shot lock-cycled
