@@ -522,59 +522,59 @@ fun builtPermille(bill: Mixture, heldMass: Long): Int {
  */
 data class SpeciesFilter(
     val species: Species?,
-    val minPercent: Int?,
     /**
-     * A purity ceiling, and **exclusive** where [minPercent] is inclusive — see [admits].
+     * **Pure, mixed, or no opinion** — `true`, `false`, `null`.
      *
-     * ⛔ **The exclusivity is the whole reason this exists.** At 100 it means *strictly* less than
-     * a hundred per cent, which is exactly "more than one species is present" — the same question
-     * [org.emerge.demo.outofspace.chem.Mixture.impurities] asks, and the same one a station asks to
-     * decide whether a sale goes on a shelf or into the unworked heap. An **inclusive** ceiling
-     * cannot say that: percentages here are integers, so a lump 99.5% iron measures as 99, and a
-     * ceiling of 99 would refuse it while a ceiling of 100 would admit pure metal. There is no
-     * inclusive value that means "not pure", and "not pure" is the thing worth being able to say.
+     * ⛔ **There is nothing between pure and mixed worth saying**, and there used to be a whole axis
+     * of it: an inclusive floor (`minPercent`, offering 25/50/75/90/95/100) and an exclusive ceiling
+     * (`belowPercent`), whose asymmetry needed three paragraphs to justify because integers cannot
+     * express "not pure" inclusively — a lump 99.5% iron measures as 99, so a ceiling of 99 refuses
+     * it and one of 100 admits pure metal.
      *
-     * ⚠️ **The asymmetry with [minPercent] is deliberate and is carried by the names.** "min 90" is
-     * at least ninety; "below 100" is under a hundred. A single symmetric pair would have to pick
-     * one convention for both, and the useful bound at each end has a different one: `>= 100` is
-     * *pure* and `< 100` is *mixed*, and both are wanted.
+     * All of that was in aid of a world where purity arrived in stages. It does not any more: the
+     * concentrator draws one species out **pure** in a single pass, so what actually travels is
+     * either exactly one species or a blend, and a lump at 75% is not a thing a player receives or
+     * would think to ask for. `BUILD_PURITY_PERCENT` is 100 and a sell order is priced per species,
+     * so nothing downstream had an opinion about the middle either.
+     *
+     * ⚠️ **Three states, not two.** `false` is what `MIXED` needs and `true` is what a pure sell
+     * order needs, and "locked to iron at any purity" is neither — it is a filter with no opinion
+     * about purity at all, which is what `null` says. Folding those together would silently narrow
+     * every species-only lock in every existing save.
      */
-    val belowPercent: Int? = null,
+    val pure: Boolean?,
 ) {
     /**
-     * Whether [mixture] is pure enough in [species] to be let in — and, if [belowPercent] is set,
-     * impure enough.
+     * Whether [mixture] is something this filter lets in.
      *
      * Nothing is not a delivery — the same rule [buildableFrom] opens with, and for the same reason:
      * an empty lump that passes idles at the door for ever.
+     *
+     * ⚠️ **Purity is asked of [Mixture.impurities] and not of a percentage.** That is what makes the
+     * boundary exact at both ends: a lump one microgram short of pure is a blend, and no rounding
+     * decision stands between the question and the answer.
      */
     fun admits(mixture: Mixture): Boolean {
         val total = mixture.total
         if (total <= 0L) return false
         val dominant = mixture.dominant ?: return false
-
-        val meetsPurityRequirement = minPercent == null || mixture[dominant] * 100L >= total * minPercent
-        // ⚠️ Strictly less than, and see [belowPercent] for why that is not a rounding preference.
-        val staysUnderTheCeiling = belowPercent == null || mixture[dominant] * 100L < total * belowPercent
-        if (!staysUnderTheCeiling) return false
-        if (species == null) return meetsPurityRequirement
-        return dominant == species && meetsPurityRequirement
+        if (pure != null && (mixture[dominant] == total) != pure) return false
+        if (species == null) return true
+        return dominant == species
     }
 
     companion object {
-        const val MAX_PERCENT = 100
-
-        /** The steps the panel offers, coarse at the bottom and fine where purity starts to cost. */
-        val PERCENTS: List<Int?> = listOf(null, 25, 50, 75, 90, 95, MAX_PERCENT)
+        /** The states the panel cycles through: no opinion, pure only, blends only. */
+        val PURITIES: List<Boolean?> = listOf(null, true, false)
 
         /**
          * Anything that is **not a single species** — what a station's mixed-ore counter takes.
          *
-         * No species and no floor, so it admits every blend of everything; the ceiling is what does
-         * the work. ⚠️ Pairing this with a per-species sell order on the same mouth is safe *because*
-         * of the exclusivity: a pure lump matches the species order and only that, and a blend
-         * matches this and only this, so the two never compete for the same lump.
+         * No species, so it admits every blend of everything; the purity state is what does the
+         * work. ⚠️ Pairing this with a per-species sell order on the same mouth is safe *because*
+         * pure and mixed are complementary: a pure lump matches the species order and only that, and
+         * a blend matches this and only this, so the two never compete for the same lump.
          */
-        val MIXED: SpeciesFilter = SpeciesFilter(species = null, minPercent = null, belowPercent = MAX_PERCENT)
+        val MIXED: SpeciesFilter = SpeciesFilter(species = null, pure = false)
     }
 }

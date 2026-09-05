@@ -2513,8 +2513,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     val tile = originAt(edit.tile) ?: return
                     val m = deck[tile]
                     if (m is Storage) {
-                        val filter = if (edit.species == null && edit.minPercent == null) null
-                        else SpeciesFilter(edit.species, edit.minPercent)
+                        val filter = if (edit.species == null && edit.pure == null) null
+                        else SpeciesFilter(edit.species, edit.pure)
                         deck[tile] = m.copy(
                             filter = filter,
                             autoLock = edit.autoLock,
@@ -2528,19 +2528,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     if (m is Storage) {
                         val species = edit.species
                         deck[tile] = m.withFilter(
-                            if (species == null && m.filter?.minPercent == null) null
-                            else SpeciesFilter(species, m.filter?.minPercent),
+                            if (species == null && m.filter?.pure == null) null
+                            else SpeciesFilter(species, m.filter?.pure),
                         )
                     }
                 }
-                is Edit.LockStoragePercent -> {
+                is Edit.LockStoragePurity -> {
                     val tile = originAt(edit.tile) ?: return
                     val m = deck[tile]
                     if (m is Storage) {
-                        val percent = edit.minPercent
+                        val pure = edit.pure
                         deck[tile] = m.withFilter(
-                            if (percent == null && m.filter?.species == null) null
-                            else SpeciesFilter(m.filter?.species, percent),
+                            if (pure == null && m.filter?.species == null) null
+                            else SpeciesFilter(m.filter?.species, pure),
                         )
                     }
                 }
@@ -4005,8 +4005,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
             if (rest == null && m is Storage && m.autoUnlock) {
                 val filter = m.filter
-                if (filter?.minPercent == 100) {
-                    // 100% pure unlocks species but not purity
+                if (filter?.pure == true) {
+                    // A pure lock unlocks the species but keeps the standard
                     deck[m.center] = m.copy(filter = filter.copy(species = null))
                 } else {
                     deck[m.center] = m.copy(filter = null)
@@ -4249,7 +4249,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 val stated = (motor as? Thruster)?.filter
                 val list = accepts.getOrPut(tile) { mutableListOf() }
                 if (stated != null) list.add(Acceptance.filtered(stated))
-                else for (f in Fluid.ALL) list.add(Acceptance.filtered(SpeciesFilter(f.species, minPercent = null)))
+                else for (f in Fluid.ALL) list.add(Acceptance.filtered(SpeciesFilter(f.species, pure = null)))
             }
 
             // ── Electrolyzers: water, and only water that is already pure ────
@@ -4271,7 +4271,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // A site is not a machine — the warehouse note above is the same trap.
                 if (deck.isGhost(input.owner)) continue
                 accepts.getOrPut(tile) { mutableListOf() }
-                    .add(Acceptance.filtered(SpeciesFilter(Species.Water, SpeciesFilter.MAX_PERCENT)))
+                    .add(Acceptance.filtered(SpeciesFilter(Species.Water, pure = true)))
             }
 
             // ── Concentrators: ore, and never anything already pure ──────────
@@ -4287,8 +4287,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // rather than something it happens to reject at the door."* Refusing at the door would
             // let a belt fill solid against a mouth that will never take what is on it.
             //
-            // ✅ **The exclusive ceiling is what makes this expressible at all.** "Not pure" has no
-            // inclusive percentage — see [SpeciesFilter.belowPercent].
+            // ✅ **"Not pure" is a state and not a threshold** — see [SpeciesFilter.pure], which is
+            // three-valued for exactly this reason.
             for ((tile, at) in ports) {
                 if (rails[tile.index] == null) continue
                 val input = at.firstOrNull { it.kind == PortKind.Input } ?: continue
@@ -4331,7 +4331,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 for ((species, value) in port.orders) {
                     if (value >= 0L) continue
                     val wanted = if (value == -DockingPort.ENDLESS) Acceptance.UNLIMITED else -value
-                    list.add(Acceptance.filtered(SpeciesFilter(species, SpeciesFilter.MAX_PERCENT), wanted))
+                    list.add(Acceptance.filtered(SpeciesFilter(species, pure = true), wanted))
                 }
                 if (port.ore < 0L) {
                     val wanted = if (port.ore == -DockingPort.ENDLESS) Acceptance.UNLIMITED else -port.ore
@@ -4723,15 +4723,17 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     val store = bufferTile(grid, destination, destination.center, role) ?: return false
                     val merged = acceptInto(destination, buffers.resourceAt(store), packet) ?: return false
                     buffers.put(store, merged)
-                    if (destination.autoLock && (destination.filter?.species == null || destination.filter.minPercent != 100)) {
+                    if (destination.autoLock && (destination.filter?.species == null || destination.filter.pure != true)) {
                         val dominant = packet.contents.dominant
                         if (dominant != null) {
                             val isPure = packet.contents[dominant] == packet.contents.total
-                            val lockPercent = if (isPure) 100 else null
                             deck[destination.center] = destination.copy(
                                 filter = SpeciesFilter(
                                     species = packet.contents.dominant,
-                                    minPercent = lockPercent
+                                    // A blend locks the species only: what arrived is one sample of
+                                    // an ore body and the next lump of it will assay differently, so
+                                    // an opinion about purity here would refuse the rest of the seam.
+                                    pure = if (isPure) true else null,
                                 )
                             )
                         }

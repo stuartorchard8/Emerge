@@ -579,8 +579,8 @@ class OutofspaceController(
     /** Binds a button to [key]. */
     fun bindKey(tile: TileIndex, key: InputKey) = pending.add(Edit.BindKey(tile, key))
 
-    /** Locks a warehouse onto what it holds most of, or unlocks it — see [Edit.LockStoragePercent]. */
-    fun lockStoragePercent(storage: Storage, minPercent: Int?) = pending.add(Edit.LockStoragePercent(storage.center, minPercent))
+    /** Locks a warehouse onto pure or mixed material, or clears the opinion — see [Edit.LockStoragePurity]. */
+    fun lockStoragePurity(storage: Storage, pure: Boolean?) = pending.add(Edit.LockStoragePurity(storage.center, pure))
 
     // ── Trade ────────────────────────────────────────────────────────────────
 
@@ -636,14 +636,14 @@ class OutofspaceController(
     fun toggleStorageAutoLock(storage: Storage) = pending.add(Edit.TuneStorage(
         storage.center,
         storage.filter?.species,
-        storage.filter?.minPercent,
+        storage.filter?.pure,
         !storage.autoLock,
         storage.autoUnlock,
     ))
     fun toggleStorageAutoUnlock(storage: Storage) = pending.add(Edit.TuneStorage(
         storage.center,
         storage.filter?.species,
-        storage.filter?.minPercent,
+        storage.filter?.pure,
         storage.autoLock,
         !storage.autoUnlock,
     ))
@@ -757,16 +757,16 @@ class OutofspaceController(
     }
 
     /**
-     * Steps a locked warehouse's threshold through [SpeciesFilter.PERCENTS], wrapping.
+     * Steps a locked warehouse through [SpeciesFilter.PURITIES], wrapping: no opinion, pure, mixed.
      *
-     * Only meaningful once locked: an unlocked tank has no threshold to move, and the panel offers
+     * Only meaningful once locked: an unlocked tank has no opinion to move, and the panel offers
      * the lock button instead.
      */
-    fun cycleStorageFilterPercent(storage: Storage, delta: Int) {
+    fun cycleStorageFilterPurity(storage: Storage, delta: Int) {
         val filter = storage.filter ?: return
-        val all = SpeciesFilter.PERCENTS
-        val at = all.indexOf(filter.minPercent).let { if (it < 0) all.indexOf(SpeciesFilter.MAX_PERCENT) else it }
-        lockStoragePercent(storage, all[((at + delta) % all.size + all.size) % all.size])
+        val all = SpeciesFilter.PURITIES
+        val at = all.indexOf(filter.pure)
+        lockStoragePurity(storage, all[((at + delta) % all.size + all.size) % all.size])
     }
     fun toggleStorageFilterSpecies(storage: Storage) {
         val filter = storage.filter ?: return

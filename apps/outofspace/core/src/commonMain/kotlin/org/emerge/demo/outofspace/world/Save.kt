@@ -83,6 +83,20 @@ fun materialBefore(kind: DeckMachineKind): Species = when (kind) {
 }
 
 /** The same, for a length of conduit — see the overload above for what it is and is not. */
+/**
+ * A filter's purity state, from either the field that states it or the percentages that used to.
+ *
+ * `filterpure` is what a file at [Save.PURITY_STATE_VERSION] or above writes. Below it there were
+ * two numeric fields and this is the fold — see that constant for why the middle of the old range
+ * widens to "no opinion" rather than rounding to the nearest end.
+ */
+fun purityBefore(fields: Map<String, String?>): Boolean? {
+    fields["filterpure"]?.let { return it.toBooleanStrictOrNull() }
+    if (fields["filterpct"]?.toIntOrNull() == 100) return true
+    if (fields["filterunder"]?.toIntOrNull() == 100) return false
+    return null
+}
+
 fun materialBefore(conduit: Conduit): Species = when (conduit) {
     Conduit.Rail -> Species.Iron
     Conduit.Power, Conduit.Signal -> Species.Copper
@@ -105,7 +119,22 @@ object Save {
      */
     const val LEGACY_PIPE = "Pipe"
 
-    const val VERSION = 25
+    const val VERSION = 26
+
+    /**
+     * The first version whose filters say **pure / mixed / no opinion** rather than a percentage.
+     *
+     * Below this a filter carried an inclusive floor `filterpct` (25/50/75/90/95/100) and an
+     * exclusive ceiling `filterunder`. Both are read and folded onto the three states by
+     * [purityBefore]: a floor of 100 is *pure*, a ceiling of 100 is *mixed*, and anything in between
+     * becomes **no opinion**.
+     *
+     * ⛔ **The middle widens rather than rounds**, and the direction is the whole of the decision. A
+     * tank locked at "at least 75% iron" holds material a stricter filter would now refuse, so
+     * rounding up to *pure* would strand a tankful behind a door that had been open when the player
+     * shut the game. Widening can only admit more, and never invalidates what is already inside.
+     */
+    const val PURITY_STATE_VERSION = 26
 
     /**
      * The first version whose station shelves hold only what a station **put** there — see
@@ -587,10 +616,9 @@ object Save {
             is Storage -> {
                 m.filter?.let {
                     put("filter", it.species?.name)
-                    put("filterpct", it.minPercent.toString())
-                    // ⚠️ Written only when set, so a filter with no ceiling — every one a player can
-                    // make today — adds nothing to the line and an older file loads unchanged.
-                    it.belowPercent?.let { pct -> put("filterunder", pct.toString()) }
+                    // ⚠️ Written only when the filter has an opinion, so a species-only lock adds
+                    // nothing to the line — the same economy the percentage keys had.
+                    it.pure?.let { pure -> put("filterpure", pure.toString()) }
                 }
                 val autoLock = if (m.autoLock)     0b01 else 0
                 val autoUnlock = if (m.autoUnlock) 0b10 else 0
@@ -635,8 +663,7 @@ object Save {
                 // filter is a filter whichever machine is wearing it.
                 m.filter?.let {
                     put("filter", it.species?.name)
-                    put("filterpct", it.minPercent.toString())
-                    it.belowPercent?.let { pct -> put("filterunder", pct.toString()) }
+                    it.pure?.let { pure -> put("filterpure", pure.toString()) }
                 }
                 // Omitted at the default, like the wiring below it: the file shows the choices
                 // somebody actually made. ⚠️ A file written before the flight controls existed has
@@ -1915,10 +1942,9 @@ object Save {
                 facing(),
                 filter = f["filter"].let { name ->
                     val species = Species.ALL.firstOrNull { it.name == name }
-                    val pct = f["filterpct"]?.toIntOrNull()
-                    val under = f["filterunder"]?.toIntOrNull()
-                    if (species == null && pct == null && under == null) null
-                    else SpeciesFilter(species, pct, under)
+                    val pure = purityBefore(f)
+                    if (species == null && pure == null) null
+                    else SpeciesFilter(species, pure)
                 },
                 autoLock = (f["auto"]?.toIntOrNull() ?: 0)%2==1,
                 autoUnlock = (f["auto"]?.toIntOrNull() ?: 0)/2%2==1,
@@ -1967,10 +1993,9 @@ object Save {
                 massPerTick = rate(Thruster(tile, Direction.Right).massPerTick),
                 filter = f["filter"].let { name ->
                     val species = Species.ALL.firstOrNull { it.name == name }
-                    val pct = f["filterpct"]?.toIntOrNull()
-                    val under = f["filterunder"]?.toIntOrNull()
-                    if (species == null && pct == null && under == null) null
-                    else SpeciesFilter(species, pct, under)
+                    val pure = purityBefore(f)
+                    if (species == null && pure == null) null
+                    else SpeciesFilter(species, pure)
                 },
                 control = f["control"]?.let { name ->
                     ThrusterControl.ALL.firstOrNull { it.name == name } ?: fail("unknown thruster control '$name'")

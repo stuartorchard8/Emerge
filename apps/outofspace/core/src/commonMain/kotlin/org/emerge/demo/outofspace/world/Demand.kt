@@ -107,7 +107,7 @@ class Acceptance private constructor(
 
     override fun toString(): String =
         when {
-            filter != null -> "Acceptance(>=${filter.minPercent}% ${filter.species?.name ?: "pure"})"
+            filter != null -> "Acceptance(${when (filter.pure) { true -> "pure "; false -> "mixed "; null -> "" }}${filter.species?.name ?: "anything"})"
             isUnlimited -> "Acceptance(anything)"
             else -> "Acceptance(${wanted}g of $bill)"
         }
@@ -120,7 +120,7 @@ class Acceptance private constructor(
         val ANYTHING: Acceptance = Acceptance(null, null, stopsTraffic = false, wanted = UNLIMITED)
 
         /**
-         * Takes [filter]'s species at [SpeciesFilter.minPercent] purity, for ever: a locked
+         * Takes [filter]'s species in [SpeciesFilter.pure] condition, for ever: a locked
          * warehouse.
          *
          * ⛔ **Never a plug.** A warehouse is a building on finished, paid-for track; refusing what

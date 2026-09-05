@@ -112,7 +112,7 @@ class StorageFilterTest {
 
     @Test
     fun `a warehouse locked to something else is never sent anything`() {
-        val s = run(tankToTank(SpeciesFilter(Species.Iron, 90)), 40 * RAIL_PERIOD)
+        val s = run(tankToTank(SpeciesFilter(Species.Iron, pure = null)), 40 * RAIL_PERIOD)
 
         assertEquals(0L, s.received(), "titanium got into a warehouse locked to iron")
         // ⛔ **And the run stays clear.** Refusing at the door alone would let the source pour
@@ -125,22 +125,28 @@ class StorageFilterTest {
 
     @Test
     fun `a warehouse locked to what is coming fills up as it always did`() {
-        val s = run(tankToTank(SpeciesFilter(Species.Titanium, 90)), 40 * RAIL_PERIOD)
+        val s = run(tankToTank(SpeciesFilter(Species.Titanium, pure = null)), 40 * RAIL_PERIOD)
         assertTrue(s.received() > 0L, "a warehouse locked to titanium refused titanium")
     }
 
     /**
-     * ⚠️ The threshold is the player's number and is read as written: 98% ore clears 90 and misses
-     * 99. If a filter were ever routed
-     * through `buildableFrom` this reads 99% *of* the build tolerance instead, which is 94%, and
-     * the ore sails in while the panel says 99.
+     * ⛔ **The dial says what it means, and it means one of three things.**
+     *
+     * It used to be a percentage the player typed and this test pinned that 98% ore cleared 90 and
+     * missed 99. There is no middle any more — see [SpeciesFilter.pure] — so what it pins now is
+     * that 98% ore is *mixed*, flatly, and that a species lock with no opinion about purity still
+     * takes it. A near miss and a wide miss are the same answer, which is the point.
      */
     @Test
-    fun `the threshold is the number the player set`() {
+    fun `a purity state is not a threshold`() {
         val ore = titanium(load)
-        assertTrue(SpeciesFilter(Species.Titanium, 90).admits(ore))
-        assertTrue(!SpeciesFilter(Species.Titanium, 99).admits(ore))
-        assertTrue(!SpeciesFilter(Species.Titanium, 90).admits(Mixture.EMPTY), "nothing is not a delivery")
+        assertTrue(SpeciesFilter(Species.Titanium, pure = null).admits(ore), "a species lock takes its own ore")
+        assertTrue(!SpeciesFilter(Species.Titanium, pure = true).admits(ore), "98% titanium is not pure")
+        assertTrue(SpeciesFilter(Species.Titanium, pure = false).admits(ore), "and it is certainly mixed")
+        assertTrue(
+            !SpeciesFilter(Species.Titanium, pure = null).admits(Mixture.EMPTY),
+            "nothing is not a delivery",
+        )
     }
 
     /**
@@ -161,7 +167,7 @@ class StorageFilterTest {
     @Test
     fun `a warehouse still being built states its bill and not its lock`() {
         val s = run(
-            tankToTank(SpeciesFilter(null, 100), pureIron(load), receiverIsGhost = true, railTo = 10),
+            tankToTank(SpeciesFilter(null, pure = true), pureIron(load), receiverIsGhost = true, railTo = 10),
             40 * RAIL_PERIOD,
         )
 
@@ -198,7 +204,7 @@ class StorageFilterTest {
      */
     @Test
     fun `a lock is deferred by construction, not cancelled by it`() {
-        val start = tankToTank(SpeciesFilter(null, 100), pureIron(load), receiverIsGhost = true, railTo = 10)
+        val start = tankToTank(SpeciesFilter(null, pure = true), pureIron(load), receiverIsGhost = true, railTo = 10)
 
         val asSite = run(start, 40 * RAIL_PERIOD)
         assertEquals(0L, asSite.received(), "a site took delivery into a store it does not have yet")
@@ -216,38 +222,93 @@ class StorageFilterTest {
      */
     @Test
     fun `a finished warehouse locked on purity alone draws what is pure`() {
-        val s = run(tankToTank(SpeciesFilter(null, 100), pureIron(load), railTo = 10), 40 * RAIL_PERIOD)
+        val s = run(tankToTank(SpeciesFilter(null, pure = true), pureIron(load), railTo = 10), 40 * RAIL_PERIOD)
         assertTrue(s.received() > 0L, "a warehouse locked at 100% refused a lump of one species")
     }
 
-    /** A lock is the player's decision, so it survives the file. */
+    /**
+     * A lock is the player's decision, so it survives the file — **in each of the three states**,
+     * because the one that is omitted from the line when unset is the one a round trip can quietly
+     * lose.
+     */
     @Test
     fun `a lock survives a save and a load`() {
-        val grid = cfg.initialGrid
-        val deck = DeckArray(grid)
-        deck += fixtureStorage(grid.tile(2, 3), Direction.Right, filter = SpeciesFilter(Species.Titanium, 70))
-        val state = VesselState(
-            grid, deck,
-            conduits = Conduits.ofRails(arrayOfNulls<Segment>(grid.size).toList()),
-            buffers = BufferLayer.forDeck(grid, deck),
-            rail = RailLayer.empty(grid.size),
+        val filters = listOf(
+            SpeciesFilter(Species.Titanium, pure = null),
+            SpeciesFilter(Species.Titanium, pure = true),
+            SpeciesFilter(null, pure = false),
         )
-        val back = Save.read(Save.write(state))
-        assertEquals(
-            SpeciesFilter(Species.Titanium, 70),
-            (back.deck[grid.tile(2, 3)] as Storage).filter,
-        )
+        for (filter in filters) {
+            val grid = cfg.initialGrid
+            val deck = DeckArray(grid)
+            deck += fixtureStorage(grid.tile(2, 3), Direction.Right, filter = filter)
+            val state = VesselState(
+                grid, deck,
+                conduits = Conduits.ofRails(arrayOfNulls<Segment>(grid.size).toList()),
+                buffers = BufferLayer.forDeck(grid, deck),
+                rail = RailLayer.empty(grid.size),
+            )
+            val back = Save.read(Save.write(state))
+            assertEquals(filter, (back.deck[grid.tile(2, 3)] as Storage).filter, "$filter did not come back")
+        }
     }
 
     // ── The ceiling ──────────────────────────────────────────────────────────
 
+    /**
+     * ⛔ **An old file's percentage folds onto a state, and the middle WIDENS.**
+     *
+     * Files below [Save.PURITY_STATE_VERSION] carry an inclusive floor and an exclusive ceiling —
+     * 25/50/75/90/95/100 and `< 100`. A floor of 100 is *pure* and a ceiling of 100 is *mixed*;
+     * everything in between has no state to land on, and the direction it goes is a real decision.
+     *
+     * ⚠️ **Widening is the only safe direction.** A tank locked at "at least 75% iron" is holding
+     * material a stricter filter would refuse, so rounding it up to *pure* would shut a door on a
+     * tankful that was behind an open one when the player last saved. Widening can only admit more.
+     *
+     * Written by rewriting a current file's key rather than by hand, so the record's own format
+     * cannot drift away from what this claims to be testing.
+     */
     @Test
-    fun `a ceiling of a hundred per cent means exactly one thing - not pure`() {
-        // ⛔ **The reason the ceiling is EXCLUSIVE.** There is no inclusive value that means "more
-        // than one species is present": percentages here are integers, so a lump 99.5% iron measures
-        // as 99, and an inclusive ceiling of 99 would refuse it while 100 would admit pure metal.
-        // `< 100` says it exactly, and says the same thing `Mixture.impurities` does — which is what
-        // a station asks to decide whether a sale goes on a shelf or into the unworked heap.
+    fun `an old percentage filter loads as the state that cannot strand anything`() {
+        fun reloadedWith(legacy: String): SpeciesFilter? {
+            val grid = cfg.initialGrid
+            val deck = DeckArray(grid)
+            deck += fixtureStorage(grid.tile(2, 3), Direction.Right, filter = SpeciesFilter(Species.Titanium, true))
+            val state = VesselState(
+                grid, deck,
+                conduits = Conduits.ofRails(arrayOfNulls<Segment>(grid.size).toList()),
+                buffers = BufferLayer.forDeck(grid, deck),
+                rail = RailLayer.empty(grid.size),
+            )
+            val text = Save.write(state)
+            check("filterpure=true" in text) { "the current format changed; this test is rewriting nothing" }
+            return (Save.read(text.replace("filterpure=true", legacy)).deck[grid.tile(2, 3)] as Storage).filter
+        }
+
+        assertEquals(
+            SpeciesFilter(Species.Titanium, pure = true), reloadedWith("filterpct=100"),
+            "a floor of 100 per cent is exactly what pure means",
+        )
+        assertEquals(
+            SpeciesFilter(Species.Titanium, pure = false), reloadedWith("filterunder=100"),
+            "an exclusive ceiling of 100 per cent is exactly what mixed means",
+        )
+        for (pct in listOf(25, 50, 75, 90, 95)) {
+            assertEquals(
+                SpeciesFilter(Species.Titanium, pure = null), reloadedWith("filterpct=$pct"),
+                "a floor of $pct per cent must widen, not tighten — see the note above",
+            )
+        }
+    }
+
+    @Test
+    fun `mixed means exactly one thing - not pure`() {
+        // ⛔ **The reason the axis is a STATE and not a percentage.** No integer percentage can say
+        // "more than one species is present": a lump 99.5% iron measures as 99, so an inclusive
+        // ceiling of 99 refuses it and one of 100 admits pure metal. Asking `Mixture.impurities`
+        // says it exactly — and says the same thing a station asks to decide whether a sale goes on
+        // a shelf or into the unworked heap. These cases are why `pure` is a Boolean?.
         val ore = SpeciesFilter.MIXED
         val kg = Budget.KILOGRAM
 
@@ -267,9 +328,9 @@ class StorageFilterTest {
 
     @Test
     fun `a species order and the ore order never compete for the same lump`() {
-        // The property that makes it safe to put both on one mouth: the ceiling is exclusive and the
-        // floor is inclusive, so `pure iron` and `not pure` partition every lump between them.
-        val pureIron = SpeciesFilter(Species.Iron, SpeciesFilter.MAX_PERCENT)
+        // The property that makes it safe to put both on one mouth: pure and mixed are
+        // complementary, so `pure iron` and `not pure` partition every lump between them.
+        val pureIron = SpeciesFilter(Species.Iron, pure = true)
         val kg = Budget.KILOGRAM
         for (impurity in listOf(0L, 1L, 5L * kg, 200L * kg)) {
             val lump = Mixture.of(
@@ -282,18 +343,4 @@ class StorageFilterTest {
         }
     }
 
-    @Test
-    fun `a ceiling survives a save and a load`() {
-        val grid = cfg.initialGrid
-        val deck = DeckArray(grid)
-        deck += fixtureStorage(grid.tile(2, 3), Direction.Right, filter = SpeciesFilter(null, null, 90))
-        val state = VesselState(
-            grid, deck,
-            conduits = Conduits.ofRails(arrayOfNulls<Segment>(grid.size).toList()),
-            buffers = BufferLayer.forDeck(grid, deck),
-            rail = RailLayer.empty(grid.size),
-        )
-        val back = Save.read(Save.write(state))
-        assertEquals(SpeciesFilter(null, null, 90), (back.deck[grid.tile(2, 3)] as Storage).filter)
-    }
 }

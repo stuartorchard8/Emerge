@@ -114,7 +114,7 @@ class ThrusterFilterTest {
 
     @Test
     fun `a motor locked to one species refuses another fluid`() {
-        val after = run(line(water(), SpeciesFilter(Species.Hydrogen, minPercent = null)), 600)
+        val after = run(line(water(), SpeciesFilter(Species.Hydrogen, pure = null)), 600)
 
         assertEquals(0L, chamber(after), "a motor locked to hydrogen took water")
         assertTrue(arrived(after) > 0L, "the water stopped at the motor instead of going past it")
@@ -123,18 +123,18 @@ class ThrusterFilterTest {
     @Test
     fun `and takes the one it names`() {
         // The other half, or the test above passes for a motor that takes nothing at all.
-        val after = run(line(water(), SpeciesFilter(Species.Water, minPercent = null)), 600)
+        val after = run(line(water(), SpeciesFilter(Species.Water, pure = null)), 600)
         assertTrue(chamber(after) > 0L, "a motor locked to water refused water")
     }
 
     @Test
     fun `a lock survives a save`() {
-        val locked = line(water(), SpeciesFilter(Species.Hydrogen, minPercent = 90))
+        val locked = line(water(), SpeciesFilter(Species.Hydrogen, pure = true))
         val reloaded = org.emerge.demo.outofspace.world.Save.read(
             org.emerge.demo.outofspace.world.Save.write(locked),
         )
         val m = reloaded.deck[motorAt] as Thruster
         assertEquals(Species.Hydrogen, m.filter?.species, "the lock did not come back")
-        assertEquals(90, m.filter?.minPercent, "the purity did not come back")
+        assertEquals(true, m.filter?.pure, "the purity standard did not come back")
     }
 }

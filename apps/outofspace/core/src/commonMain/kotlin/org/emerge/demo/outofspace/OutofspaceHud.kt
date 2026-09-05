@@ -2123,8 +2123,8 @@ class OutofspaceHud {
             val dominant = held?.dominant
             if (dominant == null) {
                 keyValue("TAKES", "ANYTHING", 0x9A9A9AFFL, 0x9ED0B0FFL)
-                button("LOCK PURITY TO ${SpeciesFilter.MAX_PERCENT}%", 0x2E5A6BFFL) {
-                    controller.lockStoragePercent(storage, SpeciesFilter.MAX_PERCENT)
+                button("LOCK TO PURE", 0x2E5A6BFFL) {
+                    controller.lockStoragePurity(storage, true)
                 }
             } else {
                 keyValue("TAKES", "ANYTHING", 0x9A9A9AFFL, 0x9ED0B0FFL)
@@ -2135,10 +2135,10 @@ class OutofspaceHud {
                     ),
                     0x2E5A6BFFL,
                 ) {
-                    val currentPercent = (held[dominant] * 100L) / held.total
-                    controller.lockStoragePercent(storage, SpeciesFilter.PERCENTS.reversed().firstOrNull {
-                        (it ?: 0) <= currentPercent }
-                    )
+                    // Locked to what is actually in there: a pure tank locks to pure, and a tank
+                    // of ore locks to the species with no opinion about purity — an opinion would
+                    // refuse the rest of the same seam, which assays a little differently each lump.
+                    controller.lockStoragePurity(storage, if (held.impurities == 0L) true else null)
                     controller.lockStorageSpecies(storage, dominant)
                 }
             }
@@ -2150,18 +2150,18 @@ class OutofspaceHud {
                 ),
                 0x2E5A6BFFL,
             ) { controller.toggleStorageFilterSpecies(storage) }
-            if (filter.minPercent == null) {
+            if (filter.pure == null) {
                 button("ANY PURITY", 0x2E5A6BFFL) {
-                    controller.cycleStorageFilterPercent(storage, 1)
+                    controller.cycleStorageFilterPurity(storage, 1)
                 }
             } else {
                 clauseRow(
-                    lhs = "AT LEAST",
-                    cmp = "${filter.minPercent}%",
-                    rhs = "pure",
-                    onLhs = { controller.cycleStorageFilterPercent(storage, -1) },
-                    onCmp = { controller.cycleStorageFilterPercent(storage, -1) },
-                    onRhs = { controller.cycleStorageFilterPercent(storage, 1) },
+                    lhs = "TAKES",
+                    cmp = if (filter.pure) "PURE" else "MIXED",
+                    rhs = "only",
+                    onLhs = { controller.cycleStorageFilterPurity(storage, -1) },
+                    onCmp = { controller.cycleStorageFilterPurity(storage, -1) },
+                    onRhs = { controller.cycleStorageFilterPurity(storage, 1) },
                 )
             }
         }

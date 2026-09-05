@@ -96,16 +96,17 @@ sealed interface Edit {
     data class BindKey(val tile: TileIndex, val key: InputKey) : Edit
 
     /**
-     * Locks down what a warehouse can accept. Can either be a specific dominant species, or a minimum purity, or both.
+     * Locks down what a warehouse can accept: a dominant species, a purity state, or both — see
+     * [org.emerge.demo.outofspace.world.SpeciesFilter].
      */
     data class TuneStorage(
         val tile: TileIndex,
         val species: Species?,
-        val minPercent: Int?,
+        val pure: Boolean?,
         val autoLock: Boolean,
         val autoUnlock: Boolean,
     ) : Edit
-    data class LockStoragePercent(val tile: TileIndex, val minPercent: Int?) : Edit
+    data class LockStoragePurity(val tile: TileIndex, val pure: Boolean?) : Edit
     data class LockStorageSpecies(val tile: TileIndex, val species: Species?) : Edit
 
     /**
