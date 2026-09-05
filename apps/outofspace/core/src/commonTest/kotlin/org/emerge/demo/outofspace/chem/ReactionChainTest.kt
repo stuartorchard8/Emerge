@@ -123,6 +123,8 @@ class ReactionChainTest {
                 Species.Tin, Species.Manganese, Species.Chromium,
                 // The sulfides that give up their metal without an oxide.
                 Species.Lead, Species.Antimony, Species.Bismuth,
+                // The two-stage roast, which needed Molybdite and hydrogen.
+                Species.Molybdenum,
             ),
             manufactured,
             "the set of elements the game can make has changed",

@@ -83,6 +83,8 @@ class FormationTest {
             "1 Galena + 1 Oxygen -> 1 Lead + 1 SulfurDioxide" to -197L,
             "1 Stibnite + 3 Iron -> 2 Antimony + 3 Troilite" to -125L,
             "1 Bismuthinite + 3 Iron -> 2 Bismuth + 3 Troilite" to -157L,
+            "2 Molybdenite + 7 Oxygen -> 2 Molybdite + 4 SulfurDioxide" to -2208L,
+            "1 Molybdite + 3 Hydrogen -> 1 Molybdenum + 3 Water" to 19L,
         )
 
         val seen = mutableSetOf<String>()

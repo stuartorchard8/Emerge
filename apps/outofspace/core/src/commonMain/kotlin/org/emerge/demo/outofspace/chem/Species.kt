@@ -337,6 +337,7 @@ enum class Species(
     Corundum(102, 775, solidKgPerCubicMetre = 3980, relativeAbundance = 50000, milliWattsPerMetreKelvin = 35_000, meltingKelvin = 2345),   // Al2O3
     Pyrolusite(87, 620, solidKgPerCubicMetre = 5060, relativeAbundance = 30000, milliWattsPerMetreKelvin = K_OXIDE, meltingKelvin = 808),   // MnO2 -- decomposes
     Cassiterite(151, 350, solidKgPerCubicMetre = 6990, relativeAbundance = 215, milliWattsPerMetreKelvin = 12_000, meltingKelvin = 1903),   // SnO2
+    Molybdite(144, 527, solidKgPerCubicMetre = 4690, milliWattsPerMetreKelvin = K_OXIDE, meltingKelvin = 1075),   // MoO3 -- made by roasting molybdenite, never mined
     Baddeleyite(123, 460, solidKgPerCubicMetre = 5680, relativeAbundance = 100, milliWattsPerMetreKelvin = 2_000, meltingKelvin = 2988),   // ZrO2, the Hf carrier
     Columbite(338, 330, solidKgPerCubicMetre = 5300, relativeAbundance = 45, milliWattsPerMetreKelvin = K_OXIDE, meltingKelvin = 1600),   // FeNb2O6 -- estimate
     Tantalite(514, 240, solidKgPerCubicMetre = 8000, relativeAbundance = 2, milliWattsPerMetreKelvin = K_OXIDE, meltingKelvin = 1700),   // FeTa2O6 -- estimate

@@ -867,6 +867,54 @@ private val WRITTEN: List<Reaction> = listOf(
         onsetKelvin = 1100,
         baseRate = BASE_RATE,
     ),
+
+    // ── Molybdenum: the two-stage roast, and the one metal that pays for a new species ──
+    //
+    // ⚠️ **The shape `Minerals.kt` has described since before any of this ran** — "sulfides + O₂ →
+    // oxide + SO₂, two-stage, produces a genuinely nasty gas you have to vent or scrub" — and the
+    // first row pair in the game to actually be it. Everything roasted so far has skipped the oxide
+    // because something in the pan wanted the sulfur more. Molybdenum does not get that.
+    //
+    // ⛔ **So [Species.Molybdite] is the price of admission**, and it is worth stating what a species
+    // costs: every O(COUNT) operation in [Mixture] gets about 0.6% slower for each one. Three metals
+    // arrived in the last commit for nothing at all; this one arrives for that, and the reason it is
+    // worth paying is the second row.
+
+    // 2 MoS₂ + 7 O₂ → 2 MoO₃ + 4 SO₂. Roasting proper, at a temperature a sulfide fire reaches on
+    // its own — strongly exothermic, as every roast is, because it is burning sulfur.
+    Reaction(
+        principal = Species.Molybdenite,
+        reagents = listOf(Species.Molybdenite to 2, Species.Oxygen to 7),
+        products = listOf(Species.Molybdite to 2, Species.SulfurDioxide to 4),
+        onsetKelvin = 850,
+        baseRate = BASE_RATE,
+    ),
+
+    /**
+     * `MoO₃ + 3 H₂ → Mo + 3 H₂O` — **the first reduction in the game that carbon cannot do.**
+     *
+     * ⛔ **Carbon gives the carbide**, exactly as it does with titania, and for the same reason the
+     * `Rutile + C → Ti` row does not exist: a molybdenum carbide is what a real carbothermic furnace
+     * makes and writing the metal instead would be the hand-written fiction these tables refuse. The
+     * titanium chain answered that by making a *stronger reductant* first; this one answers it by
+     * using a different one entirely.
+     *
+     * ⚠️ **Hydrogen is the reductant industry actually uses here**, and the game already makes it —
+     * `Electrolyzer` splits water into hydrogen and oxygen and ships them out of different faces.
+     * That machine has had exactly one customer until now, which is a thruster wanting propellant.
+     * This is the first time the hydrogen half of a vessel's water is worth something to its
+     * *refinery*, and the oxygen half feeds the roast in the row above.
+     *
+     * ⚠️ Very nearly thermoneutral (+19 kJ), which is what makes it a *hydrogen* cost rather than a
+     * heat cost — what the player spends here is water and the power to split it.
+     */
+    Reaction(
+        principal = Species.Molybdite,
+        reagents = listOf(Species.Molybdite to 1, Species.Hydrogen to 3),
+        products = listOf(Species.Molybdenum to 1, Species.Water to 3),
+        onsetKelvin = 1000,
+        baseRate = BASE_RATE,
+    ),
 )
 
 /**
