@@ -1,6 +1,5 @@
 package org.emerge.demo.outofspace
 
-import org.emerge.demo.outofspace.chem.LANTHANIDE_SUITE
 import org.emerge.demo.outofspace.chem.MINERALS
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
@@ -1959,7 +1958,9 @@ private fun speciesClassColor(s: Species): Long {
         s in ICES -> OutofspaceRenderer.Colors.ICE
         formula == null -> if (s in LANTHANIDES) OutofspaceRenderer.Colors.RARE_EARTH
             else OutofspaceRenderer.Colors.METAL
-        LANTHANIDE_SUITE.containsKey(s) -> OutofspaceRenderer.Colors.RARE_EARTH
+        // ⚠️ Read off the formula now that a rare-earth mineral's lanthanide site *is* its
+        // formula — `LANTHANIDE_SUITE` was a second table saying the same thing and is deleted.
+        formula.keys.any { it in LANTHANIDES } -> OutofspaceRenderer.Colors.RARE_EARTH
         Species.Sulfur in formula -> OutofspaceRenderer.Colors.SULFIDE
         Species.Silicon in formula -> OutofspaceRenderer.Colors.SILICATE
         Species.Carbon in formula -> OutofspaceRenderer.Colors.CARBONATE

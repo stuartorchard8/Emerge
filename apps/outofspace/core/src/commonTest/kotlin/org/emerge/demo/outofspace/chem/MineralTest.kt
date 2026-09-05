@@ -58,10 +58,13 @@ class MineralTest {
      */
     @Test
     fun everyElementHasASource() {
+        // ⚠️ **Only [MINERALS] now.** This used to union in a `LANTHANIDE_SUITE` map as well,
+        // because the rare-earth minerals' formulae named one representative lanthanide each and the
+        // other thirteen had no source anywhere else. The suites are the formulae now, so a single
+        // walk covers every element and there is one table to keep true.
         val fromMinerals = Species.NATURAL.flatMap { MINERALS[it]?.keys.orEmpty() }.toSet()
-        val fromSuites = Species.NATURAL.flatMap { LANTHANIDE_SUITE[it]?.keys.orEmpty() }.toSet()
         val native = Species.NATURAL.filter { it.isElement }.toSet()
-        val obtainable = fromMinerals + fromSuites + native
+        val obtainable = fromMinerals + native
 
         val orphans = Species.ALL.filter { it.isElement && it !in obtainable }.map { it.name }
         assertTrue(orphans.isEmpty(), "elements with no source: ${orphans.joinToString()}")
@@ -147,28 +150,47 @@ class MineralTest {
         )
     }
 
-    /** A suite that summed to 998 would lose two parts per thousand of every rare earth in the game. */
+    private val RARE_EARTHS = setOf(
+        Species.Yttrium,
+        Species.Lanthanum, Species.Cerium, Species.Praseodymium, Species.Neodymium,
+        Species.Samarium, Species.Europium, Species.Gadolinium, Species.Terbium,
+        Species.Dysprosium, Species.Holmium, Species.Erbium, Species.Thulium,
+        Species.Ytterbium, Species.Lutetium,
+    )
+
+    /**
+     * **Every rare-earth mineral has exactly two hundred lanthanide sites**, which is what makes its
+     * formula a faithful statement of the real distribution.
+     *
+     * ⛔ Two hundred is the smallest cell in which every share of all three suites is a whole number.
+     * At a hundred, europium's ten parts per thousand of monazite would be one site and its
+     * neighbours would round; at a smaller cell still the rare half of xenotime disappears entirely.
+     * A site count that is not 200 means somebody has changed a suite without re-deriving it.
+     */
     @Test
-    fun lanthanideSuitesAreWhole() {
-        for ((mineral, suite) in LANTHANIDE_SUITE) {
-            assertEquals(1000, suite.values.sum(), "${mineral.name} suite")
+    fun everyRareEarthMineralHasTwoHundredLanthanideSites() {
+        for (mineral in listOf(Species.Monazite, Species.Bastnasite, Species.Xenotime)) {
+            val sites = MINERALS.getValue(mineral).filterKeys { it in RARE_EARTHS }.values.sum()
+            assertEquals(200, sites, "${mineral.name}'s lanthanide site")
         }
     }
 
-    /** A suite describes the rare-earth site, so everything in one must be a rare earth. */
+    /**
+     * Nothing outside the rare earths sits on the lanthanide site, and nothing else in the game
+     * carries a rare earth.
+     *
+     * ⚠️ The second half is the one worth having: a rare earth turning up in some unrelated rock
+     * would make it obtainable by a route nobody designed, and the whole point of these three
+     * minerals is that they are the *only* way to any of the fifteen.
+     */
     @Test
-    fun lanthanideSuitesHoldOnlyRareEarths() {
-        val rareEarths = setOf(
-            Species.Yttrium,
-            Species.Lanthanum, Species.Cerium, Species.Praseodymium, Species.Neodymium,
-            Species.Samarium, Species.Europium, Species.Gadolinium, Species.Terbium,
-            Species.Dysprosium, Species.Holmium, Species.Erbium, Species.Thulium,
-            Species.Ytterbium, Species.Lutetium,
+    fun rareEarthsOccurOnlyInTheThreeMineralsThatCarryThem() {
+        val carriers = MINERALS.filterValues { formula -> formula.keys.any { it in RARE_EARTHS } }.keys
+        assertEquals(
+            setOf(Species.Monazite, Species.Bastnasite, Species.Xenotime),
+            carriers,
+            "these minerals carry a rare earth",
         )
-        for ((mineral, suite) in LANTHANIDE_SUITE) {
-            val strays = suite.keys.filterNot { it in rareEarths }.map { it.name }
-            assertTrue(strays.isEmpty(), "${mineral.name} suite holds ${strays.joinToString()}")
-        }
     }
 
     /** Mass parts describe a split, so they cannot exceed the whole. */

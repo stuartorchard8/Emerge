@@ -406,9 +406,9 @@ enum class Species(
     Magnesite(84, 900, solidKgPerCubicMetre = 3000, relativeAbundance = 250000, milliWattsPerMetreKelvin = K_CARBONATE, meltingKelvin = 810),   // MgCO3 -- decomposes
     Rhodochrosite(115, 780, solidKgPerCubicMetre = 3700, relativeAbundance = 20000, milliWattsPerMetreKelvin = K_CARBONATE, meltingKelvin = 900),   // MnCO3 -- decomposes
     Apatite(504, 770, solidKgPerCubicMetre = 3190, relativeAbundance = 300000, milliWattsPerMetreKelvin = 1_400, meltingKelvin = 1917),   // Ca5(PO4)3F — the P source
-    Monazite(235, 380, solidKgPerCubicMetre = 5150, relativeAbundance = 270, milliWattsPerMetreKelvin = K_PHOSPHATE, meltingKelvin = 2345),   // CePO4 — light rare earths
-    Xenotime(184, 480, solidKgPerCubicMetre = 4450, relativeAbundance = 250, milliWattsPerMetreKelvin = K_PHOSPHATE, meltingKelvin = 2000),   // YPO4 — heavy rare earths -- estimate
-    Bastnasite(219, 420, solidKgPerCubicMetre = 4950, relativeAbundance = 150, milliWattsPerMetreKelvin = K_CARBONATE, meltingKelvin = 900),   // CeCO3F -- decomposes
+    Monazite(47251, 380, solidKgPerCubicMetre = 5150, relativeAbundance = 270, milliWattsPerMetreKelvin = K_PHOSPHATE, meltingKelvin = 2345),   // CePO4 — light rare earths
+    Xenotime(42500, 480, solidKgPerCubicMetre = 4450, relativeAbundance = 250, milliWattsPerMetreKelvin = K_PHOSPHATE, meltingKelvin = 2000),   // YPO4 — heavy rare earths -- estimate
+    Bastnasite(43867, 420, solidKgPerCubicMetre = 4950, relativeAbundance = 150, milliWattsPerMetreKelvin = K_CARBONATE, meltingKelvin = 900),   // CeCO3F -- decomposes
     Gypsum(172, 1070, solidKgPerCubicMetre = 2310, relativeAbundance = 100000, milliWattsPerMetreKelvin = 1_300, meltingKelvin = 400),   // CaSO4·2H2O -- dehydrates
     Celestine(184, 570, solidKgPerCubicMetre = 3970, relativeAbundance = 1600, milliWattsPerMetreKelvin = K_SULFATE, meltingKelvin = 1878),   // SrSO4
     Barite(233, 450, solidKgPerCubicMetre = 4480, relativeAbundance = 390, milliWattsPerMetreKelvin = 1_300, meltingKelvin = 1853),   // BaSO4

@@ -30,24 +30,34 @@ class PricesTest {
     }
 
     @Test
-    fun `the lanthanide suite is not a source, and its members price at the ceiling`() {
-        // ⚠️ **A real finding about the chemistry table, not about the economy.** `MINERALS` writes
-        // monazite, bastnasite and xenotime with a **single representative lanthanide** (cerium or
-        // yttrium) so their molar masses stay exact; the true site occupancy lives in a separate
-        // `LANTHANIDE_SUITE`, which is a distribution a *refining step* is meant to read and which
-        // nothing reads today. So thirteen lanthanides occur in no rock this derivation can see.
+    fun `every element occurs in some rock, so nothing prices at the ceiling`() {
+        // ⛔ **This test used to assert there were THIRTEEN elements with no source**, and it existed
+        // to make sure that if the chemistry ever changed to source them it would show up here as a
+        // failure rather than as a silent repricing. It did, on 2026-09-05, and this is the other
+        // side of that.
         //
-        // They are consequently unobtainable, and `elementPrice`'s floor prices them as the rarest
-        // thing there can be. Harmless — no mineral contains them, so no *compound* price moves —
-        // but it means the dearest entries in the table are things nobody can ever sell. Pinned here
-        // so that a future chemistry change which sources them shows up as a failure here rather
-        // than as a silent repricing.
+        // `MINERALS` used to write monazite, bastnasite and xenotime with a *single representative
+        // lanthanide* — cerium or yttrium — with the true site occupancy kept in a separate
+        // `LANTHANIDE_SUITE` that nothing read. So thirteen lanthanides occurred in no rock this
+        // derivation could see, were unobtainable, and `elementPrice`'s floor priced them as the
+        // rarest things in the game: the dearest entries in the whole table were things nobody could
+        // ever sell.
+        //
+        // The three minerals are now written as the solid solutions they are, over two hundred
+        // lanthanide sites each, so every one of the fifteen occurs in rock and is priced off how
+        // much of it there actually is.
+        //
+        // ⚠️ **The floor in `elementPrice` is not deleted and must stay**, for the reason it was
+        // written: an element some future mineral edit orphans has to be priced as unobtainable
+        // rather than divide by zero. This asserts nothing reaches it.
         val orphans = Species.ALL.filter { compositionOf(it).isEmpty() && Prices.abundance(it) <= 0L }
-        assertEquals(13, orphans.size, "the set of unsourced elements moved: $orphans")
-        assertTrue(orphans.contains(Species.Lanthanum) && orphans.contains(Species.Neodymium))
-        // Cerium and yttrium ARE the representatives, so they must be sourced.
-        assertTrue(Prices.abundance(Species.Cerium) > 0L)
-        assertTrue(Prices.abundance(Species.Yttrium) > 0L)
+        assertTrue(orphans.isEmpty(), "these elements occur in no rock and price at the ceiling: $orphans")
+
+        // The scarce end of the heavy suite, which only xenotime carries.
+        assertTrue(Prices.abundance(Species.Dysprosium) > 0L)
+        assertTrue(Prices.abundance(Species.Terbium) > 0L)
+        // And the light suite's rarest, two sites in two hundred of monazite.
+        assertTrue(Prices.abundance(Species.Europium) > 0L)
     }
 
     @Test

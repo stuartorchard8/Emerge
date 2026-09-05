@@ -35,9 +35,9 @@ package org.emerge.demo.outofspace.chem
  *   much, so ore choice has a running cost rather than just a yield.
  *   3. Roasting — sulfides + O₂ → oxide + SO₂. Two-stage (roast then reduce), produces a genuinely nasty gas you have to vent or scrub,
  *   which gives your atmosphere sim something to do that the player actually cares about.
- *   4. Fractional separation — for the rare earths, and deliberately not a smelt. LANTHANIDE_SUITE is a mixture that no single-pass process
- *   separates; it wants a cascade where each stage improves purity slightly, so the player builds a long chain of identical units. That's
- *   the marquee endgame build, and it's the one the table was designed to make possible.
+ *   4. Fractional separation — for the rare earths, and deliberately not a smelt. A rare-earth mineral's formula is a solid solution over
+ *   two hundred lanthanide sites, so cracking one hands back the whole suite in fixed proportion and no single-pass process improves on
+ *   that ratio. Winning one lanthanide clean wants a cascade where each stage lifts purity slightly, which is the marquee endgame build.
  */
 
 /**
@@ -126,10 +126,10 @@ val Species.adiabaticK: Int
  * is a compound the player will want to crack — water into hydrogen and oxygen is a real and useful
  * operation, and the table would be lying by omission if it said water had no parts.
  *
- * The rare-earth phosphates and the fluorocarbonate are written with a single representative
- * lanthanide, which is what makes their molar mass exact. Real ones are solid solutions across the
- * whole lanthanide site — see [LANTHANIDE_SUITE], which is the distribution a refining step should
- * actually use, and the reason rare-earth separation is a hard problem rather than a smelt.
+ * The rare-earth phosphates and the fluorocarbonate are solid solutions and are written as such —
+ * two hundred lanthanide sites apiece, filled in the proportions the real minerals carry. That is
+ * what makes their molar mass exact *and* true, and it is why rare-earth separation is a hard
+ * problem rather than a smelt: a formula unit hands back the whole suite at once.
  */
 val MINERALS: Map<Species, Map<Species, Int>> = mapOf(
     // ── Silicates ──
@@ -217,9 +217,50 @@ val MINERALS: Map<Species, Map<Species, Int>> = mapOf(
     Species.Rhodochrosite to mapOf(Species.Manganese to 1, Species.Carbon to 1, Species.Oxygen to 3),
     Species.Dolomite to mapOf(Species.Calcium to 1, Species.Magnesium to 1, Species.Carbon to 2, Species.Oxygen to 6),
     Species.Apatite to mapOf(Species.Calcium to 5, Species.Phosphorus to 3, Species.Oxygen to 12, Species.Fluorine to 1),
-    Species.Monazite to mapOf(Species.Cerium to 1, Species.Phosphorus to 1, Species.Oxygen to 4),
-    Species.Xenotime to mapOf(Species.Yttrium to 1, Species.Phosphorus to 1, Species.Oxygen to 4),
-    Species.Bastnasite to mapOf(Species.Cerium to 1, Species.Carbon to 1, Species.Oxygen to 3, Species.Fluorine to 1),
+    // ── The rare earths, as the solid solutions they actually are ──
+    //
+    // ⛔ **Written over TWO HUNDRED lanthanide sites, and that is what makes them honest.** A rare
+    // earth mineral is not a compound: the lanthanides differ only in an inner f-shell that never
+    // reaches the bonding, so they substitute freely for one another on one crystal site and no
+    // geological process separates them. There is no dysprosium ore. Monazite is (Ce,La,Nd)PO4 —
+    // a *solution*, and its lanthanide site is whatever the rock happened to gather.
+    //
+    // ⚠️ **These used to be written with a single representative lanthanide** — monazite as CePO4 —
+    // with the real distribution kept beside them in a `LANTHANIDE_SUITE` map "a refining step is
+    // meant to read". Nothing read it. So the codebase held two contradicting statements about what
+    // monazite contains, the honest one was dead data, and thirteen lanthanides existed in [Species]
+    // with no source at all: unobtainable, pinned at the price ceiling, and explicitly filtered out
+    // of `PricesTest`'s spread check because they would have dominated it.
+    //
+    // ⚠️ **Two hundred sites is not arbitrary** — it is the smallest cell in which every share of
+    // all three suites is a whole number, so the formula reproduces the distribution exactly and
+    // [derivedMolarMass] still derives a molar mass with nothing rounded. `MineralTest` closes both
+    // ends of that.
+    //
+    // ⛔ **The consequence is a byproduct economy, and it is the point.** Europium is two sites in
+    // two hundred, against cerium's ninety-two — so a vessel that wants a kilogram of europium must
+    // work forty-six kilograms of cerium to get it, and cannot choose otherwise. That is exactly why
+    // there is a global glut of cerium and lanthanum in reality, and it falls out of the
+    // stoichiometry rather than needing a separation machine to enforce it.
+    Species.Monazite to mapOf(
+        Species.Lanthanum to 46, Species.Cerium to 92, Species.Praseodymium to 11,
+        Species.Neodymium to 38, Species.Samarium to 11, Species.Europium to 2,
+        Species.Phosphorus to 200, Species.Oxygen to 800,
+    ),
+    Species.Bastnasite to mapOf(
+        Species.Lanthanum to 64, Species.Cerium to 98, Species.Praseodymium to 9,
+        Species.Neodymium to 28, Species.Samarium to 1,
+        Species.Carbon to 200, Species.Oxygen to 600, Species.Fluorine to 200,
+    ),
+    // The heavy suite, on an yttrium backbone. Dysprosium and terbium are the genuinely scarce ones
+    // and they turn up nowhere else.
+    Species.Xenotime to mapOf(
+        Species.Yttrium to 120, Species.Gadolinium to 8, Species.Terbium to 2,
+        Species.Dysprosium to 17, Species.Holmium to 4, Species.Erbium to 13,
+        Species.Thulium to 2, Species.Ytterbium to 12, Species.Lutetium to 2,
+        Species.Neodymium to 20,
+        Species.Phosphorus to 200, Species.Oxygen to 800,
+    ),
     // CaSO4·2H2O — the two waters of crystallisation are just four more hydrogens and two more
     // oxygens as far as mass is concerned, which is the only thing this map is for.
     Species.Gypsum to mapOf(Species.Calcium to 1, Species.Sulfur to 1, Species.Oxygen to 6, Species.Hydrogen to 4),
@@ -261,53 +302,13 @@ val MINERALS: Map<Species, Map<Species, Int>> = mapOf(
 )
 
 /**
- * How the lanthanide site of a rare-earth mineral is actually occupied, in parts per thousand.
+ * ⛔ **`LANTHANIDE_SUITE` is deleted, and its contents are in [MINERALS] where they belong.**
  *
- * [MINERALS] writes monazite as CePO₄ so that its molar mass is an exact integer. Real monazite is a
- * solid solution: the site holds whichever lanthanide was to hand when the crystal grew, and the
- * suite it ends up with is a property of the mineral. That is the entire reason rare earths are
- * hard — they are chemically almost indistinguishable, so you cannot smelt them apart, you have to
- * separate them, and the ore decides what you are separating.
- *
- * The split between the two families is the real one: phosphates of the light lanthanides (monazite,
- * bastnäsite) and of the heavy ones plus yttrium (xenotime). An asteroid with one is not a substitute
- * for an asteroid with the other, which is what makes prospecting for them worth doing.
- *
- * Each list sums to 1000. `MineralTest` says so, because a suite that quietly summed to 998 would
- * lose two parts in a thousand of every rare earth in the game.
+ * It held the real lanthanide distribution of the three rare-earth minerals while [MINERALS] held a
+ * single-representative fiction for each, so the codebase stated two different things about what
+ * monazite is made of and nothing in the simulation read the true one. The suites are now the
+ * minerals' own formulae, over two hundred lanthanide sites — see there.
  */
-val LANTHANIDE_SUITE: Map<Species, Map<Species, Int>> = mapOf(
-    // Light rare earths. Cerium dominates, which is why cerium was found first and is still cheap.
-    Species.Monazite to mapOf(
-        Species.Lanthanum to 230,
-        Species.Cerium to 460,
-        Species.Praseodymium to 55,
-        Species.Neodymium to 190,
-        Species.Samarium to 55,
-        Species.Europium to 10,
-    ),
-    Species.Bastnasite to mapOf(
-        Species.Lanthanum to 320,
-        Species.Cerium to 490,
-        Species.Praseodymium to 45,
-        Species.Neodymium to 140,
-        Species.Samarium to 5,
-    ),
-    // Heavy rare earths, on an yttrium backbone. The valuable end: dysprosium and terbium are the
-    // ones that are actually scarce, and they only ever turn up here.
-    Species.Xenotime to mapOf(
-        Species.Yttrium to 600,
-        Species.Gadolinium to 40,
-        Species.Terbium to 10,
-        Species.Dysprosium to 85,
-        Species.Holmium to 20,
-        Species.Erbium to 65,
-        Species.Thulium to 10,
-        Species.Ytterbium to 60,
-        Species.Lutetium to 10,
-        Species.Neodymium to 100,
-    ),
-)
 
 /** The species that are made of something — the keys of [MINERALS], as a set, for quick membership. */
 val COMPOUNDS: Set<Species> = MINERALS.keys
