@@ -3797,13 +3797,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // packets holds its remainder back instead of sending a runt lump that will own a tile
             // for good.
             //
-            // ⛔ **Unless it is being taken apart**, and that exception is the whole reason this is
-            // a condition rather than a cap. Deconstruction waits on the stores that an output port
-            // drains — see [scrapMachines] — so a machine that will not let go of its last eighty
-            // grams is a machine that never comes apart. Told to go, it hands over whatever it has.
-            if (m.kind.shipsWholePackets && port.owner !in scrapping &&
-                minOf(room, buffer.total) < Capacity.PACKET_MASS
-            ) return
+            // ⛔ **Except where holding back cannot achieve what the rule is for** — see
+            // [Work.holdsBack], which is where the exemptions are argued.
+            if (holdsBack(m, port, buffer, room, useful)) return
             val (packet, rest) = takePacket(buffer, room) ?: return
             val wasEmpty = rail.isEmpty(tile)
             if (!rail.loadOnto(tile, packet.contents)) return
@@ -3814,6 +3810,47 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Only an empty tile counts as an appearance. Topping up a lump already standing there
             // is a change of mass, which draws itself from the mass the tile started the tick with.
             if (wasEmpty) motion.placedByPort(tile)
+        }
+
+        /**
+         * Whether [m] keeps a part-packet to itself rather than putting it on the track.
+         *
+         * [DeckMachineKind.shipsWholePackets] is the rule and this is where it is *asked*, because
+         * the answer is not a property of the kind alone. A machine whose store is a hopper filling
+         * at a rate — an extractor's bites, a pump's draw — would otherwise dribble its remainder
+         * out as a runt lump that owns a rail tile for good, since packets are never merged into.
+         *
+         * ⚠️ **This is a veto over work the demand pass has already done**, not a second opinion
+         * about how much to send. [Whitelist.room] decided what is worth letting go of; this only
+         * decides whether a *part* packet may go at all. So every exemption below names a case where
+         * holding back cannot achieve what the rule is for.
+         *
+         * ⛔ **Being taken apart.** Deconstruction waits on the stores an output port drains — see
+         * [scrapMachines] — so a machine that will not let go of its last eighty grams is a machine
+         * that never comes apart. Told to go, it hands over whatever it has.
+         *
+         * ⛔ **The appetite itself is short.** A construction site owed thirty kilograms creates a
+         * thirty kilogram demand, and a runt sized to a real appetite is *consumed* on arrival: it
+         * cannot come to rest on a tile, so it cannot clog the thing this rule protects. Holding it
+         * back stranded the site for ever, in front of the material that would have finished it —
+         * the same shape as the surplus [Whitelist.room] was written to stop, arriving from the
+         * other end. ⚠️ **Finite is the test, not small.** [Acceptance.wanted] is what a sink still
+         * wants *before it is done for good* and is deliberately not "room right now", so a
+         * warehouse filling up never presents a short appetite; only a bill or a bounded sell order
+         * does, and both are consumed by definition.
+         */
+        private fun holdsBack(
+            m: DeckMachine,
+            port: Port,
+            buffer: Mixture,
+            room: Long,
+            useful: Long,
+        ): Boolean {
+            if (!m.kind.shipsWholePackets) return false
+            if (minOf(room, buffer.total) >= Capacity.PACKET_MASS) return false
+            if (port.owner in scrapping) return false
+            if (useful != Acceptance.UNLIMITED && useful < Capacity.PACKET_MASS) return false
+            return true
         }
 
         /**

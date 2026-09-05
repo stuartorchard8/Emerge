@@ -37,9 +37,13 @@ enum class DeckMachineKind(
      * where it could have carried a hundred kilograms.
      *
      * So the remainder waits in the hopper for the next bite to top it up, which is where it is
-     * useful and where it costs nothing. ⚠️ **Except when the machine is being taken apart**, at
-     * which point holding on is a deadlock rather than a policy and any size is allowed out — see
-     * `Work.pushOut`.
+     * useful and where it costs nothing.
+     *
+     * ⚠️ **This states the rule; it does not answer it.** Whether a given part-packet may go is
+     * asked of the world rather than of the kind — a machine being taken apart lets go of any size,
+     * and so does one whose only customer is short of less than a packet, because a runt sized to a
+     * real appetite is consumed rather than left standing. See `Work.holdsBack`, where each
+     * exemption is argued.
      */
     val shipsWholePackets: Boolean = false,
 ) {
