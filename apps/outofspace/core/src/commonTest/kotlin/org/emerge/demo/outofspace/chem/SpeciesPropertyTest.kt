@@ -124,4 +124,51 @@ class SpeciesPropertyTest {
                 "if that is deliberate this test is the thing to delete, but it was not true when written",
         )
     }
+
+    /**
+     * **Which fluids are carrying a condensed-phase heat capacity**, and the fact that six of them are.
+     *
+     * ⛔ **[Species.specificHeat] is one number per species, and for a fluid that cannot be right.**
+     * Liquid water is 4182 J/kg/K and steam is 2080 — a factor of two — and the column has to pick.
+     * Seventeen of the twenty-three fluids picked the gas; six picked whatever phase the substance
+     * happens to be in at room temperature, which is what you get from looking up "specific heat of
+     * X". Every one of the six matches its condensed value to within a digit or two: water 4182 is
+     * liquid water, bromine 474 is liquid bromine, iodine 214 is *solid* iodine, mercury 140 is
+     * liquid mercury, zinc 388 and cadmium 232 are the solid metals.
+     *
+     * ⚠️ **This is pinned rather than fixed, on purpose.** There is no single number that is right
+     * for a species genuinely living in two phases, so "correcting" these would trade one silent
+     * wrongness for another — zinc is solid ore on a belt far more often than it is vapour in a
+     * roasting bed. The fix is an enthalpy curve per species, which is `PLAN_specific_heat.md` and
+     * is a re-tune of every thermal behaviour in the game rather than an edit to a column.
+     *
+     * ⚠️ **Zinc and Cadmium are NOT in the exception set and are wrong anyway**, because this test
+     * cannot resolve them: the equipartition prediction is itself good to only about 25% for a
+     * polyatomic — sulfur dioxide, whose value is *right*, is 23% off it — and zinc and cadmium sit
+     * at 21% and 25%. They are named in the doc above and caught by the plan, not by this assertion.
+     * A sharper instrument means a hand-typed table of gas-phase values, which is the duplication
+     * this check exists to avoid.
+     *
+     * ⛔ The exception set is **asserted**, not skipped, so it can neither grow unnoticed nor shrink
+     * without somebody having to come here and say why — `settleCohesion`'s arrangement for its own
+     * two known-bad fluids, and for the same reason.
+     */
+    @Test
+    fun `only the fluids we know about carry a condensed-phase heat capacity`() {
+        // Cp = (adiabaticK / 2) * R / M, which is what `adiabaticK` already means: it is stored as
+        // 2*Cp/R precisely so this arithmetic stays in integers. R is 8.314 J/mol/K, and molarMass
+        // is grams per mole, so the 8314 carries the g -> kg with it.
+        val known = setOf(Species.Water, Species.Bromine, Species.Iodine, Species.Mercury)
+        val diverging = mutableSetOf<Species>()
+        for (fluid in Fluid.ALL) {
+            val species = fluid.species
+            val predicted = species.adiabaticK * 8314 / (2 * species.molarMass)
+            val off = (species.specificHeat - predicted) * 100 / predicted
+            if (off > 30 || off < -30) diverging.add(species)
+        }
+        assertEquals(
+            known, diverging,
+            "the set of fluids whose heat capacity is not a gas-phase value has changed",
+        )
+    }
 }
