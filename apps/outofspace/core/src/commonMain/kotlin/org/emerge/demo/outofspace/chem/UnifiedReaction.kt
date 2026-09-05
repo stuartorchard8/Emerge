@@ -820,6 +820,53 @@ private val WRITTEN: List<Reaction> = listOf(
         onsetKelvin = 1900,
         baseRate = BASE_RATE,
     ),
+
+    // ── Three sulfides that give up their metal without an oxide ever existing ──
+    //
+    // ⛔ **These were scoped as "roast to an oxide, then reduce the oxide", which would have wanted
+    // PbO, Sb₂O₃ and Bi₂O₃ as new species.** They do not need them, and not by a trick: each of
+    // these is a real industrial process that skips the oxide entirely, and the reason is always
+    // that something else in the pan wants the sulfur more than the metal does.
+    //
+    // ⚠️ Every species below already exists, so this batch costs the [Mixture] arithmetic nothing.
+    // The oxides can wait for the metals that genuinely need them.
+
+    // PbS + O₂ → Pb + SO₂. **The roast-reaction**, and the oldest lead smelting there is: roast part
+    // of the charge to the oxide and the oxide immediately takes the sulfur out of the rest, so the
+    // pan never holds litharge for long enough to be worth calling a product. Written as the overall
+    // reaction it is, which is also the one that balances.
+    Reaction(
+        principal = Species.Galena,
+        reagents = listOf(Species.Galena to 1, Species.Oxygen to 1),
+        products = listOf(Species.Lead to 1, Species.SulfurDioxide to 1),
+        onsetKelvin = 1100,
+        baseRate = BASE_RATE,
+    ),
+
+    // Sb₂S₃ + 3 Fe → 2 Sb + 3 FeS. **Iron precipitation**, and the reason it works is a single fact:
+    // iron wants sulfur more than antimony does. Scrap iron goes into the molten sulfide and the
+    // antimony falls out of it — no air, no oxide, no furnace atmosphere to manage.
+    //
+    // ⚠️ **The troilite is a real product and not a tailing.** `FeS` is already in the game as the
+    // mineral pyrite decomposes into, so this row hands back something the table already knows how
+    // to talk about, and a vessel that runs it accumulates the same matter a pyrite roast does.
+    Reaction(
+        principal = Species.Stibnite,
+        reagents = listOf(Species.Stibnite to 1, Species.Iron to 3),
+        products = listOf(Species.Antimony to 2, Species.Troilite to 3),
+        onsetKelvin = 1200,
+        baseRate = BASE_RATE,
+    ),
+
+    // Bi₂S₃ + 3 Fe → 2 Bi + 3 FeS. The same precipitation and the same reason, at a slightly lower
+    // temperature — bismuthinite melts at 1050 K where stibnite needs more heat to run properly.
+    Reaction(
+        principal = Species.Bismuthinite,
+        reagents = listOf(Species.Bismuthinite to 1, Species.Iron to 3),
+        products = listOf(Species.Bismuth to 2, Species.Troilite to 3),
+        onsetKelvin = 1100,
+        baseRate = BASE_RATE,
+    ),
 )
 
 /**

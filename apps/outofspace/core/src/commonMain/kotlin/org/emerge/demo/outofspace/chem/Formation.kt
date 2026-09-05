@@ -134,6 +134,14 @@ val FORMATION_ENTHALPY: Map<Species, Int> = mapOf(
     Species.Pyrolusite to -520, // MnO2
     Species.Chromite to -1445, // FeCr2O4
 
+    Species.Lead to 0,
+    Species.Antimony to 0,
+    Species.Bismuth to 0,
+
+    Species.Galena to -100, // PbS
+    Species.Stibnite to -175, // Sb2S3
+    Species.Bismuthinite to -143, // Bi2S3
+
     // ══ THE TWO THE VESSEL MAKES OUT OF ITSELF ════════════════════════════════════════════════
     //
     // ⚠️ **These two are defined rather than measured, and the definition is a claim already made

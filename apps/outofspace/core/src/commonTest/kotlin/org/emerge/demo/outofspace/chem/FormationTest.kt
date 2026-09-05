@@ -80,6 +80,9 @@ class FormationTest {
             "1 Cassiterite + 2 Carbon -> 1 Tin + 2 CarbonMonoxide" to 359L,
             "1 Pyrolusite + 2 Carbon -> 1 Manganese + 2 CarbonMonoxide" to 298L,
             "1 Chromite + 4 Carbon -> 1 Iron + 2 Chromium + 4 CarbonMonoxide" to 1001L,
+            "1 Galena + 1 Oxygen -> 1 Lead + 1 SulfurDioxide" to -197L,
+            "1 Stibnite + 3 Iron -> 2 Antimony + 3 Troilite" to -125L,
+            "1 Bismuthinite + 3 Iron -> 2 Bismuth + 3 Troilite" to -157L,
         )
 
         val seen = mutableSetOf<String>()

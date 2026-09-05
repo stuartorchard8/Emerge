@@ -121,6 +121,8 @@ class ReactionChainTest {
                 Species.Oxygen,
                 // The oxide ores, which were mineable and irreducible until 2026-09-05.
                 Species.Tin, Species.Manganese, Species.Chromium,
+                // The sulfides that give up their metal without an oxide.
+                Species.Lead, Species.Antimony, Species.Bismuth,
             ),
             manufactured,
             "the set of elements the game can make has changed",
