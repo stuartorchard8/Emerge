@@ -125,6 +125,8 @@ class ReactionChainTest {
                 Species.Lead, Species.Antimony, Species.Bismuth,
                 // The two-stage roast, which needed Molybdite and hydrogen.
                 Species.Molybdenum,
+                // The volatile metals, which smelt in a buffer and never see the air.
+                Species.Zinc, Species.Cadmium, Species.Mercury,
             ),
             manufactured,
             "the set of elements the game can make has changed",

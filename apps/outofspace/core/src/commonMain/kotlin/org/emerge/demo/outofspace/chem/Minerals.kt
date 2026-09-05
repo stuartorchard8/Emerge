@@ -172,6 +172,8 @@ val MINERALS: Map<Species, Map<Species, Int>> = mapOf(
     Species.Pyrolusite to mapOf(Species.Manganese to 1, Species.Oxygen to 2),
     Species.Cassiterite to mapOf(Species.Tin to 1, Species.Oxygen to 2),
     Species.Molybdite to mapOf(Species.Molybdenum to 1, Species.Oxygen to 3),
+    Species.Zincite to mapOf(Species.Zinc to 1, Species.Oxygen to 1),
+    Species.Monteponite to mapOf(Species.Cadmium to 1, Species.Oxygen to 1),
     Species.Baddeleyite to mapOf(Species.Zirconium to 1, Species.Oxygen to 2),
     Species.Columbite to mapOf(Species.Iron to 1, Species.Niobium to 2, Species.Oxygen to 6),
     Species.Tantalite to mapOf(Species.Iron to 1, Species.Tantalum to 2, Species.Oxygen to 6),

@@ -915,6 +915,80 @@ private val WRITTEN: List<Reaction> = listOf(
         onsetKelvin = 1000,
         baseRate = BASE_RATE,
     ),
+
+    // ── The volatile metals, which turn out not to be volatile here ──
+    //
+    // ⛔ **Zinc, cadmium and mercury boil below the temperature that wins them**, and in reality that
+    // is the whole difficulty: zinc comes off a carbothermic furnace as vapour into a gas stream
+    // that re-oxidises it on the way out, which is why the Imperial Smelting Process sprays molten
+    // lead through the fume to shock-cool it and why zinc was the last common metal anybody learned
+    // to smelt.
+    //
+    // ⚠️ **None of that happens here, and it is worth saying why rather than letting it look like an
+    // oversight.** Two reasons, and both are decisions already taken elsewhere:
+    //
+    // **A store reacts with what it is holding** (`AmbientChemistry.react`, Stu 2026-09-04), so a
+    // roast runs inside a furnace's buffer on oxygen that is *in* the buffer. The products land in
+    // that buffer because that is where the principal was, and a machine's buffer never vents — so
+    // the zinc is cargo, it leaves on a belt, and the room's air is never consulted. It is exactly
+    // as easy to smelt as lead.
+    //
+    // **Reversion is not expressible.** `reactionFraction` is a monotone climb from an onset with no
+    // upper bound, so "this reaction runs while cool and stops when hot" cannot be written, and
+    // `PLAN_unified_reactions.md` parks reversibility by name. With nothing to re-oxidise the metal
+    // there is nothing to outrun, so there is no shock cooling to model either.
+    //
+    // ⚠️ So these rows are *easier than reality* and knowingly so. What it would take to earn the
+    // difficulty is a ceiling on a row's rate — one field — and that is its own increment.
+
+    // 2 ZnS + 3 O₂ → 2 ZnO + 2 SO₂. Sphalerite is the commonest sulfide in the game at 46300, so
+    // this is the roast a vessel will actually run most.
+    Reaction(
+        principal = Species.Sphalerite,
+        reagents = listOf(Species.Sphalerite to 2, Species.Oxygen to 3),
+        products = listOf(Species.Zincite to 2, Species.SulfurDioxide to 2),
+        onsetKelvin = 1200,
+        baseRate = BASE_RATE,
+    ),
+    // ZnO + C → Zn + CO. The carbothermic half, and the hottest step of the pair.
+    Reaction(
+        principal = Species.Zincite,
+        reagents = listOf(Species.Zincite to 1, Species.Carbon to 1),
+        products = listOf(Species.Zinc to 1, Species.CarbonMonoxide to 1),
+        onsetKelvin = 1400,
+        baseRate = BASE_RATE,
+    ),
+
+    // 2 CdS + 3 O₂ → 2 CdO + 2 SO₂, then CdO + C → Cd + CO. The same pair as zinc and cooler at both
+    // ends — cadmium oxide gives up its oxygen far more easily than zincite does, which is the fact
+    // that lets a real refinery separate the two out of the same ore body.
+    Reaction(
+        principal = Species.Greenockite,
+        reagents = listOf(Species.Greenockite to 2, Species.Oxygen to 3),
+        products = listOf(Species.Monteponite to 2, Species.SulfurDioxide to 2),
+        onsetKelvin = 1000,
+        baseRate = BASE_RATE,
+    ),
+    Reaction(
+        principal = Species.Monteponite,
+        reagents = listOf(Species.Monteponite to 1, Species.Carbon to 1),
+        products = listOf(Species.Cadmium to 1, Species.CarbonMonoxide to 1),
+        onsetKelvin = 1000,
+        baseRate = BASE_RATE,
+    ),
+
+    // HgS + O₂ → Hg + SO₂. **The third roast that skips the oxide**, and for the reason the other two
+    // did: mercury oxide falls apart well below the temperature the roast runs at, so there is
+    // nothing for it to make but the metal. Cinnabar is also the most weakly bound sulfide in
+    // [FORMATION_ENTHALPY] at −58 kJ/mol, which is the same fact stated as a number — the pattern
+    // argentite set holds, and mercury sits at the far end of it.
+    Reaction(
+        principal = Species.Cinnabar,
+        reagents = listOf(Species.Cinnabar to 1, Species.Oxygen to 1),
+        products = listOf(Species.Mercury to 1, Species.SulfurDioxide to 1),
+        onsetKelvin = 800,
+        baseRate = BASE_RATE,
+    ),
 )
 
 /**

@@ -135,11 +135,20 @@ val FORMATION_ENTHALPY: Map<Species, Int> = mapOf(
     Species.Chromite to -1445, // FeCr2O4
 
     Species.Molybdenum to 0,
+    Species.Zinc to 0,
+    Species.Cadmium to 0,
+    Species.Mercury to 0,
     Species.Lead to 0,
     Species.Antimony to 0,
     Species.Bismuth to 0,
 
     Species.Molybdenite to -235, // MoS2
+    Species.Sphalerite to -206, // ZnS
+    Species.Zincite to -350, // ZnO
+    Species.Greenockite to -162, // CdS
+    Species.Monteponite to -258, // CdO
+    Species.Cinnabar to -58, // HgS -- the weakest-bound sulfide in the table, which is why
+                             // roasting it gives the metal and not an oxide.
     Species.Molybdite to -745, // MoO3
     Species.Galena to -100, // PbS
     Species.Stibnite to -175, // Sb2S3

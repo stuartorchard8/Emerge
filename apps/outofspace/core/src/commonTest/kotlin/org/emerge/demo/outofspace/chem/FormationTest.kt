@@ -85,6 +85,11 @@ class FormationTest {
             "1 Bismuthinite + 3 Iron -> 2 Bismuth + 3 Troilite" to -157L,
             "2 Molybdenite + 7 Oxygen -> 2 Molybdite + 4 SulfurDioxide" to -2208L,
             "1 Molybdite + 3 Hydrogen -> 1 Molybdenum + 3 Water" to 19L,
+            "2 Sphalerite + 3 Oxygen -> 2 Zincite + 2 SulfurDioxide" to -882L,
+            "1 Zincite + 1 Carbon -> 1 Zinc + 1 CarbonMonoxide" to 239L,
+            "2 Greenockite + 3 Oxygen -> 2 Monteponite + 2 SulfurDioxide" to -786L,
+            "1 Monteponite + 1 Carbon -> 1 Cadmium + 1 CarbonMonoxide" to 147L,
+            "1 Cinnabar + 1 Oxygen -> 1 Mercury + 1 SulfurDioxide" to -239L,
         )
 
         val seen = mutableSetOf<String>()
@@ -188,34 +193,40 @@ class FormationTest {
     /**
      * The audit behind [FORMATION_ENTHALPY]'s reference-phase rule: **where does the choice bite?**
      *
-     * A species is quoted as a gas if it can be a fluid, and the condensed/gas baselines differ by
-     * [vaporisationHeat] — which is zero at and above the critical point, where there is no phase
-     * change left to pay for. So for any row hot enough that its fluid participants are supercritical,
-     * the choice of reference phase costs nothing and the row is safe whatever we decided.
+     * A species that can be a fluid is quoted as a gas, and the condensed and gas baselines differ
+     * by [vaporisationHeat] — which is zero at and above the critical point, where there is no phase
+     * change left to pay for. So a row running hot enough that its fluid participants are
+     * supercritical is safe whatever we decided.
      *
-     * ⛔ **This test is how we find out which rows are not in that comfortable position**, and there
-     * are three species in it today. Two of them were a surprise, which is the argument for the test:
+     * ### ⛔ Only a row that can run in the AIR can get this wrong
      *
-     * - **Sulfur** (Tc 1314 K), which pyrite gives up at 1000 K. See [FORMATION_ENTHALPY], where it
-     *   is quoted as a solid against the rule and the reasoning is set out.
-     * - **Water** (Tc 647 K) and **CarbonDioxide** (Tc 304 K), in the two biological rows —
-     *   photosynthesis at 273 K and algae pyrolysis at 353 K. These are the only reactions in the
-     *   game that run at room temperature, and they are exactly where "is the water a liquid?" stops
-     *   being a rounding error. ⚠️ **Photosynthesis is the visible consequence**: the textbook
-     *   +2803 kJ is quoted against liquid water and this table derives +2545 against gaseous, and the
-     *   258 kJ between them is six waters' worth of the choice. Every *fire* is unaffected, because
-     *   they all run hundreds of kelvin above 647 K.
+     * `AmbientChemistry.react` gives each store its own reaction — *"a store reacts with what it is
+     * holding, and with nothing else"* (Stu, 2026-09-04). A row runs in the air only if its
+     * **principal** can be in the air, because the principal is what the pass looks for; and the
+     * cargo stores have no cohesion ledger, so their baseline is the condensed phase and a
+     * solid-quoted enthalpy is simply *correct* there.
      *
-     * ⚠️ **Zinc, cadmium and mercury will join the list the day roasting lands.** They are [Fluid]s
-     * for the express purpose of leaving a roasting bed as vapour, and a roast runs well below any of
-     * their critical points. When this test starts naming them, the question has to be answered
-     * rather than deferred.
+     * ⚠️ **So a row whose principal is not a fluid is unconditionally safe**, however cold it runs
+     * and whatever it makes. That is why zinc, cadmium and mercury are absent from this set despite
+     * all three being made hundreds of kelvin below their critical points: their metallurgy is
+     * `Zincite + C`, `Monteponite + C` and `Cinnabar + O₂`, and not one of those principals can be
+     * in a room. The metal lands in the buffer it was made in and leaves on a belt.
+     *
+     * ⛔ **What is left is two rows, and they are the genuinely ambiguous ones**: a fire whose fuel
+     * is a fluid can run in a room *or* in a packet, so one number has to serve both.
+     *
+     * - **Sulfur** (Tc 1314 K) burning at 505 K. Quoted as a solid, so a sulfur fire in a *room*
+     *   under-releases by roughly the heat of vaporisation. See [FORMATION_ENTHALPY].
+     * - **Water** (Tc 647 K) made by hydrogen sulfide burning at 533 K — the one fire cold enough
+     *   that its water could be liquid. Every other fire runs above 647 K.
      */
     @Test
     fun theReferencePhaseOnlyMattersForSpeciesNamedHere() {
-        val known = setOf(Species.Sulfur, Species.Water, Species.CarbonDioxide)
+        val known = setOf(Species.Sulfur, Species.Water)
         val bites = mutableSetOf<Species>()
         for (reaction in REACTIONS) {
+            // Only a row the air can hold the principal of ever reacts in the air.
+            if (!reaction.principal.isFluid) continue
             for ((species, _) in reaction.reagents + reaction.products) {
                 val critical = CRITICAL[species] ?: continue
                 if (reaction.onsetKelvin < critical.kelvin) bites.add(species)
@@ -224,7 +235,7 @@ class FormationTest {
         assertEquals(
             known,
             bites,
-            "the set of species made or consumed below their critical point has changed — " +
+            "the set of species reacting in the air below their critical point has changed — " +
                 "the reference-phase question now bites for these, and FORMATION_ENTHALPY must say so",
         )
     }
