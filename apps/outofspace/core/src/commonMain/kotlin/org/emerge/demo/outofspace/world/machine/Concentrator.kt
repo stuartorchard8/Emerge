@@ -35,7 +35,7 @@ data class Concentrator(
     /**
      * Minimum number of machine ticks it takes to convert inProgress resources to product and tailings.
      */
-    val ticksPerAction: Int = 16,
+    val ticksPerAction: Int = 8,
     val progress: Int = 0,
     /**
      * Machine quality, and since the draw replaced the ladder it is a plain **recovery rate**: the
