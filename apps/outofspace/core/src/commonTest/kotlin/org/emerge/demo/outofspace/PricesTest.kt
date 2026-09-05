@@ -1,7 +1,10 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.chem.MINERALS
+import org.emerge.demo.outofspace.chem.atomicMass
 import org.emerge.demo.outofspace.chem.compositionOf
+import org.emerge.demo.outofspace.chem.derivedMolarMass
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.Prices
 import kotlin.test.Test
@@ -99,10 +102,24 @@ class PricesTest {
         // mineral into its elements profitable ONLY through the local stock discount. If a rounding
         // change ever makes the parts systematically worth more, stations start grinding rock for
         // free money and the discount stops being the mechanism.
-        for (species in listOf(Species.Forsterite, Species.Hematite, Species.Ilmenite, Species.Uraninite)) {
+        //
+        // ⛔ **Weighed off the formula, and it used to be weighed off [massPartsPerThousand].** That
+        // reconstruction floors each element's share to an integer per mille, so it was a *lossy
+        // copy* of the identity it was meant to check rather than an independent statement of it —
+        // forsterite came out 930 against 931 the moment `Prices` stopped rounding the same way.
+        // Nothing in the game physically splits a mineral by per mille (it is display and an
+        // abundance ratio), so there is no trade route the old form was guarding.
+        //
+        // ⚠️ **Every mineral, not the four this used to name.** The identity is now exact by
+        // construction, so there is no reason to sample it — and sampling is what let argentite,
+        // which is 999 parts per thousand of itself, go unpriced for as long as it did.
+        for (species in MINERALS.keys) {
             val whole = Prices.listPrice(species)
-            val parts = compositionOf(species)
-                .sumOf { it.partsPerThousand * Prices.listPrice(it.element) } / 1_000L
+            val formula = MINERALS.getValue(species)
+            val parts = formula.entries
+                .sumOf { (element, atoms) ->
+                    atoms.toLong() * element.atomicMass * Prices.listPrice(element)
+                } / derivedMolarMass(species)
             assertEquals(whole, parts, "$species is worth $whole whole but $parts in pieces")
         }
     }

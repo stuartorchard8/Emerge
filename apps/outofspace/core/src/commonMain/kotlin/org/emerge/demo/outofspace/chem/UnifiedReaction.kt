@@ -740,23 +740,34 @@ private val WRITTEN: List<Reaction> = listOf(
     // three of the ores are oxides the game already mines, and the fourth is the sulfide whose oxide
     // does not exist to be made.
 
-    // ⛔ **THE FIRST ROAST IS WRITTEN AND HELD BACK, and the reason is the price model.**
-    //
-    // `Ag₂S + O₂ → 2 Ag + SO₂` is real and is the roast that skips the oxide — silver oxide falls
-    // apart above about 500 K, so there is nothing for a roast at 800 K to make and metallic silver
-    // is simply what is left in the pan. Its formation enthalpies are already in
-    // [FORMATION_ENTHALPY] and it balances.
-    //
-    // It fires `StationTest.at list prices no reaction pays`, and **not because the row is wrong.**
-    // A compound's list price is `Σ partsPerThousand × elementPrice / 1000`, and a per-mille mass
-    // fraction is three significant figures: argentite is 216/248 silver, which is 870.97 per mille
-    // and is stored as an integer. That truncation is worth nothing at all on a rock made of iron
-    // and oxygen, and silver is one of the most expensive elements in the game — so on this charge
-    // it comes to more than the furnace fee, and a station will roast argentite for the rounding.
-    //
-    // ⚠️ **A latent hole in the pricing, not in the chemistry**, and this is the first row that
-    // trades a precious metal against its own ore, which is why nothing found it before. Restoring
-    // the row needs that decided — see the roasting notes in `PLAN_unified_reactions.md`.
+    /**
+     * `Ag₂S + O₂ → 2 Ag + SO₂` — **the roast that skips the oxide, and the first roast in the game.**
+     *
+     * ⚠️ **Not a shortcut and not a simplification.** Silver oxide falls apart above about 500 K, so
+     * there is no oxide for a roast at 800 K to make; the sulfur burns off and metallic silver is
+     * simply what is left in the pan. That is how silver has been won from argentite for as long as
+     * anyone has been winning it, and the row is short because the chemistry is.
+     *
+     * ⚠️ Look at what [FORMATION_ENTHALPY] says about the reactant: −32 kJ/mol, against −1445 for
+     * chromite. A sulfide bound that weakly is exactly the kind that gives up its metal in one step,
+     * so the smallest number in the table and the shortest row in the table are the same fact.
+     *
+     * ⛔ **This row found a hole in the pricing and was held back for a commit until it was closed.**
+     * A compound's list price was built from an integer per-mille mass fraction, and argentite is
+     * 870.967 per mille silver — floored to 870, with the lost part per thousand worth more than the
+     * furnace fee on a charge of silver. It is the first row in the game to trade a precious metal
+     * against its own ore, so it is the first thing that could see it. `Prices` now weighs a compound
+     * off its formula and the neutrality is exact; see there.
+     *
+     * **Exothermic**, like every roast — this is burning sulfur, and it pays for itself once lit.
+     */
+    Reaction(
+        principal = Species.Argentite,
+        reagents = listOf(Species.Argentite to 1, Species.Oxygen to 1),
+        products = listOf(Species.Silver to 2, Species.SulfurDioxide to 1),
+        onsetKelvin = 800,
+        baseRate = BASE_RATE,
+    ),
 
     // ── The oxide ores: already mined, and never reducible until now ──
     //

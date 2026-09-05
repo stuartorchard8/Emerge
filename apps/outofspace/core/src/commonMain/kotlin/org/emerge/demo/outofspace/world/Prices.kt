@@ -1,7 +1,10 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.chem.MINERALS
+import org.emerge.demo.outofspace.chem.atomicMass
 import org.emerge.demo.outofspace.chem.compositionOf
+import org.emerge.demo.outofspace.chem.derivedMolarMass
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.num.isqrt
 import org.emerge.demo.outofspace.num.scaledRatio
@@ -92,16 +95,39 @@ object Prices {
      */
     private val listPrices: LongArray = LongArray(Species.COUNT).also { out ->
         for (s in Species.ALL) {
-            val parts = compositionOf(s)
-            out[s.ordinal] = if (parts.isEmpty()) {
+            val formula = MINERALS[s]
+            out[s.ordinal] = if (formula == null) {
                 elementPrice(s)
             } else {
-                // A compound is worth its parts. ⚠️ Divided once at the end rather than per element:
-                // an element's price can be millions and a share is per mille, so dividing inside the
-                // loop throws away the cheap elements of an expensive mineral entirely.
+                // A compound is worth its parts, weighed **off the formula** — atoms times atomic
+                // mass over the formula mass — with one division at the very end.
+                //
+                // ⛔ **Not [massPartsPerThousand], and this is the whole of the fix.** That function
+                // floors each element's share to an integer per mille and says in its own
+                // documentation that the parts therefore "sum to at most 1000, not exactly" and that
+                // it is "for display and for deciding whether a rock is worth mining". Pricing is
+                // neither. Argentite is 216/248 silver, which is 870.967 per mille and floors to
+                // 870; its sulfur floors to 129; the sum is 999 and **one part per thousand of the
+                // mineral simply vanished**. So a compound was priced at 99.9% of what it is made
+                // of, and a station could buy the ore, split it, and sell the pieces for the
+                // difference.
+                //
+                // ⚠️ **Almost every mineral lost a part** — quartz, chromite, cassiterite, galena,
+                // sphalerite and cinnabar are all 999, ilmenite is 998. Calcite, hematite and rutile
+                // divide evenly and came to exactly 1000, which is the only reason
+                // `StationTest.at list prices no reaction pays` held: every row that could fire
+                // happened to use one of those three, or to trade elements too cheap for a per-mille
+                // slice to beat the furnace fee. It was a coincidence, not an invariant, and
+                // roasting a silver ore is what ran it out.
+                //
+                // ⚠️ Still divided once at the end, which is the reason the old code gave and it is
+                // still right: an element's price can be six figures and a share is a fraction, so
+                // dividing inside the loop throws away the cheap elements of an expensive mineral.
                 var sum = 0L
-                for (p in parts) sum += p.partsPerThousand * elementPrice(p.element)
-                sum / PARTS_PER_THOUSAND
+                for ((element, atoms) in formula) {
+                    sum += atoms.toLong() * element.atomicMass * elementPrice(element)
+                }
+                sum / derivedMolarMass(s)
             }
         }
     }
