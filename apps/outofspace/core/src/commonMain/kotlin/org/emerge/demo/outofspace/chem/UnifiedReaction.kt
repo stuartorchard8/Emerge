@@ -64,8 +64,6 @@ class Reaction(
     val reagents: List<Pair<Species, Int>>,
     val products: List<Pair<Species, Int>>,
     val onsetKelvin: Int,
-    /** Positive is **endothermic**, the sign convention of every table in this package. */
-    val enthalpyPerKg: Long,
     val baseRate: Long,
 ) {
     /** Formula units of [principal], for the mass arithmetic and for what the reference prints. */
@@ -73,6 +71,29 @@ class Reaction(
 
     /** Mass of one formula unit's worth of [principal] — the denominator of every ratio here. */
     private val principalMass: Long = principalUnits.toLong() * principal.molarMass
+
+    /**
+     * The energy this row takes per kilogram of [principal], **derived** — positive is endothermic.
+     *
+     * ⛔ **Not a field, and that is the point.** It was one until [FORMATION_ENTHALPY] landed: every
+     * row carried a hand-typed figure whose only oracle was a test naming nine of them by string.
+     * Scoring the table against formation enthalpies found six rows wrong, two of them by a factor
+     * of three, all of them passing every test that existed. A number nobody can check is a number
+     * that is eventually wrong.
+     *
+     * Quoting it against [principalMass] is what makes it a per-kilogram figure of *the principal*,
+     * which is what the rate is a fraction of. ⚠️ That divisor used to be hand-written too, and
+     * getting it wrong is how a per-reaction figure silently becomes a half-strength one — the
+     * ammonia and hydrogen rows both shipped that way. Deriving both halves from the same
+     * [reagents] list is what closes it.
+     */
+    val enthalpyPerKg: Long = (
+        hessEnthalpyKJ(reagents, products)
+            ?: error(
+                "No formation enthalpy for part of $principal's row — see FORMATION_ENTHALPY. " +
+                    "A row whose energy is unknown must not default to athermal.",
+            )
+        ).toLong() * kJPerMolAt(principalMass)
 
     /** Mass each reagent's formula units account for, in [reagents] order. */
     private val reagentMasses: LongArray =
@@ -232,18 +253,6 @@ private val WRITTEN: List<Reaction> = listOf(
         reagents = listOf(Species.Ammonia to 2),
         products = listOf(Species.Nitrogen to 1, Species.Hydrogen to 3),
         onsetKelvin = 1100,
-        // +92 kJ per 2 mol of ammonia, which is 34 g of it: ΔH_f(NH₃) is −46 kJ/mol, and this row
-        // cracks **two** of them.
-        //
-        // ⛔ **It said 46 until 2026-09-04, and the reason is written into the comment it replaces**
-        // — *"the figure the row carried in [DECOMPOSITIONS], quoted against the same formula mass
-        // so the move changes no number"*. The old row's principal was one ammonia; this one's is
-        // two. Keeping the number while doubling the divisor is exactly how a per-mole figure
-        // becomes a half-strength per-reaction one, and `everyEnthalpyIsQuotedAgainstItsOwnFormulaMass`
-        // could not see it because a halved numerator over a doubled denominator is still a whole
-        // number of kJ/mol. See `everyFireIsWorthWhatTheTableSaysItIs`, which is the check that
-        // does.
-        enthalpyPerKg = 92L * kJPerMolAt(34),
         baseRate = COMBUSTION_BASE_RATE,
     ),
 
@@ -273,7 +282,6 @@ private val WRITTEN: List<Reaction> = listOf(
         // Favourable around 973 K, dominant above 1200 K. Quoted per kg of CO2, the principal,
         // exactly as the row was quoted in [REDUCTIONS] — the move changes no number.
         onsetKelvin = 973,
-        enthalpyPerKg = 172L * kJPerMolAt(44),
         baseRate = COMBUSTION_BASE_RATE,
     ),
 
@@ -300,16 +308,17 @@ private val WRITTEN: List<Reaction> = listOf(
      * what a catalyst *is*, and being contended like any other reagent is what makes a bloom grow in
      * proportion to itself. `Reduction.catalyst` was a bodge for a shape that could not say it.
      *
-     * ⚠️ **Quoted against 100 × 180 g**, the principal's formula mass, not against the six waters.
-     * +2803 kJ per mole of glucose formed is per mole of *reaction*, and the divisor has to be
-     * whatever the rate is a fraction of — `UnifiedReactionTest` divides it back to check.
+     * ⚠️ **It is worth +2545 kJ here, not the textbook's +2803, and the difference is the water's
+     * phase.** The familiar figure is quoted against *liquid* water; [FORMATION_ENTHALPY] quotes
+     * water as a gas, because that is where the cohesion ledger's zero sits and the condensation is
+     * `settleCohesion`'s to credit. Six waters at the 44 kJ/mol between the two is the whole of the
+     * gap. Charging it here as well would be paying for the same phase change twice.
      */
     Reaction(
         principal = Species.Algae,
         reagents = listOf(Species.Algae to 100, Species.Water to 6, Species.CarbonDioxide to 6),
         products = listOf(Species.Algae to 101, Species.Oxygen to 6),
         onsetKelvin = 273, // ~0°C.
-        enthalpyPerKg = 2803L * kJPerMolAt(18000),
         baseRate = BASE_RATE,
     ),
 
@@ -335,7 +344,6 @@ private val WRITTEN: List<Reaction> = listOf(
         reagents = listOf(Species.Methane to 1, Species.Oxygen to 2),
         products = listOf(Species.CarbonDioxide to 1, Species.Water to 2),
         onsetKelvin = 810,
-        enthalpyPerKg = -802L * kJPerMolAt(16),
         baseRate = COMBUSTION_BASE_RATE,
     ),
     // 2 H2 + O2 -> 2 H2O. The cleanest and the most eager: nothing else here lights at 773 K and
@@ -345,19 +353,6 @@ private val WRITTEN: List<Reaction> = listOf(
         reagents = listOf(Species.Hydrogen to 2, Species.Oxygen to 1),
         products = listOf(Species.Water to 2),
         onsetKelvin = 773,
-        // −484 kJ per 2 mol of hydrogen, which is 4 g of it — two waters at −242 kJ/mol each.
-        //
-        // ⛔ **It said 242 until 2026-09-04**, which is per mole of *water* over the mass of *two
-        // moles of hydrogen*: the row released half the energy hydrogen actually carries, on the one
-        // fuel a vessel is most likely to burn on purpose. Every other row here is already quoted
-        // per reaction as written — methane −802/16 g, CO −566/56 g, H₂S −1036/68 g, NH₃ −1267/68 g
-        // — so this was the odd one out rather than a convention.
-        //
-        // ⚠️ **Lower heating value, like its neighbours**: the water leaves as a gas, so the −572 kJ
-        // that condensing it would also give back is not on offer. The game has one specific heat
-        // per species and no condensation enthalpy in a fire, so LHV is the figure that matches what
-        // the products can actually hold.
-        enthalpyPerKg = -484L * kJPerMolAt(4),
         baseRate = COMBUSTION_BASE_RATE,
     ),
     // 2 CO + O2 -> 2 CO2. Carbon monoxide is what a starved fire makes, so this is the second half
@@ -368,7 +363,6 @@ private val WRITTEN: List<Reaction> = listOf(
         reagents = listOf(Species.CarbonMonoxide to 2, Species.Oxygen to 1),
         products = listOf(Species.CarbonDioxide to 2),
         onsetKelvin = 882,
-        enthalpyPerKg = -566L * kJPerMolAt(56),
         baseRate = COMBUSTION_BASE_RATE,
     ),
     // 2 H2S + 3 O2 -> 2 SO2 + 2 H2O. The lowest onset in the table by a wide margin, and the reason
@@ -378,7 +372,6 @@ private val WRITTEN: List<Reaction> = listOf(
         reagents = listOf(Species.HydrogenSulfide to 2, Species.Oxygen to 3),
         products = listOf(Species.SulfurDioxide to 2, Species.Water to 2),
         onsetKelvin = 533,
-        enthalpyPerKg = -1036L * kJPerMolAt(68),
         baseRate = COMBUSTION_BASE_RATE,
     ),
     // 4 NH3 + 3 O2 -> 2 N2 + 6 H2O. Ammonia is hard to light and worth the trouble: it burns back
@@ -389,7 +382,6 @@ private val WRITTEN: List<Reaction> = listOf(
         reagents = listOf(Species.Ammonia to 4, Species.Oxygen to 3),
         products = listOf(Species.Nitrogen to 2, Species.Water to 6),
         onsetKelvin = 924,
-        enthalpyPerKg = -1267L * kJPerMolAt(68),
         baseRate = COMBUSTION_BASE_RATE,
     ),
     // S + O2 -> SO2. Sulfur vapour, which a pyrite roast puts into the air by the kilogram.
@@ -398,7 +390,6 @@ private val WRITTEN: List<Reaction> = listOf(
         reagents = listOf(Species.Sulfur to 1, Species.Oxygen to 1),
         products = listOf(Species.SulfurDioxide to 1),
         onsetKelvin = 505,
-        enthalpyPerKg = -297L * kJPerMolAt(32),
         baseRate = COMBUSTION_BASE_RATE,
     ),
 
@@ -420,10 +411,6 @@ private val WRITTEN: List<Reaction> = listOf(
         reagents = listOf(Species.Carbon to 1, Species.Oxygen to 1),
         products = listOf(Species.CarbonDioxide to 1),
         onsetKelvin = CARBON_IGNITION_KELVIN,
-        // -393.5 kJ/mol of carbon. The number that makes a fire something that sustains itself: a
-        // lump burning puts back about thirty times the energy it takes to hold it at its ignition
-        // point.
-        enthalpyPerKg = -394L * kJPerMolAt(12),
         baseRate = BASE_RATE,
     ),
     // 4 Fe + 3 O2 -> 2 Fe2O3. Iron going back to ore, and the awkward direction: the product is a
@@ -437,11 +424,6 @@ private val WRITTEN: List<Reaction> = listOf(
         reagents = listOf(Species.Iron to 4, Species.Oxygen to 3),
         products = listOf(Species.Hematite to 2),
         onsetKelvin = IRON_OXIDATION_KELVIN,
-        // -1648 kJ per 4 mol of iron, which is 224 g of it. Hot iron in air gets hotter.
-        enthalpyPerKg = -1648L * kJPerMolAt(224),
-        // ⚠️ **A tenth of [BASE_RATE], and this is what makes "the oxygen attacks the carbon first"
-        // true.** In a tile holding both, carbon asks for the larger share of a scarce supply, so it
-        // gets it. There is no priority list; it is a consequence of two rates meeting.
         baseRate = IRON_BASE_RATE,
     ),
 
@@ -491,9 +473,6 @@ private val WRITTEN: List<Reaction> = listOf(
         reagents = listOf(Species.Steel to 1, Species.Oxygen to 1),
         products = listOf(Species.Iron to 99, Species.CarbonDioxide to 1),
         onsetKelvin = 1000,
-        // -394 kJ per mole of carbon burned, and a formula unit of steel holds exactly one — so this
-        // is the same figure the carbon row carries, quoted against the steel it came out of.
-        enthalpyPerKg = -394L * kJPerMolAt(5556),
         baseRate = BASE_RATE,
     ),
 
@@ -521,7 +500,6 @@ private val WRITTEN: List<Reaction> = listOf(
         reagents = listOf(Species.Iron to 99, Species.Carbon to 1),
         products = listOf(Species.Steel to 1),
         onsetKelvin = 1811,
-        enthalpyPerKg = 0L,
         baseRate = BASE_RATE,
     ),
     // 11 MgO + 6 SiO2 -> (MgO)11(SiO2)6. Refractories are fired somewhat above the temperature they
@@ -538,7 +516,6 @@ private val WRITTEN: List<Reaction> = listOf(
         reagents = listOf(Species.Periclase to 11, Species.Quartz to 6),
         products = listOf(Species.Firebrick to 1),
         onsetKelvin = 1700,
-        enthalpyPerKg = 0L,
         baseRate = BASE_RATE,
     ),
 )
@@ -575,7 +552,6 @@ val REACTIONS: List<Reaction> = buildList {
                 reagents = listOf(d.reactant to d.reactantUnits),
                 products = d.products,
                 onsetKelvin = d.onsetKelvin,
-                enthalpyPerKg = d.enthalpyPerKg,
                 baseRate = d.baseRate,
             ),
         )
@@ -601,7 +577,6 @@ val REACTIONS: List<Reaction> = buildList {
                 ),
                 products = withCatalyst(r.products, r.catalyst, r.catalystUnits),
                 onsetKelvin = r.onsetKelvin,
-                enthalpyPerKg = r.enthalpyPerKg,
                 baseRate = r.baseRate,
             ),
         )

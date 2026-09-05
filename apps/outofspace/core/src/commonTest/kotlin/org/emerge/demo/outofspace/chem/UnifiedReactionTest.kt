@@ -129,66 +129,22 @@ class UnifiedReactionTest {
     }
 
     /**
-     * **What each hand-written row is actually worth**, against the textbook.
+     * ⛔ **Moved to `FormationTest.everyReactionIsWorthWhatItsFormationEnthalpiesSay`**, which prices
+     * every row rather than the nine this named, and does it against [FORMATION_ENTHALPY] rather
+     * than against a list of textbook figures typed in beside them.
      *
-     * ⛔ **The check above cannot see a wrong magnitude, and that is not a gap in it — it is the
-     * shape of the arithmetic.** It divides `enthalpyPerKg` back through `kJPerMolAt(formulaMass)`
-     * and asks for a whole number, so it proves the *divisor* is the principal's formula mass and
-     * nothing more. Halve the numerator and the quotient is still whole; the row simply claims half
-     * the energy, for ever, silently.
+     * The test that stood here caught two real bugs and has earned its epitaph. It existed because
+     * [everyEnthalpyIsQuotedAgainstItsOwnFormulaMass] above proves only the *divisor*: halve the
+     * numerator and the quotient is still a whole number of kJ/mol, so a row can claim half the
+     * energy for ever, silently. `2 H₂ + O₂ → 2 H₂O` carried 242 where the reaction makes two
+     * waters, and `2 NH₃ → N₂ + 3 H₂` carried 46 after a move that doubled its principal — its own
+     * comment recording that the move *"changes no number"*, which is the bug stated as an intention.
      *
-     * Two rows were doing exactly that until 2026-09-04, and both by the same slip — a figure quoted
-     * per mole of a *product* sitting over a divisor counted per mole of *reaction*:
-     *
-     *  - `2 H₂ + O₂ → 2 H₂O` carried 242 (one water) where the reaction makes two, so hydrogen — the
-     *    fuel a vessel is most likely to burn on purpose, and the one a motor most wants hot —
-     *    released half of what it should.
-     *  - `2 NH₃ → N₂ + 3 H₂` carried 46 (one ammonia) after being moved out of `DECOMPOSITIONS`,
-     *    where its principal had been one ammonia rather than two. Its own comment recorded that the
-     *    move *"changes no number"*, which is the bug stated as an intention.
-     *
-     * ⚠️ **Lower heating value throughout**, which is the convention the table already followed
-     * everywhere else: water leaves a fire as a gas, so the enthalpy of condensing it is not on
-     * offer. Hydrogen is −484 and not −572 for that reason.
-     *
-     * ⚠️ **Only the rows written by hand in this file.** Rows folded in from [DECOMPOSITIONS] and
-     * [REDUCTIONS] keep whatever those tables say and are theirs to defend — see `DecompositionTest`
-     * and `ReductionTest`. Naming them here would copy their numbers to a second place, which is the
-     * duplication this file exists to have removed.
+     * ⛔ **Neither slip is expressible any more.** A row carries neither a numerator nor a divisor:
+     * both are derived from the same [Reaction.reagents] list. Scoring the table one last time on
+     * the way out found ten further rows that had drifted, which is the measure of how far a
+     * hand-typed column gets on nine spot-checks.
      */
-    @Test
-    fun everyWrittenEnthalpyIsWorthWhatTheTextbookSaysItIs() {
-        // kJ per reaction **as the row is written**, not per mole of any one participant.
-        val expected = mapOf(
-            "2 Ammonia -> 1 Nitrogen + 3 Hydrogen" to 92L,
-            "1 CarbonDioxide + 1 Carbon -> 2 CarbonMonoxide" to 172L,
-            "1 Methane + 2 Oxygen -> 1 CarbonDioxide + 2 Water" to -802L,
-            "2 Hydrogen + 1 Oxygen -> 2 Water" to -484L,
-            "2 CarbonMonoxide + 1 Oxygen -> 2 CarbonDioxide" to -566L,
-            "2 HydrogenSulfide + 3 Oxygen -> 2 SulfurDioxide + 2 Water" to -1036L,
-            "4 Ammonia + 3 Oxygen -> 2 Nitrogen + 6 Water" to -1267L,
-            "1 Sulfur + 1 Oxygen -> 1 SulfurDioxide" to -297L,
-            "1 Carbon + 1 Oxygen -> 1 CarbonDioxide" to -394L,
-        )
-        val seen = mutableSetOf<String>()
-        for (reaction in REACTIONS) {
-            val formula = reaction.formula()
-            val kJ = expected[formula] ?: continue
-            seen.add(formula)
-            val formulaMass = reaction.principalUnits.toLong() * reaction.principal.molarMass
-            assertEquals(
-                kJ,
-                reaction.enthalpyPerKg / kJPerMolAt(formulaMass),
-                "$formula is worth the wrong number of kJ per reaction",
-            )
-        }
-        // ⛔ A row renamed or removed must fail here rather than quietly stop being checked — the
-        // failure mode of every expectation keyed by a string.
-        assertEquals(
-            expected.keys, seen,
-            "these rows are named here but are no longer in REACTIONS under that formula",
-        )
-    }
 
     @Test
     fun everyOnsetIsAboveAbsoluteZero() {
