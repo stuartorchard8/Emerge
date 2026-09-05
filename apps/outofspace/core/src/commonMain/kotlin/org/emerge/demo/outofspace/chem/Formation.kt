@@ -119,6 +119,21 @@ val FORMATION_ENTHALPY: Map<Species, Int> = mapOf(
     // ══ ORGANICS ══════════════════════════════════════════════════════════════════════════════
     Species.Algae to -1271, // glucose, C6H12O6, solid
 
+    // ══ THE ROASTING AND OXIDE-ORE METALS ═════════════════════════════════════════════════════
+    //
+    // Elements, so zero, and listed for the reason the others are: absent must keep meaning
+    // "nobody has sourced this yet".
+    Species.Silver to 0,
+    Species.Tin to 0,
+    Species.Manganese to 0,
+    Species.Chromium to 0,
+
+    Species.Argentite to -32, // Ag2S -- and note how small it is; a sulfide this weakly bound is
+                              // why roasting it gives the metal directly rather than an oxide.
+    Species.Cassiterite to -581, // SnO2
+    Species.Pyrolusite to -520, // MnO2
+    Species.Chromite to -1445, // FeCr2O4
+
     // ══ THE TWO THE VESSEL MAKES OUT OF ITSELF ════════════════════════════════════════════════
     //
     // ⚠️ **These two are defined rather than measured, and the definition is a claim already made

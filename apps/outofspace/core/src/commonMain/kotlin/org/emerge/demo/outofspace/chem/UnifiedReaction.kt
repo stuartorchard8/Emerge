@@ -724,6 +724,91 @@ private val WRITTEN: List<Reaction> = listOf(
         onsetKelvin = 1100,
         baseRate = BASE_RATE,
     ),
+
+    // ══ ROASTING, AND THE OXIDE ORES THAT NEED NO ROAST ═══════════════════════════════════════
+    //
+    // The refining shape `Minerals.kt` has named in its own documentation since before any of this
+    // ran: **sulfides + O₂ → oxide + SO₂**, two-stage, and it makes a genuinely nasty gas the player
+    // has to vent or scrub. Every row below is that shape or the second half of it.
+    //
+    // ⛔ **Roasting needed no new mechanism.** A solid drawing oxygen out of the room's air and
+    // leaving a solid and a gas behind is `4 Fe + 3 O₂ → 2 Fe₂O₃` and `S + O₂ → SO₂` in one row, and
+    // both of those already worked. What roasting costs is *data* — an oxide species per metal —
+    // which is why the rows that need none come first.
+    //
+    // ⚠️ **These four add no species at all**, and that is why they are the batch that lands first:
+    // three of the ores are oxides the game already mines, and the fourth is the sulfide whose oxide
+    // does not exist to be made.
+
+    // ⛔ **THE FIRST ROAST IS WRITTEN AND HELD BACK, and the reason is the price model.**
+    //
+    // `Ag₂S + O₂ → 2 Ag + SO₂` is real and is the roast that skips the oxide — silver oxide falls
+    // apart above about 500 K, so there is nothing for a roast at 800 K to make and metallic silver
+    // is simply what is left in the pan. Its formation enthalpies are already in
+    // [FORMATION_ENTHALPY] and it balances.
+    //
+    // It fires `StationTest.at list prices no reaction pays`, and **not because the row is wrong.**
+    // A compound's list price is `Σ partsPerThousand × elementPrice / 1000`, and a per-mille mass
+    // fraction is three significant figures: argentite is 216/248 silver, which is 870.97 per mille
+    // and is stored as an integer. That truncation is worth nothing at all on a rock made of iron
+    // and oxygen, and silver is one of the most expensive elements in the game — so on this charge
+    // it comes to more than the furnace fee, and a station will roast argentite for the rounding.
+    //
+    // ⚠️ **A latent hole in the pricing, not in the chemistry**, and this is the first row that
+    // trades a precious metal against its own ore, which is why nothing found it before. Restoring
+    // the row needs that decided — see the roasting notes in `PLAN_unified_reactions.md`.
+
+    // ── The oxide ores: already mined, and never reducible until now ──
+    //
+    // ⚠️ **The cheapest metals in the game and nobody had noticed.** Chromite, pyrolusite and
+    // cassiterite are minerals an extractor has always been able to dig up, they are *already*
+    // oxides, and carbothermic reduction is a shape this table has run since the quartz row. They
+    // needed no roast, no new species and no new mechanism — only somebody to write the row.
+    // Chromite's abundance is 350000, which makes it commoner than native sulfur.
+
+    // SnO₂ + 2 C → Sn + 2 CO. Tin smelting, which is the oldest carbothermic process there is and
+    // the easiest: cassiterite gives its oxygen up at a temperature a charcoal fire reaches.
+    Reaction(
+        principal = Species.Cassiterite,
+        reagents = listOf(Species.Cassiterite to 1, Species.Carbon to 2),
+        products = listOf(Species.Tin to 1, Species.CarbonMonoxide to 2),
+        onsetKelvin = 1500,
+        baseRate = BASE_RATE,
+    ),
+    // MnO₂ + 2 C → Mn + 2 CO.
+    //
+    // ⚠️ **Written as one step and it is really three.** Pyrolusite sheds oxygen to Mn₂O₃ and Mn₃O₄
+    // on the way up — its own `meltingKelvin` comment already says "decomposes" — and industry makes
+    // ferromanganese rather than the pure metal because carbon dissolves into it. Both are true and
+    // neither is a row this table can carry honestly: the intermediates would be two more species
+    // that exist only to be consumed, and the carbide is a phase model the game does not have. The
+    // onset is the one the real carbothermic route needs.
+    Reaction(
+        principal = Species.Pyrolusite,
+        reagents = listOf(Species.Pyrolusite to 1, Species.Carbon to 2),
+        products = listOf(Species.Manganese to 1, Species.CarbonMonoxide to 2),
+        onsetKelvin = 1700,
+        baseRate = BASE_RATE,
+    ),
+    // FeCr₂O₄ + 4 C → Fe + 2 Cr + 4 CO. Ferrochrome, and the row that makes the commonest ore in
+    // the game worth mining: chromite is the *only* source of chromium there is, here and in
+    // reality, and it hands over iron in the same pass.
+    //
+    // ⚠️ The real furnace makes an iron-chromium alloy, not two separate metals. The game has no way
+    // to say "alloy" except as a species — see steel — and inventing a ferrochrome species to hold a
+    // ratio nobody has chosen would be worse than handing over both metals and letting a belt carry
+    // them.
+    Reaction(
+        principal = Species.Chromite,
+        reagents = listOf(Species.Chromite to 1, Species.Carbon to 4),
+        products = listOf(
+            Species.Iron to 1,
+            Species.Chromium to 2,
+            Species.CarbonMonoxide to 4,
+        ),
+        onsetKelvin = 1900,
+        baseRate = BASE_RATE,
+    ),
 )
 
 /**

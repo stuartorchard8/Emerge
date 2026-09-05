@@ -88,6 +88,45 @@ class ReactionChainTest {
         }
     }
 
+    /**
+     * **Every element the vessel can manufacture**, named — the headline number for the whole
+     * "grow the table" effort, and the test each new batch of rows has to come here and update.
+     *
+     * ⛔ **Asserted as a set rather than checked one metal at a time**, so it fails in both
+     * directions: a row that stops working drops a metal out and a batch that lands adds one, and
+     * neither can happen quietly. Losing titanium to an edit elsewhere is exactly the sort of thing
+     * that would otherwise be noticed months later.
+     *
+     * ⚠️ Elements that a rock already contains are not interesting here — an extractor digs up iron
+     * and carbon and sulfur, and always could. This is the list of things that **did not exist**
+     * until some reaction made them.
+     *
+     * ⛔ **So silver is absent, and the argentite roast is not a counterexample.** Native silver has
+     * an abundance of 5, so a vessel could always find some; what roasting argentite (abundance 23)
+     * buys is five times as much of it from a commoner rock. That is a route, not a reachability
+     * change, and this test is deliberately blind to it — see `everySpeciesTheVesselIsBuiltFromCanBeMade`
+     * for the question that is about being *able* to build something.
+     */
+    @Test
+    fun theElementsTheGameCanManufactureAreTheOnesNamedHere() {
+        val reachable = reachableSpecies()
+        val manufactured = Species.ALL
+            .filter { it.isElement && it.relativeAbundance == 0 && it in reachable }
+            .toSet()
+        assertEquals(
+            setOf(
+                // The chain that reaches titanium, and the reason `Reduction` was written.
+                Species.Silicon, Species.Magnesium, Species.Titanium,
+                // Oxygen, which a hot bed of hematite gives up.
+                Species.Oxygen,
+                // The oxide ores, which were mineable and irreducible until 2026-09-05.
+                Species.Tin, Species.Manganese, Species.Chromium,
+            ),
+            manufactured,
+            "the set of elements the game can make has changed",
+        )
+    }
+
     // ── Heat is the separator ────────────────────────────────────────────────
 
     @Test

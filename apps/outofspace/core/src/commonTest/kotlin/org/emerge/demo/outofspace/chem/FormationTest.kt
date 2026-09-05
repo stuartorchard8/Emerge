@@ -75,6 +75,10 @@ class FormationTest {
             "2 Ferrosilite + 3 Carbon -> 2 Iron + 2 Silicon + 3 CarbonDioxide" to 1208L,
             "1 Ilmenite + 1 Carbon -> 1 Iron + 1 Rutile + 1 CarbonMonoxide" to 182L,
             "1 Rutile + 2 Magnesium -> 1 Titanium + 2 Periclase" to -260L,
+            // ── Roasting, and the oxide ores ──
+            "1 Cassiterite + 2 Carbon -> 1 Tin + 2 CarbonMonoxide" to 359L,
+            "1 Pyrolusite + 2 Carbon -> 1 Manganese + 2 CarbonMonoxide" to 298L,
+            "1 Chromite + 4 Carbon -> 1 Iron + 2 Chromium + 4 CarbonMonoxide" to 1001L,
         )
 
         val seen = mutableSetOf<String>()
