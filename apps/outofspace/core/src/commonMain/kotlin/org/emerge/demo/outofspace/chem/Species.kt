@@ -340,6 +340,7 @@ enum class Species(
     Molybdite(144, 527, solidKgPerCubicMetre = 4690, milliWattsPerMetreKelvin = K_OXIDE, meltingKelvin = 1075),   // MoO3 -- made by roasting molybdenite, never mined
     Zincite(81, 494, solidKgPerCubicMetre = 5606, milliWattsPerMetreKelvin = K_OXIDE, meltingKelvin = 2247),   // ZnO -- made by roasting sphalerite, never mined
     Monteponite(128, 339, solidKgPerCubicMetre = 8150, milliWattsPerMetreKelvin = K_OXIDE, meltingKelvin = 1500),   // CdO -- decomposes; made by roasting greenockite
+    Tenorite(80, 529, solidKgPerCubicMetre = 6315, milliWattsPerMetreKelvin = K_OXIDE, meltingKelvin = 1599),   // CuO -- made by roasting chalcopyrite, never mined
     Baddeleyite(123, 460, solidKgPerCubicMetre = 5680, relativeAbundance = 100, milliWattsPerMetreKelvin = 2_000, meltingKelvin = 2988),   // ZrO2, the Hf carrier
     Columbite(338, 330, solidKgPerCubicMetre = 5300, relativeAbundance = 45, milliWattsPerMetreKelvin = K_OXIDE, meltingKelvin = 1600),   // FeNb2O6 -- estimate
     Tantalite(514, 240, solidKgPerCubicMetre = 8000, relativeAbundance = 2, milliWattsPerMetreKelvin = K_OXIDE, meltingKelvin = 1700),   // FeTa2O6 -- estimate

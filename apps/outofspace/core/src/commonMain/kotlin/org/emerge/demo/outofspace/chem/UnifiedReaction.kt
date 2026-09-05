@@ -989,6 +989,98 @@ private val WRITTEN: List<Reaction> = listOf(
         onsetKelvin = 800,
         baseRate = BASE_RATE,
     ),
+
+    // ══ THE IRON OXIDES, AND THE ROWS THAT WERE NEVER WRITTEN ═════════════════════════════════
+    //
+    // ⛔ **The blast furnace was missing.** `Fe₂O₃ + 3 C → 2 Fe + 3 CO` is the most consequential
+    // reaction in industrial history and it was not in this table — iron was reachable only through
+    // the two olivine reductions and through the native metal, and the three commonest iron oxides
+    // in the game were rock a vessel could dig up and do nothing with. Magnetite alone is 1200000.
+    //
+    // ⚠️ **Hematite is now the principal of two rows**, this one and the decomposition to magnetite
+    // at 1730 K. Above that temperature both are live and they contend for the same ore, which is
+    // what the demand pass is for; below it only the reduction runs. Nothing had to be said to make
+    // that work.
+
+    // Fe₂O₃ + 3 C → 2 Fe + 3 CO.
+    Reaction(
+        principal = Species.Hematite,
+        reagents = listOf(Species.Hematite to 1, Species.Carbon to 3),
+        products = listOf(Species.Iron to 2, Species.CarbonMonoxide to 3),
+        onsetKelvin = 1200,
+        baseRate = BASE_RATE,
+    ),
+    // Fe₃O₄ + 4 C → 3 Fe + 4 CO. Magnetite is the commonest ore the game had no use for.
+    Reaction(
+        principal = Species.Magnetite,
+        reagents = listOf(Species.Magnetite to 1, Species.Carbon to 4),
+        products = listOf(Species.Iron to 3, Species.CarbonMonoxide to 4),
+        onsetKelvin = 1200,
+        baseRate = BASE_RATE,
+    ),
+    // FeO + C → Fe + CO. The cheapest of the three per unit of iron, because wustite has the least
+    // oxygen to take off — which is also why it is what a roast leaves behind.
+    Reaction(
+        principal = Species.Wustite,
+        reagents = listOf(Species.Wustite to 1, Species.Carbon to 1),
+        products = listOf(Species.Iron to 1, Species.CarbonMonoxide to 1),
+        onsetKelvin = 1200,
+        baseRate = BASE_RATE,
+    ),
+
+    // 2 FeS + 3 O₂ → 2 FeO + 2 SO₂. **Troilite was the most abundant inert mineral in the game at
+    // 5000000, and the vessel had started manufacturing it** — the antimony and bismuth
+    // precipitations both hand it back, so a refinery was accumulating a substance nothing could
+    // use. Dead roasting takes it to wustite, which the row above then reduces.
+    Reaction(
+        principal = Species.Troilite,
+        reagents = listOf(Species.Troilite to 2, Species.Oxygen to 3),
+        products = listOf(Species.Wustite to 2, Species.SulfurDioxide to 2),
+        onsetKelvin = 900,
+        baseRate = BASE_RATE,
+    ),
+
+    // CaMg(CO₃)₂ → CaO + MgO + 2 CO₂. Dolomite calcines like the two carbonates it is made of, and
+    // gives back both of their oxides at once — the cheapest periclase in the game and the only
+    // source of lime besides calcite.
+    Reaction(
+        principal = Species.Dolomite,
+        reagents = listOf(Species.Dolomite to 1),
+        products = listOf(Species.Lime to 1, Species.Periclase to 1, Species.CarbonDioxide to 2),
+        onsetKelvin = 1000,
+        baseRate = BASE_RATE,
+    ),
+
+    // ── Copper: the roast, and the one ore that hands back iron as well ──
+    //
+    // 4 CuFeS₂ + 13 O₂ → 4 CuO + 2 Fe₂O₃ + 8 SO₂. Chalcopyrite is half iron by formula, so a copper
+    // roast is also an iron roast, and the hematite it makes feeds the blast-furnace row above.
+    //
+    // ⛔ **Nickel is NOT here and pentlandite stays inert**, which is a gap on purpose. Fe₄Ni₅S₈ has
+    // no formation enthalpy a textbook will hand you, and [FORMATION_ENTHALPY] says everything but
+    // steel and firebrick must be sourced. Estimating it from its constituent sulfides is exactly
+    // the hand-written number this table exists to refuse, and nickel is native at 1200000 anyway,
+    // so what the row would buy is a route rather than a capability. It waits for a real figure.
+    Reaction(
+        principal = Species.Chalcopyrite,
+        reagents = listOf(Species.Chalcopyrite to 4, Species.Oxygen to 13),
+        products = listOf(
+            Species.Tenorite to 4,
+            Species.Hematite to 2,
+            Species.SulfurDioxide to 8,
+        ),
+        onsetKelvin = 900,
+        baseRate = BASE_RATE,
+    ),
+    // CuO + C → Cu + CO. Barely endothermic at 46 kJ — copper holds its oxygen more loosely than
+    // anything else the game reduces, which is why it was the first metal anybody smelted.
+    Reaction(
+        principal = Species.Tenorite,
+        reagents = listOf(Species.Tenorite to 1, Species.Carbon to 1),
+        products = listOf(Species.Copper to 1, Species.CarbonMonoxide to 1),
+        onsetKelvin = 1100,
+        baseRate = BASE_RATE,
+    ),
 )
 
 /**

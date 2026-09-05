@@ -90,6 +90,14 @@ class FormationTest {
             "2 Greenockite + 3 Oxygen -> 2 Monteponite + 2 SulfurDioxide" to -786L,
             "1 Monteponite + 1 Carbon -> 1 Cadmium + 1 CarbonMonoxide" to 147L,
             "1 Cinnabar + 1 Oxygen -> 1 Mercury + 1 SulfurDioxide" to -239L,
+            // ── The iron oxides, dolomite and copper ──
+            "1 Hematite + 3 Carbon -> 2 Iron + 3 CarbonMonoxide" to 491L,
+            "1 Magnetite + 4 Carbon -> 3 Iron + 4 CarbonMonoxide" to 674L,
+            "1 Wustite + 1 Carbon -> 1 Iron + 1 CarbonMonoxide" to 161L,
+            "2 Troilite + 3 Oxygen -> 2 Wustite + 2 SulfurDioxide" to -938L,
+            "1 Dolomite -> 1 Lime + 1 Periclase + 2 CarbonDioxide" to 301L,
+            "4 Chalcopyrite + 13 Oxygen -> 4 Tenorite + 2 Hematite + 8 SulfurDioxide" to -3892L,
+            "1 Tenorite + 1 Carbon -> 1 Copper + 1 CarbonMonoxide" to 46L,
         )
 
         val seen = mutableSetOf<String>()

@@ -89,6 +89,8 @@ val FORMATION_ENTHALPY: Map<Species, Int> = mapOf(
     Species.Rutile to -944, // TiO2
     Species.Hematite to -824, // Fe2O3
     Species.Magnetite to -1118, // Fe3O4
+    Species.Wustite to -272, // FeO
+    Species.Tenorite to -157, // CuO
 
     // ══ SILICATES ═════════════════════════════════════════════════════════════════════════════
     Species.Forsterite to -2174, // Mg2SiO4
@@ -100,6 +102,7 @@ val FORMATION_ENTHALPY: Map<Species, Int> = mapOf(
 
     // ══ CARBONATES AND SULFIDES ═══════════════════════════════════════════════════════════════
     Species.Calcite to -1207, // CaCO3
+    Species.Dolomite to -2326, // CaMg(CO3)2
     Species.Magnesite to -1113, // MgCO3
     Species.Pyrite to -178, // FeS2
     Species.Troilite to -100, // FeS
@@ -138,11 +141,13 @@ val FORMATION_ENTHALPY: Map<Species, Int> = mapOf(
     Species.Zinc to 0,
     Species.Cadmium to 0,
     Species.Mercury to 0,
+    Species.Copper to 0,
     Species.Lead to 0,
     Species.Antimony to 0,
     Species.Bismuth to 0,
 
     Species.Molybdenite to -235, // MoS2
+    Species.Chalcopyrite to -190, // CuFeS2
     Species.Sphalerite to -206, // ZnS
     Species.Zincite to -350, // ZnO
     Species.Greenockite to -162, // CdS
