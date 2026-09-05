@@ -1,7 +1,8 @@
 # Unified reactions
 
-Status: **increments 0, 1, 3 and 4 built** (2026-08-27). Increment 2 is parked by decision; 5 (the
-few hundred rows) is what is left. There is **one reaction type and one pass**. Successor to `PLAN_ambient_chemistry.md`, which
+Status: **increments 0, 1, 3 and 4 built** (2026-08-27); **increment 5 started** (2026-09-05) — the
+enthalpies are derived and the four classes are deleted, so what is left of it is the rows
+themselves. Increment 2 is parked by decision. There is **one reaction type and one pass**. Successor to `PLAN_ambient_chemistry.md`, which
 built four reaction shapes as four classes swept by two passes. This plan makes them **one shape
 swept by one pass**, before the table grows from twenty-two rows to a few hundred.
 
@@ -301,13 +302,29 @@ bug fixed by hand on 2026-08-27 and worth deleting the possibility of.
 
 The few hundred rows. Everything is in place for them.
 
-⚠️ **Half the table is still derived rather than written.** `REACTIONS` hand-writes the rows that
-have been rewritten in this shape and mechanically converts `DECOMPOSITIONS` and `REDUCTIONS` as the
-list is built. That was the safe migration order — twenty-two rows of hand-copied stoichiometry is
-twenty-two chances to transpose a digit into a table where a wrong number is invisible — but it is
-not the end state. Retyping them (and deleting `Decomposition`, `Reduction` and the catalyst field
-with them) is the first thing to do here, and `UnifiedReactionTest` closes every row atom by atom
-either way.
+✅ **The table is one table now** (2026-09-05, `41ac8102`). `Decomposition.kt` and `Reduction.kt` are
+deleted and their fifteen rows are typed into `REACTIONS`, in the order the converted list had, so no
+row moved. The catalyst field went with them.
+
+✅ **And every row's energy is derived** (`5e4cb51b`). `chem/Formation.kt` states a formation enthalpy
+per species and Hess's law does the rest — the `MineralTest` argument applied to energy. That landed
+*first*, deliberately: it is what made retyping safe, because the one number nobody can check by eye
+stopped being carried by a row at all. Scoring the twenty-eight existing rows against it found seven
+that had drifted, two by factors of three, all of them passing every test that existed.
+
+⛔ **Open before the bulk rows: the reference phase for a species made below its critical point.**
+`FORMATION_ENTHALPY` quotes a fluid as a gas because that is where the cohesion ledger's zero sits.
+That is free wherever a reaction runs above its products' critical temperatures, which is nearly
+everywhere — but not for **sulfur** (Tc 1314 K, pyrite gives it up at 1000 K), and not for the two
+room-temperature biological rows. **Zinc, cadmium and mercury make it urgent**: they are `Fluid`s
+precisely so they can leave a roasting bed as vapour, so every roasting row will be in the same
+position. `FormationTest.theReferencePhaseOnlyMattersForSpeciesNamedHere` enumerates the set and
+fails when it changes.
+
+The candidate fix needs no new data: `vaporisationHeat` already computes exactly the gap between the
+two baselines, so the pass can add it for a reagent drawn as vapour from the fluid field and subtract
+it for a product placed there — the same charge-and-credit symmetry `offGas` and `settleCohesion`
+already have. See the roasting increment when it is scoped.
 
 ### Increment 4f — the derived base rate
 
