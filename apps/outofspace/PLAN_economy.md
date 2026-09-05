@@ -206,6 +206,12 @@ candidates, measured against the **real concentrator ladder** (41 → 65 → 86 
 across three other species. All prices equal, so the table is about the *rule* and nothing else.
 100 = perfectly separated and sold as pure species.
 
+> ⚠️ **The ladder is gone; the rule is not.** The concentrator draws one species out pure in a single
+> pass, so a player no longer walks 41 → 65 → 86 → 94 → 97 → 100 — they see 41% ore and 100%
+> concentrate and little in between. Those figures survive here as the *sampling grid* the four
+> candidate rules were compared on, which is what this section is deciding. R2 is continuous in
+> purity, so nothing about the choice depends on which purities actually occur in play.
+
 | purity | R0 flat-half | R1 share | **R2 share²** | R3 flat fee |
 |---|---|---|---|---|
 | 41% | 35.2 | 25.5 | **9.5** | 25.5 |

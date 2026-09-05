@@ -75,7 +75,16 @@ enum class DeckMachineKind(
      * output port to gate. What it does with no signal is not fire, which is its throttle's business.
      */
     Rocket("ROCKET", preventThoroughfare = true),
-    Concentrator("CONCENTRATOR", preventThoroughfare = true, gatesOutput = true),
+    /**
+     * Ore in, one species out pure, the rest out of the floor — see `Concentrator`.
+     *
+     * Whole packets, for the pump's reason rather than the one this machine used to have: its
+     * concentrate store is an **accumulator** now, banking the machine's share of each charge until
+     * it has a packet of pure metal, so left to dribble it would put 61 kg lumps on the track for
+     * ever. It used to hand out one finished packet of each stream per charge and had nothing part
+     * sized to hold back.
+     */
+    Concentrator("CONCENTRATOR", preventThoroughfare = true, gatesOutput = true, shipsWholePackets = true),
     /**
      * Water in, hydrogen out of one face and oxygen out of another — see `Electrolyzer`.
      *

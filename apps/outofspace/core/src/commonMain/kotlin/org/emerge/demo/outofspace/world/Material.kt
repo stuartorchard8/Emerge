@@ -384,9 +384,10 @@ private val conduitBills = HashMap<Int, Mixture>()
  * At 95 this was the tolerance that let a rail be built out of ordinary iron rather than out of
  * perfectly separated iron, which mattered while perfectly separated iron was **unreachable**: the
  * concentrator's ladder converged on purity asymptotically and a player watched nine stages all
- * render as "99%". `Chemistry.PURE_ENOUGH_PERMILLE` ended that in `fe1d57e8` — a chain now
- * terminates in genuinely 100% packets — so the slack stopped paying for anything and went on
- * charging its price.
+ * render as "99%". `Chemistry.PURE_ENOUGH_PERMILLE` ended that in `fe1d57e8` — a chain terminated
+ * in genuinely 100% packets — so the slack stopped paying for anything and went on charging its
+ * price. ⚠️ Both the ladder and that threshold are since **gone**: `process` draws the dominant
+ * species out pure in a single pass, so pure material is not merely reachable but ordinary.
  *
  * ⛔ **The price was a machine that could not be moved.** Five per cent of anything was admitted
  * into a casing, including volatiles, and a casing is inert only while it stands: deconstruct it and

@@ -67,6 +67,7 @@ import org.emerge.demo.outofspace.world.BodySlot
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
+import org.emerge.demo.outofspace.world.machine.MACHINE_OUTPUT_CAP
 import org.emerge.demo.outofspace.world.machine.DockingPort
 import org.emerge.demo.outofspace.world.Market
 import org.emerge.demo.outofspace.world.Prices
@@ -1324,12 +1325,42 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         return withOrder(species, -(left - sold.total).coerceAtLeast(0L))
     }
 
+    /**
+     * One tick of a [Concentrator], which since the concentrate buffer became an **accumulator** is
+     * a machine that banks pure metal a charge at a time until it has a packet of it.
+     *
+     * [process] hands back the machine's share of the charge's dominant species, pure, and that is
+     * a fraction of a packet rather than a packet — 61 kg of iron out of a 200 kg charge of the
+     * standard ore body. So the concentrate store fills over several charges and the rail takes a
+     * whole 100 kg packet off it when there is one, while the tailings fill their own hopper and
+     * leave the same way.
+     *
+     * ⛔ **The bank holds one species, and that is the invariant everything downstream is built on.**
+     * A concentrator's product port emits nothing but 100% pure packets, so a tank locked to a
+     * species, a construction site at `BUILD_PURITY_PERCENT`, and an electrolyzer wanting water all
+     * take its output directly. Two species in one bank would end that, so a charge whose dominant
+     * is not what the bank is already holding **does not start**: the machine waits, `Work.holdsBack`
+     * sees a bank that has to be cleared and lets the short packet go, and the new species begins on
+     * an empty bank the tick after.
+     *
+     * ⚠️ **The gate is at the lift, not at the deposit**, and that is the whole reason no second
+     * store is needed: a charge that has been worked always matches what the bank holds, because it
+     * was not allowed in otherwise. Deciding at the deposit would leave the machine holding a
+     * finished charge of one species and a bank of another with nowhere to put either.
+     */
     private fun Work.refine(cfg: OutofspaceConfig, m: Concentrator, on: Boolean, tile: TileIndex): Concentrator {
         // Starting a fresh lump is a move between two stores, and the whole tick's heat is applied
         // the moment it starts rather than dribbled out over the action.
         val inProgress = store(m, tile, BufferRole.Inside) ?: run {
             val available = store(m, tile, BufferRole.Input) ?: return m // Nothing to do if there's no input
             val charge = available.takeAtLeast(Concentrator.CHARGE_MASS) ?: return m
+
+            // ⛔ **Asked of the charge, not of the buffer behind it.** `takeAtLeast` is proportional,
+            // so the two agree in every ordinary case — but the charge is what will be worked, and
+            // `RailLayer.splitInto` warns in as many words against asking the door of the pile when
+            // the slice is what travels.
+            val banked = store(m, tile, BufferRole.Product)
+            if (banked != null && banked.dominant != charge.dominant) return m
 
             putStore(m, tile, BufferRole.Input, available-charge)
             putStore(m, tile, BufferRole.Inside, charge)
@@ -1339,19 +1370,21 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         val (actionProgress, carry) = throttled(1, if (on) SignalField.FULL else 0, m.carry)
         if (m.progress + actionProgress >= m.ticksPerAction) {
-            // ⛔ **Any packet in either output blocks the machine — not a *full* output.** A
-            // concentrator works in whole packets: two in, one packet of concentrate and one of
-            // tailings out. Finishing a charge on top of an output that has not been collected yet
-            // would blend two packets inside the buffer, and a buffer is not a hopper. So the lump
-            // stays where it is until both mouths are clear, which also sizes the outputs at one
-            // packet apiece without a cap having to say so.
-            if (store(m, tile, BufferRole.Product) != null || store(m, tile, BufferRole.Waste) != null) {
+            val r = process(inProgress, m.efficiencyPermille)
+            val banked = store(m, tile, BufferRole.Product)
+            val tailings = store(m, tile, BufferRole.Waste)
+            // ⛔ **A full hopper blocks the machine, where any packet at all used to.** Both stores
+            // are hoppers now rather than a pair of finished packets, so the question is whether
+            // this charge's share *fits* — and a charge that does not fit waits where it is, which
+            // backs up into the input and then up the belt, the way every other blockage does.
+            if ((banked?.total ?: 0L) + r.product.total > MACHINE_OUTPUT_CAP ||
+                (tailings?.total ?: 0L) + r.tailings.total > MACHINE_OUTPUT_CAP
+            ) {
                 return m.copy(progress = m.ticksPerAction, carry = carry)
             }
-            val r = process(inProgress, m.efficiencyPermille)
             putStore(m, tile, BufferRole.Inside, null)
-            putStore(m, tile, BufferRole.Product, r.product)
-            putStore(m, tile, BufferRole.Waste, r.tailings)
+            putStore(m, tile, BufferRole.Product, (banked ?: Mixture.EMPTY) + r.product)
+            putStore(m, tile, BufferRole.Waste, (tailings ?: Mixture.EMPTY) + r.tailings)
             return m.copy(progress = 0, carry = carry)
         }
         return m.copy(progress = m.progress + actionProgress.toInt(), carry = carry)
@@ -3850,7 +3883,36 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (minOf(room, buffer.total) >= Capacity.PACKET_MASS) return false
             if (port.owner in scrapping) return false
             if (useful != Acceptance.UNLIMITED && useful < Capacity.PACKET_MASS) return false
+            if (m is Concentrator && port.stream == Stream.Product &&
+                mustClearTheBank(m, port.owner, buffer)
+            ) return false
             return true
+        }
+
+        /**
+         * Whether a concentrator's bank has to be emptied before the machine can do anything else.
+         *
+         * ⛔ **The one case where a part packet of concentrate leaves.** The bank holds one species
+         * — see [Work.refine] — so a charge of a different one cannot start until what is banked has
+         * gone. Held to the whole-packet rule the machine would simply stop for good the first time
+         * its feed changed dominance, which is the ordinary case the moment anybody reprocesses
+         * tailings.
+         *
+         * ⚠️ **Two species near the same abundance make small packets**, and that is the accepted
+         * cost rather than an oversight: a tight loop with little material in it produces runts, and
+         * the answer is more material in the loop, not a machine that hides the problem by mixing.
+         *
+         * The conditions say "there is a charge waiting that this machine is refusing to start":
+         * nothing in the chamber, a full charge banked up in the feed, and a different dominant.
+         * Anything less than a full charge is not yet a refusal — `refine` would not have started it
+         * either — so a trickle of a new species cannot flush a bank that is still filling.
+         */
+        private fun mustClearTheBank(m: Concentrator, at: TileIndex, banked: Mixture): Boolean {
+            val chamber = bufferTile(grid, m, at, BufferRole.Inside)
+            if (chamber != null && buffers.massAt(chamber) > 0L) return false
+            val feed = bufferTile(grid, m, at, BufferRole.Input)?.let { buffers.resourceAt(it) } ?: return false
+            val charge = feed.takeAtLeast(Concentrator.CHARGE_MASS) ?: return false
+            return charge.dominant != banked.dominant
         }
 
         /**

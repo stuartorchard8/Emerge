@@ -6,11 +6,27 @@ import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
 
 /**
- * Mineral concentrator: concentrate out facing side, tailings out clockwise-side.
+ * Mineral concentrator: **pure** metal out the facing side, tailings out clockwise-side.
  *
- * Chain: purity climbs, wastefully (tailings = lost material). Fed the standard ore body at the
- * default efficiency the ladder runs **41% → 65% → 86% → 94% → 97% → 100%** — five machines, and
- * half the mass lost at every one of them, so a pure packet costs about 32 packets of ore.
+ * One machine, one pass, one species. It draws [efficiencyPermille] of the charge's dominant
+ * species out whole and banks it until it has a 100 kg packet of it — see
+ * [org.emerge.demo.outofspace.chem.process] for the draw and `Work.refine` for the bank. Fed the
+ * standard ore body a pure packet of iron costs about **3.25 packets of ore**, against the 32 the
+ * old ladder charged.
+ *
+ * ⛔ **It used to be a chain**, and the chain was academic. Purity climbed **41 → 65 → 86 → 94 → 97
+ * → 100** across five machines, half the mass lost at each, and nothing downstream had any use for
+ * the intermediate steps: `BUILD_PURITY_PERCENT` is 100, an electrolyzer takes pure water and
+ * nothing else, and a sell order is priced per species. So the interesting decision was never how to
+ * *reach* pure — it was what to do with the concentrate once you had it, and five machines of
+ * plumbing stood in front of that decision. `reference_oos_processor_purity_ladder` records what
+ * the ladder cost to make terminate at all.
+ *
+ * ⚠️ **What is lost is now yield rather than quality.** The tailings still carry the share the
+ * machine missed plus every other species, so reprocessing them is worth doing — and because the
+ * draw always takes whatever is *dominant*, a tailings loop works its way down through the species
+ * in order of abundance without being told to. Each pass takes a quarter of what is left, so the
+ * loop converges rather than plateauing.
  */
 data class Concentrator(
     override val center: TileIndex,
@@ -22,12 +38,18 @@ data class Concentrator(
     val ticksPerAction: Int = 16,
     val progress: Int = 0,
     /**
-     * Machine quality, capped by the ore's own purity — see [org.emerge.demo.outofspace.chem.process].
+     * Machine quality, and since the draw replaced the ladder it is a plain **recovery rate**: the
+     * share of the charge's dominant species this machine picks out. 750 means three quarters of the
+     * iron in a charge of ore leaves as pure iron and the last quarter stays in the tailings.
      *
-     * 600 is the mid-tier separator: good enough to finish the job, slow enough that finishing it
-     * takes a chain. It is also the point where the curve is at its most even — at 650 and above,
-     * stage 2 is still limited by the ore rather than by the machine, so raising the rating past
-     * that buys a duplicated 87% step instead of a better one.
+     * ⛔ **It is no longer capped by the ore's own purity**, because a draw cannot invent purity the
+     * way a fractional split could — see [org.emerge.demo.outofspace.chem.process]. Bad ore costs
+     * yield now, not quality.
+     *
+     * ⚠️ **The old justification for this number is void and the number has not been re-derived.**
+     * It used to be chosen to space a five-stage purity ladder evenly, an argument about a mechanism
+     * that no longer exists. What it buys today is the size of the tailings stream and therefore how
+     * much reprocessing is worth building — which is a balance question, and an open one.
      */
     val efficiencyPermille: Int = 750,
     override val wiring: Wiring = Wiring.RUNNING,

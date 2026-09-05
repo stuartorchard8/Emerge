@@ -20,111 +20,61 @@ data class ProcessResult(val product: Mixture, val tailings: Mixture) {
 }
 
 /**
- * How clean a product must be before the machine calls the separation finished: impurity under
- * [PURE_ENOUGH_PERMILLE] of the product's own mass is sent to the tailings and the product comes
- * out pure.
+ * Draws the dominant species out of [input] **pure**, and returns it with what is left over.
  *
- * ### Why a threshold has to exist
+ * [efficiencyPermille] is the machine's quality (1000 = perfect) and it is a **recovery rate**: the
+ * share of the dominant species the machine manages to pick out of the charge. Everything it misses
+ * stays in the tailings along with every other species, so what a pass costs you is *yield*, never
+ * purity.
  *
- * Purity converges but never arrives. Once the machine rather than the ore is the binding
- * constraint, each pass multiplies the impurity *fraction* by `1 - efficiency` — a geometric tail
- * that approaches 100% and lands on it only when the impurity allowance happens to floor to zero.
- * At one microgram per unit that means waiting for under a microgram of impurity in a 200 kg
- * charge, and `refine` always pulls a full charge however deep in the chain it sits, so the wait is
- * a fixed *fraction*: the finer the mass unit, the longer the tail. The 2026-08-12 rescale
- * lengthened it from about seven stages to thirteen without anyone asking it to.
+ * ### Why the product is pure rather than merely purer
  *
- * Worse, the tail is invisible. The HUD prints integer percent, so 99.85%, 99.985% and 99.9985%
- * are all "99%" — nine identical-looking stages, each genuinely cutting impurity tenfold. A player
- * reads that as a chain that has stopped working.
+ * This used to be a weighted halving whose effective efficiency was `min(machine, input purity)`,
+ * and purity converged on 100% without ever arriving — a geometric tail that took five machines in
+ * a chain and a snap-to-pure threshold to terminate at all. See
+ * `reference_oos_processor_purity_ladder` for that whole apparatus and what it cost.
  *
- * So the machine stops chasing it. Below this threshold the separation is done, and the last stage
- * lands on a clean 100% that means what it says.
+ * The ladder was academic. Nothing downstream wants 87% iron: `BUILD_PURITY_PERCENT` is 100, an
+ * electrolyzer takes pure water and nothing else, and a sell order is priced per species. So the
+ * interesting decision was never *how* to reach pure — it was what to do with the concentrate once
+ * you had it, and five machines of plumbing stood in front of that decision.
  *
- * ⚠️ **This snaps the product, never the input, and never destroys anything.** The impurity moves
- * to the tailings, because [process] computes `tailings = input - product` and this only ever
- * shrinks the product's impurity. Conservation is untouched, and [conservationOf] still closes.
- */
-internal const val PURE_ENOUGH_PERMILLE = 10L
-
-/**
- * Concentrates [input] into a product stream and a tailings stream, each half its mass.
+ * ⛔ **Purity cannot be invented here, and that is now structural rather than argued.** The product
+ * is some quantity of one species that the input demonstrably held, so no cap on efficiency is
+ * needed to stop a good machine beating bad ore — bad ore simply yields less. That deletes the
+ * `min(machine, purity)` rational, the impurity allowance, the apportionment of that allowance
+ * across the other species, and the snap threshold, all of which existed to keep a *fraction*
+ * honest.
  *
- * [efficiencyPermille] is the machine's quality (1000 = perfect), but it is **capped by the input's
- * own purity**: you cannot concentrate what is not there, so a good machine fed bad ore behaves
- * like a bad machine. This one rule is what makes ore quality matter at every step instead of at a
- * lookup, and it is the best idea carried over from the Godot build.
+ * ⚠️ **Feeding in pure material now costs you.** It comes back as [efficiencyPermille] of itself
+ * with the remainder in the tailings, where a halving used to give two identical piles. The demand
+ * work is what keeps that from happening by accident: a concentrator asks for `SpeciesFilter.MIXED`
+ * and the network never routes pure metal to one.
  *
- * Consequence worth knowing: feeding in already-pure material simply halves it into two identical
- * piles. Processing is for dirty input; it does nothing useful to clean input.
+ * Conservation is unchanged and still structural: the product is computed and the tailings are
+ * `input - product`, so no arithmetic path can lose or invent a gram.
  */
 fun process(input: Mixture, efficiencyPermille: Int = 1000): ProcessResult {
     require(efficiencyPermille in 0..1000) { "efficiency must be 0..1000 permille, got $efficiencyPermille" }
 
-    val total = input.total
     val dominant = input.dominant
-    if (dominant == null || total == 0L) return ProcessResult(Mixture.EMPTY, Mixture.EMPTY)
+    if (dominant == null || input.total == 0L) return ProcessResult(Mixture.EMPTY, Mixture.EMPTY)
 
-    val dominantMass = input[dominant]
-
-    // The effective efficiency is min(machine, purity), kept as an exact rational n/d so no float
-    // enters the simulation. purity = dominantMass/total; machine = efficiencyPermille/1000.
-    val machineIsLower = efficiencyPermille.toLong() * total <= dominantMass * 1000L
-    val n: Long = if (machineIsLower) efficiencyPermille.toLong() else dominantMass
-    val d: Long = if (machineIsLower) 1000L else total
-
-    // Share of the impurities that stays with the product: (1 - efficiency) / 2.
-    //
-    // Through [scaledRatio] because `d` is `total` whenever the ore's own purity is the binding
-    // constraint — which is the interesting half of the branch above — and `impurities × total` is
-    // then a product of two masses. That is quadratic in the mass unit: at one microgram per unit a
-    // twenty-tonne storage of dirty ore wraps a Long, and does so in the direction that invents
-    // matter. The value is unchanged wherever the old form did not overflow, since [scaledRatio]
-    // splits the same division into a whole part and a remainder rather than approximating it.
-    val totalImpurities = total - dominantMass
-    val impuritiesForProduct = scaledRatio(d - n, 2L * d, totalImpurities)
-
-    // The product is half the total mass; whatever of that is not impurity is dominant species.
-    // Both quantities are provably in range for exact arithmetic (flooring can only shrink them),
-    // so the clamp is a guard rail rather than a correction.
-    val dominantForProduct = (total / 2L - impuritiesForProduct).coerceIn(0L, dominantMass)
+    // Through [scaledRatio] rather than `mass * eff / 1000` because this is called on whatever a
+    // caller hands it, not only on a machine's charge: at one microgram per unit a storage-sized
+    // mixture times a thousand is within a factor of a few of wrapping a Long, and wrapping here
+    // would invent matter. The value is identical wherever the plain form does not overflow.
+    val drawn = scaledRatio(efficiencyPermille.toLong(), 1000L, input[dominant])
 
     val productMass = LongArray(Species.COUNT)
-    productMass[dominant.ordinal] = dominantForProduct
-    if (impuritiesForProduct > 0L) {
-        // Spread the product's impurity allowance across the non-dominant species in proportion.
-        val impurityWeights = LongArray(Species.COUNT)
-        for (m in Species.ALL) if (m != dominant) impurityWeights[m.ordinal] = input[m]
-        val share = apportion(impurityWeights, impuritiesForProduct)
-        for (i in productMass.indices) if (i != dominant.ordinal) productMass[i] = share[i]
-    }
-
-    // What actually landed, which is not [impuritiesForProduct]: that is only the allowance, and an
-    // input with no impurity to spread leaves it unspent.
-    var productImpurity = 0L
-    for (i in productMass.indices) if (i != dominant.ordinal) productImpurity += productMass[i]
-    val productTotal = dominantForProduct + productImpurity
-
-    // Close enough is pure — see [PURE_ENOUGH_PERMILLE]. The `productTotal <= dominantMass` guard
-    // is what keeps this a *move* rather than an invention: the product can only be made wholly of
-    // the dominant species if the input actually held that much of it. It holds for free wherever
-    // the threshold fires (a product this clean is far past the halfway mark), which is exactly why
-    // it is worth stating rather than assuming.
-    if (productImpurity > 0L &&
-        productImpurity * 1000L < productTotal * PURE_ENOUGH_PERMILLE &&
-        productTotal <= dominantMass
-    ) {
-        productMass.fill(0L)
-        productMass[dominant.ordinal] = productTotal
-    }
+    productMass[dominant.ordinal] = drawn
 
     // Split thermal energy by heat capacity, not by mass. Both streams leave at the same
     // temperature, so the product takes energy proportional to its heat capacity and the
     // tailings takes the rest — which is exactly what `input - product` computes.
     var inputCapacity = 0L
     for (s in Species.ALL) inputCapacity += input[s] * s.specificHeat
-    var productCapacity = 0L
-    for (i in productMass.indices) productCapacity += productMass[i] * Species.ALL[i].specificHeat
+    val productCapacity = drawn * dominant.specificHeat
     val productEnergy = if (inputCapacity > 0L) scaledRatio(productCapacity, inputCapacity, input.energy) else 0L
 
     val productMixture = Mixture.of(productMass, productEnergy)

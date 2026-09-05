@@ -8,7 +8,6 @@ import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.logistics.Capacity
 
-import org.emerge.demo.outofspace.chem.process
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
@@ -159,17 +158,6 @@ class ConcentratorChainTest {
             forward[Species.Iron] * 100 / forward.total > below!![Species.Iron] * 100 / below.total,
             "forward must be richer in iron than the tailings",
         )
-    }
-
-    /**
-     * What three passes of the concentrator do to a packet of the standard ore body — the oracle for
-     * the end of a three-stage chain, computed from the same chemistry the machines use so that a
-     * change to [process] or to the ore moves the expectation with it instead of breaking the test.
-     */
-    private fun threeStagePurity(): Int {
-        var r = OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(Capacity.PACKET_MASS)
-        repeat(3) { r = process(r, Concentrator(TileIndex(0), Direction.Right).efficiencyPermille).product }
-        return purity(r)
     }
 
     /**

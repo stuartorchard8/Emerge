@@ -226,29 +226,75 @@ class ChemistryTest {
         assertTrue(outputPurity > inputPurity, "purity should rise: $inputPurity -> $outputPurity")
     }
 
+    /**
+     * ⛔ **Pure, and for any feed and any machine.** Not "purer": the product is some quantity of
+     * one species, so there is no tail to converge along and no threshold to end it with. See
+     * [process] for what that replaced.
+     */
     @Test
-    fun `a perfect machine cannot beat the ore it is fed`() {
-        // Efficiency is capped by purity, so a perfect machine and a machine matching the ore's own
-        // purity produce identical output.
-        val purityPermille = (dirtyOre[Species.Iron] * 1000L / dirtyOre.total).toInt()
-        assertEquals(process(dirtyOre, 1000).product, process(dirtyOre, purityPermille).product)
+    fun `the product is pure whatever it was fed and whatever the machine`() {
+        val feeds = listOf(
+            dirtyOre,
+            Mixture.of(Species.Iron to 1L, Species.Quartz to 9_999L, energy = 0),
+            Mixture.of(Species.Iron to 5_000L, Species.Quartz to 5_000L, energy = 0),
+        )
+        for (feed in feeds) for (eff in intArrayOf(1, 250, 750, 999, 1000)) {
+            val p = process(feed, eff).product
+            if (p.isEmpty) continue
+            assertEquals(0L, p.impurities, "process(eff=$eff) on $feed gave a blended product: $p")
+        }
     }
 
+    /**
+     * **Efficiency is a recovery rate**, and this pins it exactly: the machine's share of the
+     * dominant species, and nothing else moves.
+     *
+     * It replaces `a perfect machine cannot beat the ore it is fed`, which pinned the old
+     * `min(machine, purity)` cap. That cap existed to stop a fractional split inventing purity; a
+     * draw cannot invent it, so bad ore now costs **yield** rather than quality.
+     */
     @Test
-    fun `a worse machine yields a less pure product`() {
+    fun `the product is the machine's share of the dominant species`() {
+        for (eff in intArrayOf(0, 250, 750, 1000)) {
+            val r = process(dirtyOre, eff)
+            assertEquals(
+                dirtyOre[Species.Iron] * eff / 1000L,
+                r.product[Species.Iron],
+                "process(eff=$eff) drew the wrong amount of iron",
+            )
+            assertEquals(
+                dirtyOre[Species.Iron] - r.product[Species.Iron],
+                r.tailings[Species.Iron],
+                "what the machine missed must stay in the tailings",
+            )
+            for (s in Species.ALL) if (s != Species.Iron) {
+                assertEquals(dirtyOre[s], r.tailings[s], "$s should be untouched by the draw")
+            }
+        }
+    }
+
+    /** A worse machine leaves more of the metal in the tailings — it does not make dirtier metal. */
+    @Test
+    fun `a worse machine recovers less rather than producing less pure`() {
         val good = process(dirtyOre, 1000).product
         val bad = process(dirtyOre, 100).product
-        val goodPurity = good[Species.Iron].toDouble() / good.total
-        val badPurity = bad[Species.Iron].toDouble() / bad.total
-        assertTrue(goodPurity > badPurity, "expected $goodPurity > $badPurity")
+        assertTrue(good.total > bad.total, "expected ${good.total} > ${bad.total}")
+        assertEquals(0L, good.impurities)
+        assertEquals(0L, bad.impurities)
     }
 
+    /**
+     * ⚠️ **Feeding pure material in costs you**, where a halving used to hand back two identical
+     * piles. The demand work is what stops it happening by accident — a concentrator asks for
+     * `SpeciesFilter.MIXED` and the network never routes pure metal to one.
+     */
     @Test
-    fun `processing already-pure material just halves it`() {
+    fun `processing already-pure material taxes it`() {
         val pure = Mixture.of(Species.Iron to 1000L, energy = 0)
-        val r = process(pure, 1000)
-        assertEquals(500L, r.product.total)
-        assertEquals(500L, r.tailings.total)
+        val r = process(pure, 750)
+        assertEquals(750L, r.product.total, "the machine's share comes out")
+        assertEquals(250L, r.tailings.total, "and the rest is tailings, not a second pile of product")
+        assertEquals(Species.Iron, r.tailings.dominant, "which are pure iron, because that is all there was")
     }
 
     @Test
@@ -257,93 +303,36 @@ class ChemistryTest {
         assertTrue(r.product.isEmpty && r.tailings.isEmpty)
     }
 
+    /**
+     * Energy follows **heat capacity**, not mass. Both streams leave at the same temperature, so a
+     * product made of the species with the *lower* specific heat carries a smaller share of the
+     * energy than of the mass.
+     *
+     * ⚠️ **Stated against the mass share rather than against a half**, which is the same claim it
+     * always made: the old split gave both streams exactly half the mass, so "less than half the
+     * energy" said "less than its share". A draw does not split the mass evenly, so the share has to
+     * be named. This is the invariant that tells a heat-capacity-weighted split apart from a
+     * mass-weighted one, and from the bug of giving the product everything.
+     */
     @Test
-    fun `processing splits thermal energy by heat capacity, not half-and-half`() {
-        // 90% pure iron feed. With 1000 permille efficiency the effective efficiency is capped
-        // at 900, so 5 units of quartz leak into the product and 95 stay in the tailings.
-        //
-        // product-specific-heat ≈ 452 (iron-dominant, low c_p)
-        // tailings-specific-heat ≈ 515 (more quartz, higher c_p)
-        //
-        // Both streams weigh 500g but the tailings must carry more thermal energy because its
-        // heat capacity per gram is higher.
+    fun `processing splits thermal energy by heat capacity, not by mass`() {
+        // 90% iron. A perfect machine draws all 900 of it, so the product is 90% of the mass — and
+        // iron's specific heat is below quartz's, so it must carry less than 90% of the energy.
         val input = Mixture.of(Species.Iron to 900L, Species.Quartz to 100L, energy = 5_250_000L)
         val r = process(input, 1000)
 
         assertConserved(listOf(input), listOf(r.product, r.tailings), "energy-conserving process")
+        assertEquals(900L, r.product.total, "the whole of the iron was drawn")
 
-        // Both outputs must be non-zero energy (not 0 and not the full input).
         assertTrue(r.product.energy > 0L, "product must hold thermal energy: ${r.product.energy}")
         assertTrue(r.tailings.energy > 0L, "tailings must hold thermal energy: ${r.tailings.energy}")
 
-        // The product carries LESS than half because its iron-heavy composition has lower
-        // specific heat than the tailings. This is the invariant that distinguishes the correct
-        // heat-capacity-weighted split from the buggy "give everything to the product" path.
-        val half = input.energy / 2L
-        assertTrue(r.product.energy < half, "product should carry less than half: ${r.product.energy} of ${input.energy}")
-        assertTrue(r.tailings.energy > half, "tailings should carry more than half: ${r.tailings.energy} of ${input.energy}")
-
-        // Energy is conserved exactly.
+        // Cross-multiplied so no float enters: product/input energy < product/input mass.
+        assertTrue(
+            r.product.energy * input.total < input.energy * r.product.total,
+            "product carries ${r.product.energy} of ${input.energy} on ${r.product.total} of ${input.total} " +
+                "— that is its mass share or better, so the split is not by heat capacity",
+        )
         assertEquals(input.energy, r.product.energy + r.tailings.energy, "energy must be conserved")
     }
-
-    // ── "close enough is pure": the threshold that ends the chain ───────────────
-
-    /** One charge of the standard ore body, which is what a real concentrator always works on. */
-    private fun charge() = org.emerge.demo.outofspace.OutofspaceReducer.DEFAULT_ORE_BODY
-        .scaledTo(org.emerge.demo.outofspace.world.machine.Concentrator.CHARGE_MASS)
-
-    /**
-     * The ladder a player climbs, pinned end to end.
-     *
-     * This is the whole point of [PURE_ENOUGH_PERMILLE]: without it the tail runs to thirteen
-     * stages, nine of which print as an identical "99%". If this test starts failing because the
-     * chain got longer, the threshold or the efficiency moved — that is information about the
-     * game's shape, not a number to bring back into line.
-     */
-    @Test
-    fun `the standard chain reaches exactly pure in five stages`() {
-        val eff = org.emerge.demo.outofspace.world.machine.Concentrator(
-            org.emerge.demo.outofspace.world.TileIndex(0),
-            org.emerge.demo.outofspace.world.Direction.Right,
-        ).efficiencyPermille
-
-        var m = charge()
-        val shown = mutableListOf<Long>()
-        repeat(4) {
-            // Every stage works a full charge, as `refine` does via takeAtLeast(CHARGE_MASS).
-            m = process(m.scaledTo(org.emerge.demo.outofspace.world.machine.Concentrator.CHARGE_MASS), eff).product
-            shown += m[m.dominant!!] * 100L / m.total
-        }
-        assertEquals(listOf(65L, 87L, 96L, 100L), shown, "the displayed purity ladder")
-        assertEquals(0L, m.total - m[m.dominant!!], "stage 5 must be exactly pure, not nearly")
-    }
-
-    @Test
-    fun `the snap moves impurity to the tailings rather than destroying it`() {
-        var m = charge()
-        val eff = 600
-        repeat(4) { m = process(m.scaledTo(org.emerge.demo.outofspace.world.machine.Concentrator.CHARGE_MASS), eff).product }
-        // Stage 5 is the one that snaps: 97.77% in, exactly pure out.
-        val fed = m.scaledTo(org.emerge.demo.outofspace.world.machine.Concentrator.CHARGE_MASS)
-        val r = process(fed, eff)
-        assertEquals(0L, r.product.total - r.product[r.product.dominant!!], "the snap fired")
-        assertConserved(listOf(fed), listOf(r.product, r.tailings), "the snapping stage")
-    }
-
-    @Test
-    fun `a product just dirtier than the threshold is left alone`() {
-        // 2% impurity in, so the product lands near 1% — straddling PURE_ENOUGH_PERMILLE either way
-        // is what this pins, so a change to the threshold shows up here as a pair, not a single.
-        fun productImpurityPermille(inputImpurityPermille: Long): Long {
-            val t = 1_000_000_000L
-            val dom = t - t * inputImpurityPermille / 1000L
-            val mix = Mixture.of(Species.Iron to dom, Species.Quartz to t - dom, energy = 0)
-            val p = process(mix, 1000).product
-            return (p.total - p[p.dominant!!]) * 1000L / p.total
-        }
-        assertTrue(productImpurityPermille(200L) > 0L, "a 20% impure feed must not snap")
-        assertEquals(0L, productImpurityPermille(1L), "a 0.1% impure feed must snap to pure")
-    }
-
 }

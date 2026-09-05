@@ -956,8 +956,9 @@ class GhostTest {
      *
      * At `BUILD_PURITY_PERCENT = 95` a 95% delivery went in whole and its 5% of junk was baked into
      * the tile's fabric — the slack that stopped a rail demanding perfectly separated iron *while
-     * perfectly separated iron was unreachable*. `Chemistry.PURE_ENOUGH_PERMILLE` made it reachable,
-     * so the slack bought nothing and went on charging for itself: junk in a fabric is junk that
+     * perfectly separated iron was unreachable*. `Chemistry.PURE_ENOUGH_PERMILLE` made it reachable
+     * — and `process` has since made it ordinary, drawing one species out pure in a single pass — so
+     * the slack bought nothing and went on charging for itself: junk in a fabric is junk that
      * off-gasses out of the salvage when the thing is taken apart, leaving a site that reads 99%
      * built for ever.
      *
