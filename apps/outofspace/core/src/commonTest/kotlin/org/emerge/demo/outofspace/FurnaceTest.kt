@@ -1,7 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.CARBON_IGNITION_KELVIN
-import org.emerge.demo.outofspace.chem.DECOMPOSITIONS
+import org.emerge.demo.outofspace.chem.REACTIONS
 import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
@@ -326,7 +326,7 @@ class FurnaceTest {
         // The reaction this machine's documentation has promised since before it could happen.
         // CaCO3 -> CaO + CO2: the lime stays in the chamber and leaves by the belt, the gas leaves
         // by the room, and the machine's one output port is correct precisely because of that.
-        val calcite = DECOMPOSITIONS.first { it.reactant == Species.Calcite }
+        val calcite = REACTIONS.first { it.principal == Species.Calcite }
         val start = withCharge(cold(Species.Calcite, CALCINING_CHARGE), setTemperature = calcite.onsetKelvin + 250)
         val after = run(start, SETTLING_TICKS)
 
@@ -464,8 +464,8 @@ class FurnaceTest {
         // Heat as a separator, which is what makes the dial a decision. The same mixed charge at one
         // temperature is a magnesite process and at another is a magnesite-and-calcite process, and
         // nothing anywhere is filtering by species.
-        val magnesite = DECOMPOSITIONS.first { it.reactant == Species.Magnesite }
-        val calcite = DECOMPOSITIONS.first { it.reactant == Species.Calcite }
+        val magnesite = REACTIONS.first { it.principal == Species.Magnesite }
+        val calcite = REACTIONS.first { it.principal == Species.Calcite }
         val between = (magnesite.onsetKelvin + calcite.onsetKelvin) / 2
 
         val mixed = lumpAt(
@@ -491,7 +491,7 @@ class FurnaceTest {
         // temperature, so a charge cannot run away with it: it cools, drops under its onset and
         // waits for the element. That is the loop the decomposer exists to fight, and the reason the
         // machine is a heat sink rather than a timer.
-        val calcite = DECOMPOSITIONS.first { it.reactant == Species.Calcite }
+        val calcite = REACTIONS.first { it.principal == Species.Calcite }
         val setpoint = calcite.onsetKelvin + 250
 
         val hot = lumpAt(setpoint, Species.Calcite to CALCINING_CHARGE)
@@ -508,7 +508,7 @@ class FurnaceTest {
 
     @Test
     fun `calcining closes both ledgers`() {
-        val calcite = DECOMPOSITIONS.first { it.reactant == Species.Calcite }
+        val calcite = REACTIONS.first { it.principal == Species.Calcite }
         val after = run(
             withCharge(cold(Species.Calcite, CALCINING_CHARGE), setTemperature = calcite.onsetKelvin + 250),
             SETTLING_TICKS,

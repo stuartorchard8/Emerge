@@ -10,11 +10,12 @@ package org.emerge.demo.outofspace.chem
  * a hand-typed `enthalpyPerKg`, and a wrong one is invisible — the row balances atom for atom, its
  * onset is plausible, every test passes, and it yields the wrong amount of heat for ever.
  *
- * ⛔ **It was not a hypothetical.** Scoring the twenty-four rows that existed when this landed against
- * the table below reproduced seventeen of them to within 2 kJ/mol — which is the evidence that they
- * *were* computed this way, by hand, once — and found six that were not. Two of those were wrong by
- * factors of three. See `FormationTest.everyRowIsWorthWhatItsFormationEnthalpiesSay`, which is now
- * the only place a reaction's energy is stated.
+ * ⛔ **It was not a hypothetical.** Scoring the twenty-eight rows that existed when this landed
+ * against the table below reproduced eighteen of them to within 2 kJ/mol — which is the evidence
+ * that they *were* computed this way, by hand, once — and found seven that had drifted
+ * substantively. Two were wrong by factors of three and one had the wrong sign. See
+ * `FormationTest.everyReactionIsWorthWhatItsFormationEnthalpiesSay`, which is now the only place a
+ * reaction's energy is stated.
  *
  * ### The reference phase, which is not a free choice
  *
@@ -39,11 +40,11 @@ package org.emerge.demo.outofspace.chem
  * ⚠️ **The distinction only bites below a species' critical temperature**, and nearly every reaction
  * here runs far above the critical point of every gas it makes — CO₂'s is 304 K and carbon does not
  * burn until 1000 K, so the two baselines coincide and the choice costs nothing. The exceptions are
- * enumerated and tested: see `FormationTest.everyFluidProductIsAboveItsCriticalPointWhenItIsMade`.
+ * enumerated and tested: see `FormationTest.theReferencePhaseOnlyMattersForSpeciesNamedHere`.
  *
  * ⛔ **SULFUR IS THE OPEN ONE, and it is quoted as a solid.** It is a [Fluid] with a critical
- * temperature of 1314 K, and pyrite decomposes at 1000 K — so it is the one species the game makes
- * *below* its critical point, where the baseline genuinely matters and the rule above would say
+ * temperature of 1314 K, and pyrite decomposes at 1000 K — so it is the one *mineral* product the
+ * game makes below its critical point, where the baseline genuinely matters and the rule would say
  * "gas". It is quoted at 0 anyway, i.e. as native solid sulfur, for two reasons: the game's `Sulfur`
  * weighs 32 g/mol and is declared monatomic (see [ATOMIC_MASS]), which is S₂'s mass wearing S's
  * formula, so "the gas-phase value" is not a single number a textbook will hand you; and quoting it
@@ -136,7 +137,7 @@ val FORMATION_ENTHALPY: Map<Species, Int> = mapOf(
 /**
  * [FORMATION_ENTHALPY] by [Species] ordinal — the table [hessEnthalpyKJ] actually reads.
  *
- * An array for the reason [CRITICAL_OF] and [DECOMPOSITION_OF] are arrays, though the pressure is
+ * An array for the reason [CRITICAL_OF] and `DECOMPOSITION_OF` are arrays, though the pressure is
  * milder here: this is read while [REACTIONS] is being constructed, once, rather than inside a tick.
  * It is an array anyway so that nobody has to work out which kind of table this is.
  */

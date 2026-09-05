@@ -100,11 +100,11 @@ class MineralTest {
     /** And the converse: something made by a reaction has to be a thing the table describes. */
     @Test
     fun everyReactionProductIsAKnownSubstance() {
-        for (d in DECOMPOSITIONS) {
-            for ((product, _) in d.products) {
+        for (row in REACTIONS) {
+            for ((product, _) in row.products) {
                 assertTrue(
                     product.isElement || product in MINERALS,
-                    "${d.reactant} yields $product, which is neither an element nor in MINERALS",
+                    "${row.principal}'s row yields $product, which is neither an element nor in MINERALS",
                 )
             }
         }

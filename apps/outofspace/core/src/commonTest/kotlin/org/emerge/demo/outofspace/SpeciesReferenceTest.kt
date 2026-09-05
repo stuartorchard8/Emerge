@@ -1,9 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.ALL_REACTIONS
-import org.emerge.demo.outofspace.chem.DECOMPOSITIONS
 import org.emerge.demo.outofspace.chem.REACTIONS
-import org.emerge.demo.outofspace.chem.REDUCTIONS
 import org.emerge.demo.outofspace.chem.ReactionKind
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.abundanceOf

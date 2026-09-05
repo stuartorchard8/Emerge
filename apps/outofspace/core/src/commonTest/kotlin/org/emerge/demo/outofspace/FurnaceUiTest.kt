@@ -1,7 +1,6 @@
 package org.emerge.demo.outofspace
 
-import org.emerge.demo.outofspace.chem.DECOMPOSITIONS
-import org.emerge.demo.outofspace.chem.REDUCTIONS
+import org.emerge.demo.outofspace.chem.REACTIONS
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.BufferLayer
@@ -70,16 +69,10 @@ class FurnaceUiTest {
         // reaction *at* its onset runs at the base rate and essentially nothing happens.
         val hottest = Furnace.SETPOINTS.max()
 
-        for (reaction in DECOMPOSITIONS) {
+        for (reaction in REACTIONS) {
             assertTrue(
                 hottest > reaction.onsetKelvin,
-                "${reaction.reactant} needs ${reaction.onsetKelvin} K and the dial stops at $hottest K",
-            )
-        }
-        for (reaction in REDUCTIONS) {
-            assertTrue(
-                hottest > reaction.onsetKelvin,
-                "${reaction.oxide} + ${reaction.reductant} needs ${reaction.onsetKelvin} K and the dial " +
+                "${reaction.principal}'s row needs ${reaction.onsetKelvin} K and the dial " +
                     "stops at $hottest K",
             )
         }
@@ -90,10 +83,7 @@ class FurnaceUiTest {
         // The off switch. It is only an off switch if it is below every onset in the game, and that
         // is a fact about the tables rather than about the number 300.
         val coldest = Furnace.SETPOINTS.min()
-        val lowestOnset = minOf(
-            DECOMPOSITIONS.minOf { it.onsetKelvin },
-            REDUCTIONS.minOf { it.onsetKelvin },
-        )
+        val lowestOnset = REACTIONS.minOf { it.onsetKelvin }
         assertTrue(coldest < lowestOnset, "the coldest setpoint $coldest K still runs something")
     }
 

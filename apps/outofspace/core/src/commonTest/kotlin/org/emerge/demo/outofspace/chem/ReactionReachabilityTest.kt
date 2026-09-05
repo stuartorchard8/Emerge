@@ -75,20 +75,15 @@ class ReactionReachabilityTest {
         }
     }
 
-    @Test
-    fun `nothing outside REACTIONS is still waiting for a sweep`() {
-        // ⛔ **A row in an old table is a row nothing runs.** The four sweeps are deleted; anything
-        // left behind in `DECOMPOSITIONS` or `REDUCTIONS` is read only as data for `REACTIONS`, and
-        // anything in the two emptied tables is read by nothing at all.
-        //
-        // ⚠️ Rows in *both* would be worse than rows in neither — two engines running the same
-        // reaction at the same tile, each unaware of the other's draw. That is the pass-order bug
-        // wearing a different hat, so the count is pinned.
-        val derived = DECOMPOSITIONS.size + REDUCTIONS.size
-        assertTrue(
-            REACTIONS.size > derived,
-            "REACTIONS has ${REACTIONS.size} rows and the tables it derives from have $derived — " +
-                "some hand-written rows have gone missing",
-        )
-    }
+    /**
+     * ⛔ **`nothing outside REACTIONS is still waiting for a sweep` is deleted, and its premise with
+     * it.** It counted the rows `REACTIONS` derived from `DECOMPOSITIONS` and `REDUCTIONS` and
+     * insisted there were hand-written ones as well, because a row stranded in a table nothing sweeps
+     * is a row that never runs — and rows in *both* would be worse: two engines running the same
+     * reaction at one tile, each unaware of the other's draw.
+     *
+     * Both tables are now deleted and every row is typed into `REACTIONS` itself, so there is no
+     * second table for a row to be stranded in and nothing left to count. The property is structural
+     * rather than tested, which is the better place for it to be.
+     */
 }

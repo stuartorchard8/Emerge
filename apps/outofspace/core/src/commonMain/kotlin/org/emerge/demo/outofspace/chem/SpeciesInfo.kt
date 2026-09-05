@@ -7,8 +7,8 @@ package org.emerge.demo.outofspace.chem
  * ⛔ **A view over the tables, never a second copy of them.** The four reaction tables are four
  * classes because they are four different mechanisms — heat alone, heat with the room's air, heat
  * with a solid reagent, and a fuel burning in the air it is already mixed with — and each of them is
- * arranged for the sweep that runs it: [DECOMPOSITION_OF] is indexed by ordinal for the tick loop,
- * [REDUCTION_GROUPS] is grouped by the reagent they contend for. None of those shapes answers "what
+ * arranged for the sweep that runs it: `DECOMPOSITION_OF` is indexed by ordinal for the tick loop,
+ * `REDUCTION_GROUPS` is grouped by the reagent they contend for. None of those shapes answers "what
  * happens to magnesite?", which is the only question a player asks. So this file flattens all four
  * into one row type and looks *up* from a species, and it derives that flattening rather than
  * restating it: a reaction added to any table appears here without anybody remembering to add it,
@@ -37,7 +37,7 @@ enum class ReactionKind(val label: String) {
 
     /**
      * Heat, and a fuel that is **already in the air** alongside the oxygen it burns in — a
-     * [Combustion] rather than an [Oxidation].
+     * `Combustion` rather than an `Oxidation`.
      *
      * ⚠️ **Not the same thing to arrange as [Burn], which is why it is not the same row.** A [Burn]
      * asks the player to put a solid somewhere airy and hot; this one asks for nothing but a room,

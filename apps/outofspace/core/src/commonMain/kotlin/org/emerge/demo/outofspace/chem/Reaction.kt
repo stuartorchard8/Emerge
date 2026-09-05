@@ -29,7 +29,7 @@ import org.emerge.demo.outofspace.num.scaledRatio
  *
  * ### Two consumers, one tile's oxygen — increment 2
  *
- * There are two [Oxidation]s now, [CARBON_BURN] and [IRON_RUST], and the moment a tile holds both
+ * There are two `Oxidation`s now, [CARBON_BURN] and [IRON_RUST], and the moment a tile holds both
  * reactants they are drinking from the same well. Nothing here resolves that: [demand] asks what a
  * reaction *would* take and [react] takes what it is *allowed*, and the two are separate calls
  * precisely so that the caller can ask everybody first and only then hand anything out. The
@@ -41,7 +41,7 @@ import org.emerge.demo.outofspace.num.scaledRatio
  * the rigid-body solver are both required to avoid. Jacobi, like everything else here.
  *
  * ⚠️ **Preference is an outcome, not a list.** "The oxygen attacks the carbon first" is true here
- * because carbon's [Oxidation.baseRate] is the larger one at a shared temperature, so its demand is
+ * because carbon's `Oxidation.baseRate` is the larger one at a shared temperature, so its demand is
  * the larger share of an oversubscribed tile. There is no priority order to consult and adding one
  * would make the physics stop explaining itself.
  */

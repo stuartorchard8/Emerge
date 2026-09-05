@@ -1,9 +1,10 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Fluid
-import org.emerge.demo.outofspace.chem.REDUCTIONS
+import org.emerge.demo.outofspace.chem.REACTIONS
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.fluid
+import org.emerge.demo.outofspace.chem.isFluid
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.EnergyArray
 import org.emerge.demo.outofspace.world.MassArray
@@ -74,14 +75,23 @@ class ReductionSweepTest {
         // every other reaction in the tile, whatever they happen to be — the same two-runs-differing
         // -in-one-thing construction as `in air the reagent burns instead of reducing`, and it does
         // not need to know what the interference was.
-        for (reaction in REDUCTIONS) {
+        // ⚠️ **The solid-reagent rows, selected rather than listed.** `REDUCTIONS` was a table and is
+        // now a shape: two or more reagents, none of them a fluid, so the whole reaction happens in
+        // one cargo layer with no room anywhere near it. A catalyst needs no special case any more —
+        // it is an ordinary reagent on both sides and is placed like one.
+        val solidReagentRows = REACTIONS.filter { row ->
+            row.reagents.size >= 2 && row.reagents.none { it.first.isFluid }
+        }
+        assertTrue(solidReagentRows.isNotEmpty(), "no solid-reagent rows left to sweep")
+
+        for (reaction in solidReagentRows) {
+            val withheld = reaction.reagents.first { it.first != reaction.principal }.first
             fun swept(withReductant: Boolean): StuffLayer {
                 val layer = layerWith(
-                    *listOfNotNull(
-                        reaction.oxide to 100L * kg,
-                        if (withReductant) reaction.reductant to 100L * kg else null,
-                        reaction.catalyst?.to(100L * kg),
-                    ).toTypedArray(),
+                    *reaction.reagents
+                        .filter { withReductant || it.first != withheld }
+                        .map { it.first to 100L * kg }
+                        .toTypedArray(),
                 )
                 layer.heatTo(reaction.onsetKelvin * 2)
                 sweep(layer)
@@ -90,12 +100,12 @@ class ReductionSweepTest {
 
             val layer = swept(withReductant = true)
             assertTrue(
-                layer[tile, reaction.oxide] < swept(withReductant = false)[tile, reaction.oxide],
-                "${reaction.oxide} + ${reaction.reductant} never fired in the sweep",
+                layer[tile, reaction.principal] < swept(withReductant = false)[tile, reaction.principal],
+                "${reaction.principal} + $withheld never fired in the sweep",
             )
             assertTrue(
-                layer[tile, reaction.reductant] < 100L * kg,
-                "${reaction.oxide} + ${reaction.reductant} consumed oxide but no reagent",
+                layer[tile, withheld] < 100L * kg,
+                "${reaction.principal} + $withheld consumed its principal but no reagent",
             )
             // ⚠️ **Every product, including the gaseous ones.** They used to be vented into the air
             // as they were made and so were invisible here; they stay in the layer now until
@@ -104,7 +114,7 @@ class ReductionSweepTest {
             for ((product, _) in reaction.products) {
                 assertTrue(
                     layer[tile, product] > 0L,
-                    "${reaction.oxide} + ${reaction.reductant} produced no $product",
+                    "${reaction.principal} + $withheld produced no $product",
                 )
             }
         }

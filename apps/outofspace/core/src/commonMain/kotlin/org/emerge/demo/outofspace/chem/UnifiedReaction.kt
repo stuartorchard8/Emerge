@@ -6,7 +6,7 @@ import org.emerge.demo.outofspace.num.scaledRatio
  * A reaction that does not claim to know where the matter is — increments 1 and 4 of
  * `PLAN_unified_reactions.md`, and the shape the other four collapse into.
  *
- * [Decomposition], [Oxidation], [Reduction] and [Combustion] each state, by which table they live
+ * `Decomposition`, `Oxidation`, `Reduction` and `Combustion` each state, by which table they live
  * in, which **store** their matter is kept in: the first three are swept over the cargo layers and
  * the fourth over the fluid field. Nothing checks that claim, and for a fluid it is usually wrong —
  * `offGas` runs over the cargo layers on the same pass and empties them of anything the tile wants
@@ -20,8 +20,8 @@ import org.emerge.demo.outofspace.num.scaledRatio
  * ### Placement: the principal's store, and nothing else
  *
  * [principal] is the reactant the rate is a fraction of and the enthalpy is quoted against — a
- * thing every one of the four tables already nominates, under four names ([Decomposition.reactant],
- * [Oxidation.reactant], [Reduction.oxide], [Combustion.fuel]). **Products go wherever the principal
+ * thing every one of the four tables already nominates, under four names (`Decomposition.reactant`,
+ * `Oxidation.reactant`, `Reduction.oxide`, `Combustion.fuel`). **Products go wherever the principal
  * came from.**
  *
  * That one rule reproduces all four current behaviours exactly: a calcining mineral is in the cargo
@@ -42,7 +42,7 @@ import org.emerge.demo.outofspace.num.scaledRatio
  *
  * A reagent is drawn from **every store that holds it**, pooled. That is what makes the Boudouard
  * reaction expressible: `CO₂ + C → 2 CO` has its principal in the room's air and its carbon on a
- * belt, and until increment 4 there was no shape that could say so — it sat in [REDUCTIONS], which
+ * belt, and until increment 4 there was no shape that could say so — it sat in `REDUCTIONS`, which
  * draws both reagents from one cargo layer, so it wanted CO₂ *as cargo* at 973 K and CO₂ is evicted
  * from a cargo layer above 304 K.
  *
@@ -128,7 +128,7 @@ class Reaction(
      *
      * ### The starvation path
      *
-     * [Oxidation.react]'s, generalised from one scarce reagent to all of them, and with its double
+     * `Oxidation.react`'s, generalised from one scarce reagent to all of them, and with its double
      * flooring intact. Every reagent is proportional to the principal, so shrinking the principal to
      * whatever the tightest allowance supports and then re-deriving *every* reagent from that
      * shrunken figure puts the whole row exactly on the stoichiometric line.
@@ -173,7 +173,7 @@ class Reaction(
     /**
      * How much of [mass] reacts in one pass at [kelvin], and nothing below the onset.
      *
-     * [Decomposition.decomposed]'s arithmetic, against the same shared Arrhenius climb in reduced
+     * `Decomposition.decomposed`'s arithmetic, against the same shared Arrhenius climb in reduced
      * temperature — the rate law was already one implementation across all four tables and this
      * does not make it a fifth.
      */
@@ -237,7 +237,7 @@ private val WRITTEN: List<Reaction> = listOf(
      *
      * ⚠️ **The awkward case on purpose**, exactly as `CARBON_BURN` was the awkward one for
      * `PLAN_ambient_chemistry.md`. Its principal is a *fluid*, which is the case the old shape got
-     * wrong: it sat in [DECOMPOSITIONS] with an onset of 1100 K while ammonia is evicted from a
+     * wrong: it sat in `DECOMPOSITIONS` with an onset of 1100 K while ammonia is evicted from a
      * cargo layer above its critical point of 405 K, so it has never fired anywhere but inside a
      * bulkhead, where `offGas` is forbidden to run.
      *
@@ -261,7 +261,7 @@ private val WRITTEN: List<Reaction> = listOf(
      * before**: its principal is in the room's air and its other reagent is on a belt.
      *
      * ⚠️ **The proving case for increment 4.** Every earlier shape draws its reagents from one
-     * store. [Reduction] takes two solids out of one cargo layer, which is where this row sat — so
+     * store. `Reduction` takes two solids out of one cargo layer, which is where this row sat — so
      * it wanted carbon dioxide *as cargo* at 973 K, and CO₂ is evicted from a cargo layer above its
      * critical point of 304 K. `Combustion.kt` credits it with quietly filling the vessel's rooms
      * with carbon monoxide since `14306ded`; it has never fired outside a bulkhead.
@@ -280,7 +280,7 @@ private val WRITTEN: List<Reaction> = listOf(
         reagents = listOf(Species.CarbonDioxide to 1, Species.Carbon to 1),
         products = listOf(Species.CarbonMonoxide to 2),
         // Favourable around 973 K, dominant above 1200 K. Quoted per kg of CO2, the principal,
-        // exactly as the row was quoted in [REDUCTIONS] — the move changes no number.
+        // exactly as the row was quoted in `REDUCTIONS` — the move changes no number.
         onsetKelvin = 973,
         baseRate = COMBUSTION_BASE_RATE,
     ),
@@ -289,7 +289,7 @@ private val WRITTEN: List<Reaction> = listOf(
      * `100 C₆H₁₂O₆ + 6 H₂O + 6 CO₂ → 101 C₆H₁₂O₆ + 6 O₂` — photosynthesis, and **the row whose
      * principal the unification had to change**.
      *
-     * It was a [Reduction] quoted against its six waters, which made water the thing the rate was a
+     * It was a `Reduction` quoted against its six waters, which made water the thing the rate was a
      * fraction of. Under the placement rule that puts the reaction *in the room's air*, and the
      * algae it makes is not something the air can hold — so a bloom would have grown into the
      * atmosphere and been dropped on the floor, silently, every pass.
@@ -324,7 +324,7 @@ private val WRITTEN: List<Reaction> = listOf(
 
     // ══ THE FIRES ═════════════════════════════════════════════════════════════════════════════
     //
-    // Increment 4b. These were [Combustion], a class earned by the fact that both reagents come out
+    // Increment 4b. These were `Combustion`, a class earned by the fact that both reagents come out
     // of the air and every product goes back into it — which under the placement rule is not a
     // property of the row at all. It is a property of where the fuel happens to be, and the pass
     // works it out.
@@ -395,7 +395,7 @@ private val WRITTEN: List<Reaction> = listOf(
 
     // ══ BURNING IN THE ROOM'S AIR ═════════════════════════════════════════════════════════════
     //
-    // Increment 4b. These were [Oxidation] — a solid in a cargo layer plus the tile's oxygen — and
+    // Increment 4b. These were `Oxidation` — a solid in a cargo layer plus the tile's oxygen — and
     // the shape that made the class was that the reagents come from two different stores. Under the
     // placement rule that is what the pass does for every row, so the class had nothing left to be.
     //
@@ -518,88 +518,236 @@ private val WRITTEN: List<Reaction> = listOf(
         onsetKelvin = 1700,
         baseRate = BASE_RATE,
     ),
+
+    // ══ THERMAL DECOMPOSITION ═════════════════════════════════════════════════════════════════
+    //
+    // Retyped out of `Decomposition.kt`, which is deleted. A carbonate gives up its CO₂, a hydrate
+    // gives up its water, a sulfide gives up its sulfur: no reagent but the reactant itself, which
+    // is what made them a separate class and is now just a row with one entry in [reagents].
+    //
+    // ⚠️ **The onsets are real temperatures**, near enough: calcite calcines around 900 °C,
+    // magnesite near 540 °C, serpentine gives up its hydroxyl water around 600 °C. They are what
+    // make the setpoint on a decomposer a *decision* — a temperature that cracks magnesite leaves
+    // calcite alone, so a mixed feed separates by heat rather than by a filter somebody wrote.
+
+    // CaCO₃ → CaO + CO₂. The marquee tier-1 reaction, named in `Furnace`'s own documentation for as
+    // long as it was impossible.
+    Reaction(
+        principal = Species.Calcite,
+        reagents = listOf(Species.Calcite to 1),
+        products = listOf(Species.Lime to 1, Species.CarbonDioxide to 1),
+        onsetKelvin = 1170,
+        baseRate = BASE_RATE,
+    ),
+    // MgCO₃ → MgO + CO₂, and at a much lower temperature than calcite — which is what makes a
+    // dolomitic feed separable by setpoint alone, and what makes the cheapest reaction in the game
+    // the one that yields the refractory everything else is fired in.
+    Reaction(
+        principal = Species.Magnesite,
+        reagents = listOf(Species.Magnesite to 1),
+        products = listOf(Species.Periclase to 1, Species.CarbonDioxide to 1),
+        onsetKelvin = 810,
+        baseRate = BASE_RATE,
+    ),
+    // Mg₃Si₂O₅(OH)₄ → Mg₂SiO₄ + MgSiO₃ + 2 H₂O. Serpentine is 13% water by mass and this is how a
+    // vessel gets it out — the marquee reason an outer-system rock is worth hauling.
+    Reaction(
+        principal = Species.Serpentine,
+        reagents = listOf(Species.Serpentine to 1),
+        products = listOf(Species.Forsterite to 1, Species.Enstatite to 1, Species.Water to 2),
+        onsetKelvin = 900,
+        baseRate = BASE_RATE,
+    ),
+    // FeS₂ → FeS + S. The sulfur leaves as vapour and has to go somewhere, which is the first time a
+    // refining step makes the room a problem rather than a backdrop.
+    //
+    // ⛔ **The one row whose energy depends on a question nobody has answered.** Sulfur's critical
+    // temperature is 1314 K and this fires at 1000 K, so it is the only species the game makes below
+    // its own critical point — where [FORMATION_ENTHALPY]'s reference phase stops being free. See
+    // there, and `FormationTest.theReferencePhaseOnlyMattersForSpeciesNamedHere`.
+    Reaction(
+        principal = Species.Pyrite,
+        reagents = listOf(Species.Pyrite to 1),
+        products = listOf(Species.Troilite to 1, Species.Sulfur to 1),
+        onsetKelvin = 1000,
+        baseRate = BASE_RATE,
+    ),
+    // 6 Fe₂O₃ → 4 Fe₃O₄ + O₂, and it takes a serious temperature. Note what it does to a room: it
+    // *makes* oxygen, so a hot bed of hematite is a slow air supply and also a reason for anything
+    // carbon nearby to catch.
+    Reaction(
+        principal = Species.Hematite,
+        reagents = listOf(Species.Hematite to 6),
+        products = listOf(Species.Magnetite to 4, Species.Oxygen to 1),
+        onsetKelvin = 1730,
+        baseRate = BASE_RATE,
+    ),
+    // C₆H₁₂O₆ → CH₄ + CO₂ + 4 H₂O + 4 C. Cooking or pyrolyzing algae cracks it into volatile gases,
+    // water vapour and a solid char residue — dead crops as a fuel source, or a life-support tank
+    // ruined by being allowed to overheat.
+    //
+    // ⚠️ **It is exothermic, and it was written as endothermic.** The row carried +65 kJ/mol until
+    // the enthalpies were derived; [FORMATION_ENTHALPY] says −166. Charring biomass warms the tile
+    // it is standing on rather than cooling it, which is the correct direction and the opposite of
+    // what the table used to claim.
+    Reaction(
+        principal = Species.Algae,
+        reagents = listOf(Species.Algae to 1),
+        products = listOf(
+            Species.Methane to 1,
+            Species.CarbonDioxide to 1,
+            Species.Water to 4,
+            Species.Carbon to 4,
+        ),
+        onsetKelvin = 353, // ~80°C -- algae dies and cooks well below mineral cracking points.
+        baseRate = BASE_RATE,
+    ),
+
+    // ══ REDUCTION ═════════════════════════════════════════════════════════════════════════════
+    //
+    // Retyped out of `Reduction.kt`, which is deleted. An oxide and a solid reductant, which was a
+    // class because it drew two reagents from one cargo layer — a distinction the placement rule
+    // abolished, since the pass asks where each reagent is regardless.
+    //
+    // ⛔ **`Reduction.catalyst` is gone with the file.** It was a rate gate bolted on for a shape
+    // that could not say "a hundred units in and a hundred and one out"; photosynthesis says it
+    // above, as an ordinary reagent on both sides, which is what a catalyst *is*.
+    //
+    // ⚠️ **The chain loops, and that is the design.** Quartz and periclase come back out of it, so
+    // what the titanium chain actually eats is carbon and heat.
+
+    // SiO₂ + 2 C → Si + 2 CO. How silicon metal is really made, in a submerged-arc furnace, at a
+    // temperature that is a problem in itself. Quartz is native and abundant, so this is the row
+    // that needs no other row to have run first.
+    Reaction(
+        principal = Species.Quartz,
+        reagents = listOf(Species.Quartz to 1, Species.Carbon to 2),
+        products = listOf(Species.Silicon to 1, Species.CarbonMonoxide to 2),
+        onsetKelvin = 2000,
+        baseRate = BASE_RATE,
+    ),
+    // 2 MgO + Si → 2 Mg + SiO₂. The Pidgeon process, really done under vacuum — the magnesium comes
+    // off as a vapour and is condensed. Here it stays a solid, because no metal in this game boils
+    // and inventing a phase for this one would be a rule that applies to nothing else.
+    //
+    // Note what it gives back: the quartz returns, so the silicon is the only thing spent.
+    Reaction(
+        principal = Species.Periclase,
+        reagents = listOf(Species.Periclase to 2, Species.Silicon to 1),
+        products = listOf(Species.Magnesium to 2, Species.Quartz to 1),
+        onsetKelvin = 1500,
+        baseRate = BASE_RATE,
+    ),
+    // Mg₂SiO₄ + 4 C → 2 MgO + Si + 2 C + 2 CO. Driven at extreme heat to force carbothermic
+    // reduction, then allowed to revert on slow cooling. The un-reverted carbon monoxide vents,
+    // leaving an intimate solid mixture of magnesia, silicon metal and carbon soot.
+    Reaction(
+        principal = Species.Forsterite,
+        reagents = listOf(Species.Forsterite to 1, Species.Carbon to 4),
+        products = listOf(
+            Species.Periclase to 2,
+            Species.Silicon to 1,
+            Species.Carbon to 2,
+            Species.CarbonMonoxide to 2,
+        ),
+        onsetKelvin = 1800,
+        baseRate = BASE_RATE,
+    ),
+    // MgSiO₃ + 3 C → MgO + Si + C + 2 CO. Pyroxene processing at high heat. Enstatite carries far
+    // more silica than forsterite, so its slow-cooled reversion yields a structural surplus of
+    // silicon metal while venting a cleaner ratio of carbon monoxide.
+    Reaction(
+        principal = Species.Enstatite,
+        reagents = listOf(Species.Enstatite to 1, Species.Carbon to 3),
+        products = listOf(
+            Species.Periclase to 1,
+            Species.Silicon to 1,
+            Species.Carbon to 1,
+            Species.CarbonMonoxide to 2,
+        ),
+        onsetKelvin = 1800,
+        baseRate = BASE_RATE,
+    ),
+    // Fe₂SiO₄ + 2 C → 2 Fe + Si + 2 CO₂. Iron holds oxygen less tightly than magnesium does, so this
+    // olivine cracks a good deal cooler — and the iron drops out as solid metal without any gaseous
+    // reversion, leaving a clean unit of silicon behind.
+    //
+    // ⚠️ **It is not the cheap row it used to look like.** The table claimed 210 kJ per formula unit
+    // until the enthalpies were derived; [FORMATION_ENTHALPY] says 691, and the comment that used to
+    // stand here argued from the low onset to a low energy as though the two were the same fact.
+    // They are not: the onset says when it *starts*, and the enthalpy says what it *costs*. ⛔ Note
+    // also that this row and the ferrosilite one below make CO₂ where every other carbothermic row
+    // here makes CO, which is worth a second look — CO is the favoured product at these
+    // temperatures, and it is what the Boudouard row exists to say.
+    Reaction(
+        principal = Species.Fayalite,
+        reagents = listOf(Species.Fayalite to 1, Species.Carbon to 2),
+        products = listOf(Species.Iron to 2, Species.Silicon to 1, Species.CarbonDioxide to 2),
+        onsetKelvin = 1250,
+        baseRate = BASE_RATE,
+    ),
+    // 2 FeSiO₃ + 3 C → 2 Fe + 2 Si + 3 CO₂. The iron twin to enstatite, and like it a 1:1 mineral
+    // structure that yields a large silicon surplus relative to the iron — at mid-tier furnace
+    // temperatures.
+    //
+    // ⚠️ The only row that consumes two units of its principal, so the only one where the formula
+    // mass and the molar mass are different numbers. ⚠️ It claimed 480 kJ and is worth 1208; see the
+    // fayalite row above, which drifted the same way and for the same reason.
+    Reaction(
+        principal = Species.Ferrosilite,
+        reagents = listOf(Species.Ferrosilite to 2, Species.Carbon to 3),
+        products = listOf(Species.Iron to 2, Species.Silicon to 2, Species.CarbonDioxide to 3),
+        onsetKelvin = 1200,
+        baseRate = BASE_RATE,
+    ),
+    // FeTiO₃ + C → Fe + TiO₂ + CO. The Becher process: carbon takes the *iron's* oxygen and leaves
+    // the titanium's alone, which is the whole trick — carbon cannot touch titania and does not have
+    // to. Two useful solids out of one common rock, and ilmenite is six times commoner than rutile.
+    Reaction(
+        principal = Species.Ilmenite,
+        reagents = listOf(Species.Ilmenite to 1, Species.Carbon to 1),
+        products = listOf(Species.Iron to 1, Species.Rutile to 1, Species.CarbonMonoxide to 1),
+        onsetKelvin = 1200,
+        baseRate = BASE_RATE,
+    ),
+    // TiO₂ + 2 Mg → Ti + 2 MgO. Magnesiothermic reduction, and **exothermic** — magnesium wants
+    // oxygen badly enough that this pays for itself once lit, which is exactly the property that
+    // makes magnesium the reductant and carbon not. The periclase returns to feed the Pidgeon row.
+    //
+    // ⛔ **Carbon will not reduce titania**; it gives the carbide, which is why Kroll exists. A
+    // one-row `Rutile + C → Ti` would be the hand-written fiction these tables refuse, and the chain
+    // has to make a stronger reductant first.
+    Reaction(
+        principal = Species.Rutile,
+        reagents = listOf(Species.Rutile to 1, Species.Magnesium to 2),
+        products = listOf(Species.Titanium to 1, Species.Periclase to 2),
+        onsetKelvin = 1100,
+        baseRate = BASE_RATE,
+    ),
 )
 
 /**
  * Every reaction in the game, in a fixed order — the whole of the game's chemistry, in one shape.
  *
- * ### ⚠️ Half of these are still *derived* from the old tables, on purpose
+ * ⛔ **One list, written once.** Until 2026-09-05 half of these were converted out of
+ * `DECOMPOSITIONS` and `REDUCTIONS` as the list was built, because retyping twenty-two rows of
+ * stoichiometry by hand is twenty-two chances to transpose a digit into a table where a wrong number
+ * is invisible. That was the right order to migrate in and it is not a resting place: the rows are
+ * typed here now and both files are deleted, so there is no second shape a reaction can be written
+ * in and no conversion step to keep honest.
  *
- * [WRITTEN] is the rows that have been rewritten in this shape by hand. The rest are converted from
- * [DECOMPOSITIONS] and [REDUCTIONS] as the list is built.
- *
- * That is a migration step and it is deliberately the *safe* order. Twenty-two rows carrying
- * hand-copied stoichiometry, onsets and enthalpies is twenty-two chances to transpose a digit into a
- * table where a wrong number is invisible — it balances by eye, it passes every test that exists,
- * and it yields the wrong amount of the right thing for ever. Converting them mechanically means the
- * *pass* can be proved to run all of them before anybody retypes a formula.
- *
- * ⛔ **The sweeps that used to read those tables are gone.** A row here and a sweep there would be
- * two engines running the same reaction, which is worse than either. `DECOMPOSITIONS` and
- * `REDUCTIONS` are data for this list and nothing else reads them.
+ * ⚠️ **What made the retype safe was the enthalpies becoming derived first.** The one number that
+ * could not be checked by eye is no longer carried by a row at all — see [FORMATION_ENTHALPY] — so
+ * what was actually transcribed is formula units, onsets and rates, every one of which
+ * `UnifiedReactionTest` closes atom by atom against [MINERALS].
  *
  * ### Order is for reproducibility, not for priority
  *
  * Contention is settled by demand before anything is taken, so which row comes first changes only
  * the rounding. It must stay fixed for the simulation to be deterministic and it means nothing else.
+ * ⚠️ The order here is the order the converted list had, so the retype moved no row.
  */
-val REACTIONS: List<Reaction> = buildList {
-    addAll(WRITTEN)
-    for (d in DECOMPOSITIONS) {
-        add(
-            Reaction(
-                principal = d.reactant,
-                reagents = listOf(d.reactant to d.reactantUnits),
-                products = d.products,
-                onsetKelvin = d.onsetKelvin,
-                baseRate = d.baseRate,
-            ),
-        )
-    }
-    for (r in REDUCTIONS) {
-        add(
-            Reaction(
-                principal = r.oxide,
-                // ⚠️ **The catalyst becomes an ordinary reagent on both sides**, which is what a
-                // catalyst is: `100 ALGAE + 6 H₂O + 6 CO₂ → 101 ALGAE + 6 O₂`. The separate
-                // [Reduction.catalyst] field was a bodge for a shape that could not say it, and the
-                // shape can now — the hundred units bound the rate because they are contended like
-                // any other reagent, so a bloom still grows in proportion to itself and nothing
-                // special had to be written to make it.
-                //
-                // ⛔ It balances by mass, which is the only reason this is safe: 100 glucose + 6
-                // water + 6 CO₂ is 18372 g, and 101 glucose + 6 O₂ is 18372 g. A catalyst that did
-                // not close would be matter created every pass.
-                reagents = withCatalyst(
-                    listOf(r.oxide to r.oxideUnits, r.reductant to r.reductantUnits),
-                    r.catalyst,
-                    r.catalystUnits,
-                ),
-                products = withCatalyst(r.products, r.catalyst, r.catalystUnits),
-                onsetKelvin = r.onsetKelvin,
-                baseRate = r.baseRate,
-            ),
-        )
-    }
-}
-
-/**
- * [entries] with [catalyst] added to them, or [entries] unchanged if there is no catalyst.
- *
- * The twin of `SpeciesInfo.kt`'s function of the same name, and it exists twice on purpose for
- * exactly as long as the reference and the simulation disagree about what a catalyst is: this one
- * makes it true, that one makes it *readable*. When [REDUCTIONS] is retyped in this shape the
- * catalyst field goes with it and both disappear.
- */
-private fun withCatalyst(
-    entries: List<Pair<Species, Int>>,
-    catalyst: Species?,
-    units: Int,
-): List<Pair<Species, Int>> {
-    if (catalyst == null) return entries
-    if (entries.none { it.first == catalyst }) return listOf(catalyst to units) + entries
-    return entries.map { (species, n) -> if (species == catalyst) species to (n + units) else species to n }
-}
+val REACTIONS: List<Reaction> = WRITTEN
 
 /** The widest [REACTIONS] gets, for the per-reagent scratch a sweep hoists once. */
 val WIDEST_REACTION: Int = REACTIONS.maxOf { it.reagents.size }
