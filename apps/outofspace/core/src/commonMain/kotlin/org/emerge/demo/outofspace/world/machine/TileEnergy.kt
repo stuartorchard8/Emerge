@@ -95,12 +95,17 @@ class TileEnergy private constructor(private val perTile: LongArray) {
 /**
  * Machine input buffers hold this much before they stop accepting.
  *
- * **Derivation**: two belt-loads — and the two is a **floor**, not a preference. A concentrator
- * begins a batch by lifting [Concentrator.CHARGE_MASS] out of this buffer in one piece and does
- * nothing whatever when it comes up short, while `acceptInto` fills the buffer to here and no
- * further. So a buffer shallower than a charge is not a slower concentrator, it is one that never
- * runs: measured at one belt-load, the starter plant's gauges read a flat zero and its refinery line
- * banked nothing, permanently. `CHARGE_MASS` is two belt-loads, so this is two belt-loads.
+ * **Derivation**: two belt-loads, and the floor under it is a real one — a machine that opens a
+ * batch by lifting a fixed charge out of this buffer does nothing whatever when it comes up short,
+ * while `acceptInto` fills the buffer to here and no further. So a buffer shallower than a charge is
+ * not a slower machine, it is one that never runs: measured at one belt-load, the starter plant's
+ * gauges read a flat zero and its refinery line banked nothing, permanently.
+ *
+ * ⚠️ **The concentrator no longer answers to this and no longer sets the floor.** Its feed is capped
+ * at one charge in `acceptInto`, because what it takes in bounds what one action can push into an
+ * output that may already hold a residue too small to ship — see [Concentrator.CHARGE_MASS]. Nothing
+ * else aboard lifts a fixed charge today, so this figure is now sized by the general argument above
+ * rather than by any one machine.
  *
  * ⚠️ **This was four tonnes, sized in *ticks of throughput*** — and the note here argued at length
  * against ever writing it as a multiple of `PACKET_MASS`, because doing so had once let it shrink

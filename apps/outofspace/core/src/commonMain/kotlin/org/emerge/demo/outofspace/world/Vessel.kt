@@ -1204,7 +1204,7 @@ fun fullness(machine: DeckMachine?, centre: TileIndex, grid: Grid, buffers: Buff
     // dwarfs the ground ore, so counting it would peg the sensor the moment the machine took a bite.
     is Extractor -> (buffers.massAt(bufferTile(grid, machine, centre, BufferRole.Product)!!) *
         SignalField.FULL / Extractor.BUFFER_CAP).toInt()
-    is Concentrator -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
+    is Concentrator -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / (Concentrator.CHARGE_MASS + MACHINE_OUTPUT_CAP * 2)).toInt()
     is Furnace -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP)).toInt()
     is Thruster -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / MACHINE_BUFFER_CAP).toInt()
     // ⛔ **Against the two feeds and NOT the chamber.** A chamber is a few kilograms that empty every

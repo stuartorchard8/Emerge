@@ -13,7 +13,9 @@ import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.Concentrator
+import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.machine.DeckArray
+import org.emerge.demo.outofspace.world.machine.MACHINE_OUTPUT_CAP
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -155,6 +157,64 @@ class ConcentratorBankTest {
             "the machine never got going on the new species once its bank was clear",
         )
         assertEquals(started, massIn(s), "and a species change conserves mass")
+    }
+
+    /**
+     * ⛔ **A hopper's cap is a stop-threshold, not a ceiling the next batch has to fit under.**
+     *
+     * Stu's save, 2026-09-05: the concentrator at (9,12) wedged for good. Its tailings hopper held
+     * 82.8 kg — *below a packet*, so `holdsBack` would not let it ship — and the charge in the
+     * chamber assayed 12% dominant, so the next action's tailings came to 181.4 kg. 82.8 + 181.4 is
+     * over the 200 kg cap, so the deposit was refused, and neither number could ever change again.
+     *
+     * The bug was asking whether the *deposit* would fit. [MACHINE_OUTPUT_CAP] says what a buffer
+     * holds "before the machine stops **running**" — a threshold read off what is there, which
+     * shipping always reduces. Asked that way a stall is always temporary; asked predictively it is
+     * a deadlock whenever a residue too small to ship meets a batch too big to fit beside it.
+     *
+     * ⚠️ **A low-purity charge is what makes this reachable**, and it is the ordinary case: the less
+     * of the dominant species there is, the *more* tailings one action makes. A rich ore never gets
+     * near it. That is why this was found in a real save and not by the ore body the fixtures use.
+     */
+    @Test
+    fun `a part-packet of tailings does not wedge the machine for good`() {
+        // 12% dominant, like the charge that wedged, and the rest spread thin enough that nothing
+        // else overtakes it. ⚠️ **The spread is the point, not decoration**: put the remainder in one
+        // filler species and that species becomes dominant, the draw is large, and the tailings are
+        // small — which is the case that does NOT wedge. A real ore body has ninety species in it.
+        val share = Concentrator.CHARGE_MASS * 11L / 100L
+        val poor = Mixture.of(
+            Species.Forsterite to Concentrator.CHARGE_MASS * 12L / 100L,
+            Species.Anorthite to share,
+            Species.Quartz to share,
+            Species.Fayalite to share,
+            Species.Enstatite to share,
+            Species.Albite to share,
+            Species.Troilite to share,
+            Species.Water to share,
+            Species.Calcite to share,
+            energy = 0L,
+        )
+        val residue = Capacity.PACKET_MASS * 83L / 100L
+        var s = world(poor).also {
+            it.buffers.put(
+                bufferTile(grid, it.deck[mill]!!, mill, BufferRole.Waste)!!,
+                poor.scaledTo(residue).atAmbient(),
+            )
+        }
+
+        s = run(s, 400)
+
+        assertTrue(
+            (s.inStore(below, BufferRole.Inside)?.total ?: 0L) > 0L,
+            "no tailings ever reached the tank: the machine is wedged, holding " +
+                "${(s.inStore(mill, BufferRole.Waste)?.total ?: 0L)}g against a cap of $MACHINE_OUTPUT_CAP",
+        )
+        assertTrue(
+            (s.inStore(mill, BufferRole.Product)?.total ?: 0L) > 0L ||
+                (s.inStore(forward, BufferRole.Inside)?.total ?: 0L) > 0L,
+            "the machine never banked any concentrate, so it never completed an action",
+        )
     }
 
     /** Every gram aboard, wherever it is standing. */

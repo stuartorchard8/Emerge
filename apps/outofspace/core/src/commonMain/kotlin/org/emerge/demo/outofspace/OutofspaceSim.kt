@@ -1373,12 +1373,24 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val r = process(inProgress, m.efficiencyPermille)
             val banked = store(m, tile, BufferRole.Product)
             val tailings = store(m, tile, BufferRole.Waste)
-            // ⛔ **A full hopper blocks the machine, where any packet at all used to.** Both stores
-            // are hoppers now rather than a pair of finished packets, so the question is whether
-            // this charge's share *fits* — and a charge that does not fit waits where it is, which
-            // backs up into the input and then up the belt, the way every other blockage does.
-            if ((banked?.total ?: 0L) + r.product.total > MACHINE_OUTPUT_CAP ||
-                (tailings?.total ?: 0L) + r.tailings.total > MACHINE_OUTPUT_CAP
+            // ⛔ **A hopper that is ALREADY full blocks the machine — not one the next batch would
+            // overfill.** [MACHINE_OUTPUT_CAP] says what a buffer holds "before the machine stops
+            // *running*", and the distinction is the difference between a stall and a deadlock: a
+            // threshold read off what is standing there is always relieved by shipping, while a
+            // ceiling the next batch has to fit under can be permanently unsatisfiable.
+            //
+            // ⚠️ **Stu's save, 2026-09-05.** The concentrator at (9,12) held 83 kg of tailings —
+            // under a packet, so `holdsBack` would not ship it — and its charge would have made
+            // another 181 kg. 83 + 181 was over the cap, so the deposit was refused, and neither
+            // figure could ever change again. Sizing the feed at one charge stops that arising (see
+            // [Concentrator.CHARGE_MASS]); asking the question this way round stops it *mattering*,
+            // and rescues the machines already wedged by it.
+            //
+            // A deposit may therefore take a hopper past its cap, by at most one action's output.
+            // The machine then stops until the rail has taken enough away, which is the same
+            // visible backing-up every other blockage in the game has.
+            if ((banked?.total ?: 0L) >= MACHINE_OUTPUT_CAP ||
+                (tailings?.total ?: 0L) >= MACHINE_OUTPUT_CAP
             ) {
                 return m.copy(progress = m.ticksPerAction, carry = carry)
             }
@@ -4778,6 +4790,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // A doorway, not a warehouse — see [DockingPort.CAP]. Cargo waiting to be sold
                 // should be waiting somewhere the player can change their mind about it.
                 is DockingPort -> DockingPort.CAP
+                // ⛔ **One charge and no more, which is a deadlock bound rather than a preference.**
+                // Whatever it takes in comes back out of two mouths that hold two belt-loads apiece,
+                // and an output left holding a residue too small to ship must still have room for a
+                // whole action beside it. See [Concentrator.CHARGE_MASS], which carries the argument
+                // and the save that made it.
+                is Concentrator -> Concentrator.CHARGE_MASS
                 else -> MACHINE_BUFFER_CAP
             }
             if ((existing?.total ?: 0L) >= cap) return null

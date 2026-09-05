@@ -60,6 +60,28 @@ data class Concentrator(
     override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
 
     companion object {
-        const val CHARGE_MASS = Capacity.PACKET_MASS*2
+        /**
+         * What it lifts out of its feed to work in one go: **one belt-load**.
+         *
+         * ⛔ **This is half of a bound the machine cannot deadlock inside**, and the other half is
+         * [org.emerge.demo.outofspace.world.machine.MACHINE_OUTPUT_CAP]. An output hopper can be
+         * left holding a residue too small to ship — under a packet, since the kind ships whole ones
+         * — and the next action then has to fit *beside* it. Worst case a whole charge comes out of
+         * one mouth (the draw is everything, or nothing), so
+         *
+         *     output cap  >=  charge + one packet
+         *
+         * has to hold or the machine wedges: refused the deposit, and unable to ship what would make
+         * room for it. At 200 kg out and 100 kg in it holds with nothing to spare, which is the
+         * point — both numbers are one belt-load apart and neither is free to drift.
+         *
+         * ⚠️ **Stu's save, 2026-09-05: the concentrator at (9,12), wedged for good.** A 200 kg charge
+         * assaying 12% dominant made 181 kg of tailings, on top of 83 kg already banked, against a
+         * 200 kg cap. Nothing about either number could change again. It was two belt-loads before.
+         *
+         * ⚠️ **Throughput per action halved and `ticksPerAction` was left alone**, so the machine is
+         * half as fast as it was. That is a dial rather than a consequence — see [ticksPerAction].
+         */
+        val CHARGE_MASS = Capacity.PACKET_MASS
     }
 }
