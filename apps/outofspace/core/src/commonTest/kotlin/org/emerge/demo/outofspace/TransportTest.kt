@@ -612,15 +612,16 @@ class TransportTest {
     // ── Bunching up against a blockage ────────────────────────────────────────
 
     /**
-     * A jammed run queues, tile by tile, and loses nothing doing it.
+     * A jammed run compacts against the blockage, and loses nothing doing it.
      *
-     * ⚠️ This used to assert the opposite shape — that the four lumps *bunched into one* at the end.
-     * They no longer merge at all (Stu, 2026-08-19), so what a jam looks like now is a queue rather
-     * than a pile. The property worth keeping is the one underneath either behaviour: material
-     * pressed against a blockage is still all there, on as many tiles as it takes.
+     * ⚠️ **This assertion has now been round the houses**, and the invariant underneath is the
+     * reason it survived both trips: material pressed against a blockage is still all there. It
+     * asserted bunching, then queueing when merging was withdrawn (Stu, 2026-08-19), and bunching
+     * again now that lumps no filter can tell apart may combine. Four quarter-loads of one metal are
+     * exactly one packet, so the queue ends as a single full lump.
      */
     @Test
-    fun `a jammed run queues without losing anything`() {
+    fun `a jammed run compacts without losing anything`() {
         val n = net().row(2, 8, 3)
         val f = n.toward(grid.tile(8, 3).index)
         val h = held(
@@ -632,11 +633,16 @@ class TransportTest {
         )
         repeat(8) { step(f, h) }
 
-        assertEquals(4, (2..8).count { h[grid.tile(it, 3).index] != null }, "four lumps went in")
+        // The property that held under every version of this test.
         assertEquals(
-            listOf(share(250), share(250), share(250), share(250)),
-            (5..8).map { h[grid.tile(it, 3).index]?.total },
-            "and four identical lumps should be queued against the blocked end",
+            share(1000),
+            (2..8).sumOf { h[grid.tile(it, 3).index]?.total ?: 0L },
+            "the jam lost or invented material while compacting",
+        )
+        assertEquals(1, (2..8).count { h[grid.tile(it, 3).index] != null }, "four quarters make one packet")
+        assertEquals(
+            share(1000), h[grid.tile(8, 3).index]?.total,
+            "and it should be standing at the blocked end, not part way down the run",
         )
     }
 
@@ -835,24 +841,44 @@ class TransportTest {
     }
 
     /**
-     * ⛔ **A packet is never merged into.** Two half-loads pressed together on a jammed run stay two
-     * half-loads: the one behind queues, and neither changes composition.
+     * ⛔ **Two lumps that a filter could tell apart are never merged.** Iron pressed against copper
+     * on a jammed run stays iron and copper: the one behind queues, and neither changes composition.
      *
-     * This is the rule that replaced belt blending (Stu, 2026-08-19). A lump whose contents can
-     * change under whatever happens to be routed at it has no stable answer to "what is on its way
-     * to this tile", and that question is the whole of demand-based flow. Blending is a storage
-     * operation now.
+     * This is what survives of the rule that replaced belt blending (Stu, 2026-08-19). A lump whose
+     * contents can change under whatever happens to be routed at it has no stable answer to "what is
+     * on its way to this tile", and that question is the whole of demand-based flow. Merging is
+     * allowed again only between lumps no filter can distinguish — see [RailMergeTest], and
+     * [RailLayer.squashInto] for both arms of the gate. This is the guard on that gate: widen it by
+     * accident and this test is what says so.
      */
     @Test
     fun `two lumps pressed together stay two lumps`() {
+        val iron = SolidPacket(Mixture.of(Species.Iron to share(400), energy = 0))
+        val copper = SolidPacket(Mixture.of(Species.Copper to share(400), energy = 0))
+        val n = net().row(2, 5, 3)
+        val f = n.toward(grid.tile(5, 3).index)
+        val h = held(n, grid.tile(4, 3) to iron, grid.tile(5, 3) to copper)
+
+        step(f, h)
+        assertEquals(share(400), h[grid.tile(5, 3).index]?.total, "the lump ahead grew")
+        assertEquals(share(400), h[grid.tile(4, 3).index]?.total, "and the one behind should have queued")
+        assertEquals(
+            0L, h[grid.tile(5, 3).index]?.get(Species.Iron),
+            "iron got into the copper, which is the change no filter may be shown",
+        )
+    }
+
+    /** And the other arm: the same metal, pure on both sides, does combine. */
+    @Test
+    fun `two lumps of one metal pressed together become one`() {
         val half = SolidPacket(Mixture.of(Species.Iron to share(400), energy = 0))
         val n = net().row(2, 5, 3)
         val f = n.toward(grid.tile(5, 3).index)
         val h = held(n, grid.tile(4, 3) to half, grid.tile(5, 3) to half)
 
         step(f, h)
-        assertEquals(share(400), h[grid.tile(5, 3).index]?.total, "the lump ahead grew")
-        assertEquals(share(400), h[grid.tile(4, 3).index]?.total, "and the one behind should have queued")
+        assertEquals(share(800), h[grid.tile(5, 3).index]?.total, "the two did not combine")
+        assertNull(h[grid.tile(4, 3).index], "and the tile behind was not freed")
     }
 
     /** A tile carrying anything has no room at all, however light what it carries. */

@@ -27,9 +27,9 @@ import org.emerge.demo.outofspace.logistics.SolidPacket
  *
  * [moveInto] and the empty case of [squashInto] never allocate: they walk the source's present
  * species and hand the masses over. That matters because they are the inner loop of every belt in
- * the vessel. The partial-merge path *does* allocate, deliberately — it defers to [squashOnto] so
- * the capacity, form and powder rules live in one place, and it is the rare case: it happens only
- * when a lump is pressed against a partly-full one ahead of it.
+ * the vessel. The **merging** path does allocate, deliberately: it reads both lumps out as mixtures
+ * so the gate can ask what they are made of. It is the rare case — it happens only when a lump is
+ * pressed against one ahead of it that has nowhere to go.
  */
 /** What came of pressing one lump into another — see [RailLayer.squashInto]. */
 enum class Squash { Refused, Partial, Complete }
@@ -45,10 +45,12 @@ class RailLayer(val stuff: StuffLayer) {
     /**
      * How much may be set down at [tile]: a whole belt-load, or nothing at all.
      *
-     * ⛔ **A tile carrying anything has no room**, however light what it carries. Since a packet is
-     * never merged into (see [squashInto]) the only sizes that mean anything are "empty" and "not",
-     * and saying so here is what keeps every producer's `room <= 0` guard honest — otherwise they
-     * size a part-packet against a gap they will then be refused.
+     * ⛔ **A tile carrying anything has no room**, however light what it carries — and that is still
+     * true now that lumps on a jammed run may combine. This answers for [loadOnto], which is a
+     * *producer setting a lump down* and refuses an occupied tile outright; merging happens between
+     * two lumps already on the track and goes through [squashInto]. The only sizes that mean anything
+     * here are "empty" and "not", which is what keeps every producer's `room <= 0` guard honest —
+     * otherwise they size a part-packet against a gap they will then be refused.
      */
     fun headroom(tile: TileIndex): Long = if (isEmpty(tile)) Capacity.PACKET_MASS else 0L
 
@@ -97,8 +99,8 @@ class RailLayer(val stuff: StuffLayer) {
      *
      * The whole lump when [mass] covers it, and null when there is nothing to hand over.
      *
-     * ⛔ **This is a draw, not a merge.** A packet is never *added to* — see [squashInto] — but it
-     * has always been something that can be **taken from**: a construction site skims what it needs
+     * ⛔ **This is a draw, not a merge.** A packet is only ever *added to* under [squashInto]'s gate
+     * — but it has always been something that can be **taken from**: a construction site skims what it needs
      * off a lump standing on it and lets the remainder ride on. This is that same skim, performed by
      * a tile that has more than one way out, so that a route wanting 30kg of a 100kg lump takes 30kg
      * and the other 70kg goes the other way. Everything that made merging untenable — a lump's
@@ -131,36 +133,86 @@ class RailLayer(val stuff: StuffLayer) {
     }
 
     /**
-     * Move the lump at [from] onto [to] if [to] is free.
+     * Move the lump at [from] onto [to], **or into it** where the two cannot be told apart by
+     * anything that decides where a lump may go.
      *
-     * ⛔ **A packet is never merged into another packet.** Once minted a lump can be *taken from* —
-     * a construction site skims what it needs, a machine lifts it off — but nothing is ever poured
-     * into it. Stu, 2026-08-19.
+     * ### Why merging is allowed again, and only like this
      *
-     * It used to press one into the other as far as it would go, which is what made belt blending
-     * possible and is why the plan's alloy section named it as a route. It caused more trouble than
-     * it was worth: a lump's composition changed under whatever was already routed toward it, so a
-     * delivery a construction site had admitted could turn into one it would have refused, and every
-     * question of the form "what is on its way to this tile" stopped having a stable answer. That
-     * becomes untenable with demand-based flow, where the whole point is knowing what a packet is
-     * *before* deciding where it may go. Blending is a **storage** operation now, and only that.
+     * It used to press one lump into another as far as it would go, and that was withdrawn on
+     * 2026-08-19 for a specific reason: a lump's composition changed under whatever happened to be
+     * routed at it, so a delivery a construction site had already admitted could turn into one it
+     * would have refused, and every question of the form "what is on its way to this tile" stopped
+     * having a stable answer. With demand-based flow that is untenable.
      *
-     * [Squash.Partial] can therefore no longer happen, and the type keeps it only because
-     * [advanceSegments] reads [Squash.Refused] to mean "try the next way on".
+     * Two lumps may combine here only if that cannot happen:
+     *
+     *  - **pure + pure of the same species** — the composition is *identical*, so every filter in
+     *    the game gives the same answer about the merged lump as about either part. This is a proof
+     *    rather than a judgement, and it holds whatever filters are added later.
+     *  - **blend + blend** — the composition does change, and since `SpeciesFilter` collapsed to
+     *    pure / mixed / no-opinion there is nothing left that admits some blends and refuses others.
+     *    A construction site wants its recipe at `BUILD_PURITY_PERCENT`, an electrolyzer wants pure
+     *    water, and a concentrator asks for `MIXED` — which is invariant here, because two blends
+     *    cannot combine into a single species.
+     *
+     * ⛔ **Pure and blend never combine**, which is what keeps the first arm's proof intact: grit
+     * poured into a pure lump is exactly the change no filter may be shown.
+     *
+     * ⚠️ **This revives dead code.** [org.emerge.demo.outofspace.world.advanceSegments] skips any
+     * successor that is empty before reaching its squash-forward block, so it only ever called this
+     * with an occupied destination — which refused every time. The loop has been unreachable in
+     * effect since merging was withdrawn.
+     *
+     * [Squash.Partial] can therefore happen again, and the caller reads it the way it always meant
+     * to: something moved, and the source tile is still occupied by what would not fit.
      */
     fun squashInto(from: TileIndex, to: TileIndex): Squash {
         if (isEmpty(from)) return Squash.Complete
-        if (!isEmpty(to)) return Squash.Refused
-        moveInto(from, to)
-        return Squash.Complete
+        if (isEmpty(to)) {
+            moveInto(from, to)
+            return Squash.Complete
+        }
+        val ahead = resourceAt(to) ?: return Squash.Refused
+        val incoming = resourceAt(from) ?: return Squash.Refused
+        if (!mayCombine(ahead, incoming)) return Squash.Refused
+
+        val room = Capacity.PACKET_MASS - ahead.total
+        if (room <= 0L) return Squash.Refused
+        if (room >= incoming.total) {
+            put(to, ahead + incoming)
+            put(from, null)
+            return Squash.Complete
+        }
+        // ⚠️ A proportional slice, so what stays behind is the same blend that arrived and not the
+        // good bits skimmed off it — the property [splitInto] rests on, needed here for the same
+        // reason. Both arms keep it: a pure lump has one species to apportion.
+        val moving = incoming.take(room)
+        if (moving.isEmpty) return Squash.Refused
+        put(to, ahead + moving)
+        put(from, incoming - moving)
+        return Squash.Partial
+    }
+
+    /**
+     * Whether two lumps may become one — see [squashInto], which argues both arms.
+     *
+     * Disjoint by construction: a lump is either one species or more than one, and the two arms
+     * never see the same pair.
+     */
+    private fun mayCombine(ahead: Mixture, incoming: Mixture): Boolean {
+        val aheadIsPure = ahead.impurities == 0L
+        if (aheadIsPure != (incoming.impurities == 0L)) return false
+        return !aheadIsPure || ahead.dominant == incoming.dominant
     }
 
     /**
      * Put [resource] down at [tile], which must be free.
      *
-     * False when something is already riding there — see [squashInto] for why nothing is ever added
-     * to a lump that already exists. A machine with nowhere to set its output down simply waits,
-     * which is what it did whenever the tile ahead was full anyway.
+     * False when something is already riding there. ⚠️ **Deliberately not merging**, where
+     * [squashInto] does: this is a machine putting fresh material onto the track, and a port that
+     * topped up whatever happened to be passing would be blending at the door rather than in a jam.
+     * A machine with nowhere to set its output down simply waits, which is what it did whenever the
+     * tile ahead was full anyway.
      */
     fun loadOnto(tile: TileIndex, resource: Mixture): Boolean {
         if (!isEmpty(tile)) return false

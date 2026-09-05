@@ -174,12 +174,11 @@ private fun mayMerge(
 }
 
 /**
- * Merges [incoming] into [ahead] where the two can genuinely combine, else null.
+ * Merges [incoming] into [ahead] where capacity allows, else null.
  *
- * Only capacity stands in the way now. This used to also refuse anything that was not a powder —
- * two ingots pressed together on a jammed belt are still two ingots — and that rule went with
- * [org.emerge.demo.outofspace.chem.Mixture] becoming the only thing a packet is. It is the *reason*
- * belt blending works: everything on a belt is a heap, and heaps combine.
+ * ⚠️ **Not the merge rule, and nothing on the transport path calls this.** What decides whether two
+ * lumps on a run may become one is [org.emerge.demo.outofspace.world.RailLayer.squashInto], which
+ * asks what they are *made of* — this only asks whether they fit. Reach for that one.
  */
 fun squashOnto(ahead: Packet, incoming: Packet): MergeResult? {
     if (Capacity.headroom(ahead) <= 0L) return null
