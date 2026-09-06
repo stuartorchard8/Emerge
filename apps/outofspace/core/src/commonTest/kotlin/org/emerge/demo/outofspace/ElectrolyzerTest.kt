@@ -3,6 +3,8 @@ package org.emerge.demo.outofspace
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.conservationOf
+import org.emerge.demo.outofspace.chem.Electrolysed
+import org.emerge.demo.outofspace.chem.cellAction
 import org.emerge.demo.outofspace.chem.electrolyse
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.BufferLayer
@@ -18,6 +20,7 @@ import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Electrolyzer
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -102,6 +105,19 @@ class ElectrolyzerTest {
 
     private fun water(packets: Long = 8L): Mixture =
         Mixture.of(Species.Water to packets * Capacity.PACKET_MASS, energy = 0L).atAmbient()
+
+    /**
+     * One pass of the cell over [charge], the way the machine runs it.
+     *
+     * ⛔ **This used to be `electrolyse(charge)` and there used to be a hand-written
+     * `2 H₂O → 2 H₂ + O₂` behind it.** There is not any more — [cellAction] competes the charge
+     * against `HALF_REACTIONS` and water splits because water is all there is. Every assertion below
+     * is the one it was; only the call changed.
+     */
+    private fun split(charge: Mixture): Electrolysed {
+        val action = cellAction(charge, Electrolyzer.APPLIED_MILLIVOLTS)!!
+        return electrolyse(charge, action, charge.total)!!
+    }
 
     /** Everything cargo anywhere: every store, plus whatever is standing on a belt. */
     private fun everywhere(s: VesselState): Long {
@@ -214,17 +230,23 @@ class ElectrolyzerTest {
         // saying out loud, because the moment it stops being exact the remainder has to go somewhere
         // and nothing downstream is expecting it.
         val charge = water(4)
-        val made = electrolyse(charge)
+        val made = split(charge)
 
-        assertEquals(charge.total, made.hydrogen.total + made.oxygen.total, "mass went missing in the split")
-        assertEquals(charge.energy, made.hydrogen.energy + made.oxygen.energy, "heat went missing in the split")
+        // ⚠️ **Against what the pass consumed, not against the whole charge, and that is a real
+        // change.** The cell runs *whole* passes only — a partial one would have to round its
+        // stoichiometry, and rounding is exactly where a gram gets invented once a reaction has more
+        // than one reagent. A four-packet charge is 4e11 against a 36-unit pass, so four micrograms
+        // out of four hundred tonnes do not divide and stay behind. `split` in `OutofspaceSim` puts
+        // that remainder back on the feed, and `the plant invented or lost mass` is what proves it.
+        assertEquals(made.consumed.total, made.cathode.total + made.anode.total, "mass went missing in the split")
+        assertEquals(made.consumed.energy, made.cathode.energy + made.anode.energy, "heat went missing in the split")
 
         // ⚠️ **Within the flooring remainder, and it has to be.** The hydrogen is computed and the
         // oxygen is `total − hydrogen`, so a charge whose mass is not a multiple of nine leaves its
         // remainder on the oxygen side — up to eight units of the smallest mass the game counts in.
         // Asserting exact equality here is asserting that integer division does not floor. What is
         // exact, and is checked above, is that the two halves sum back to what went in.
-        val drift = made.oxygen.total - made.hydrogen.total * 8L
+        val drift = made.anode.total - made.cathode.total * 8L
         assertTrue(drift in 0L..8L, "the ratio is not 1:8 to within a rounding remainder; out by $drift")
     }
 
@@ -234,12 +256,12 @@ class ElectrolyzerTest {
         // down by the whole charge, the two gases are up by their shares, and **every other species
         // in the table moved by zero**.
         val charge = water(4)
-        val made = electrolyse(charge)
-        val delta = conservationOf(listOf(charge), listOf(made.hydrogen, made.oxygen))
+        val made = split(charge)
+        val delta = conservationOf(listOf(made.consumed), listOf(made.cathode, made.anode))
 
-        assertEquals(charge.total, delta[Species.Water.ordinal], "the water was not all consumed")
-        assertEquals(-made.hydrogen.total, delta[Species.Hydrogen.ordinal], "the hydrogen does not add up")
-        assertEquals(-made.oxygen.total, delta[Species.Oxygen.ordinal], "the oxygen does not add up")
+        assertEquals(made.consumed.total, delta[Species.Water.ordinal], "the water was not all consumed")
+        assertEquals(-made.cathode.total, delta[Species.Hydrogen.ordinal], "the hydrogen does not add up")
+        assertEquals(-made.anode.total, delta[Species.Oxygen.ordinal], "the oxygen does not add up")
         for (s in Species.ALL) {
             if (s == Species.Water || s == Species.Hydrogen || s == Species.Oxygen) continue
             assertEquals(0L, delta[s.ordinal], "${s.name} appeared from nowhere")
@@ -248,8 +270,25 @@ class ElectrolyzerTest {
 
     @Test
     fun `an empty machine splits nothing`() {
-        val made = electrolyse(Mixture.EMPTY)
-        assertTrue(made.hydrogen.isEmpty && made.oxygen.isEmpty, "something came out of nothing")
+        // ⭐ Now answered one step earlier and more strongly: there is no *action* at all, because
+        // an empty charge can supply neither electrode. Nothing has to come out empty because
+        // nothing runs.
+        assertNull(cellAction(Mixture.EMPTY, Electrolyzer.APPLIED_MILLIVOLTS), "something came out of nothing")
+    }
+
+    /**
+     * ⭐ **Below the knee, nothing happens — and 1.23 V is not written down anywhere.**
+     *
+     * It is `E°(anode) − E°(cathode)`: the water couple at +1230 against the hydrogen couple at 0.
+     * This is the second condition axis doing its job, and the first test in the game to assert that
+     * a machine can be short of something that is not matter.
+     */
+    @Test
+    fun `a cell below the water knee does nothing at all`() {
+        val charge = water(4)
+        assertEquals(1230, cellAction(charge, 1500)!!.requiredMillivolts, "splitting water costs 1.23 V")
+        assertNull(cellAction(charge, 1229), "water should not split below its own potential")
+        assertTrue(cellAction(charge, 1230) != null, "water should split at exactly its potential")
     }
 
     // ── The appetite ─────────────────────────────────────────────────────────

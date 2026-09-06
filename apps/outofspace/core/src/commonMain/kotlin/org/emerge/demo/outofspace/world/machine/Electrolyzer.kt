@@ -1,9 +1,6 @@
 package org.emerge.demo.outofspace.world.machine
 
-import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.chem.kJPerMolAt
 import org.emerge.demo.outofspace.logistics.Capacity.PACKET_MASS
-import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
@@ -57,38 +54,39 @@ data class Electrolyzer(
 
     companion object {
         /**
-         * What it costs to break a kilogram of water into its elements, in [Budget]'s energy unit.
+         * **The voltage this machine puts across its charge**, and the only thing it decides.
          *
-         * **484 kJ per 36 g** — two moles of water — which is the exact reverse of the combustion
-         * row that puts it back together (`UnifiedReaction.kt`, corrected in `6f1ff780`). Quoted the
-         * way that row is quoted, against the same formula mass, so the two cannot drift apart:
-         * if somebody re-prices burning hydrogen and forgets this, the numbers stop being each
-         * other's mirror and a test can say so.
+         * ⛔ **This replaced `ENTHALPY_PER_KG`**, which stated what breaking a kilogram of water
+         * costs and which *nothing read*. The cost is not what gates a cell — the **potential** is,
+         * and it gates by competition rather than by price: at 1500 mV a charge of water clears
+         * water's own 1230 and splits, and a charge with copper in it would plate the copper first
+         * at 890. See `chem/Cell.kt`.
          *
-         * ⚠️ **Nothing pays it, and since `MASS_PER_TICK` stopped being derived from it, nothing
-         * reads it.** See [org.emerge.demo.outofspace.chem.electrolyse] — the energy is minted, as a
-         * furnace's element mints its own, and the ledger stays closed because chemical potential is
-         * not a pool the game tracks. It stays because it is the price a power grid would charge,
-         * and because [MASS_PER_TICK] quotes its implied draw to say how far out of line this
-         * machine currently is.
+         * ⚠️ **A constant, not a per-machine dial, and deliberately so for now.** A field would be a
+         * save-format change for a number nothing can yet vary; `PLAN_power_network.md` increment 2
+         * is where the applied voltage stops being chosen here and starts coming off a terminal,
+         * which is a save change worth making once.
+         *
+         * 1500 rather than 1231: comfortably clear of the knee, because nothing yet models the
+         * overpotential a real cell needs on top of the thermodynamic minimum.
          */
-        val ENTHALPY_PER_KG: Long = 484L * kJPerMolAt(2L * Species.Water.molarMass)
+        const val APPLIED_MILLIVOLTS: Int = 1500
 
         /**
          * **The dial.** How much water it takes apart in a tick, at full activation: one belt-load.
          *
          * ⛔ **Chosen, not derived — and knowingly overpowered.** It used to be [HEATER_POWER]'s
-         * worth of [ENTHALPY_PER_KG], about 27 g a tick, and that number was defensible on paper and
+         * worth of the enthalpy of splitting water, about 27 g a tick, and that number was defensible on paper and
          * indefensible in play: the light half is a **ninth** of the mass, and because the machine
          * ships whole packets the hydrogen mouth opened roughly once every **nine minutes**. A mouth
          * that slow does not read as a plant filling tanks between burns, it reads as a machine that
          * is broken. So this is [PACKET_MASS] — the quantum everything else in the logistics layer is
          * a small whole number of — and the hydrogen mouth opens every nine ticks instead.
          *
-         * ⚠️ **Expected to come back down.** Implied draw is [ENTHALPY_PER_KG] × [PACKET_MASS], some
+         * ⚠️ **Expected to come back down.** Implied draw is 484 kJ per 36 g × [PACKET_MASS], some
          * **1.3 GJ a tick — around 3700 furnace elements** — against a motor's 32 kg/s appetite that
          * a *third* of one of these now feeds. Nothing charges for it, so nothing stops it; the lever
-         * when a power grid exists is this constant and that arithmetic, not a new mechanism.
+         * when `PLAN_power_network.md` lands is this constant and that arithmetic, not a mechanism.
          *
          * ⚠️ **The rate is not the throughput.** The split stalls whenever *either* output store is
          * at [BUFFER_CAP], so what the machine actually does is set by whichever of its two belts

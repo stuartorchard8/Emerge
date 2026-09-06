@@ -8,6 +8,8 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.MachineSettings
 import org.emerge.demo.outofspace.world.aimed
 import org.emerge.demo.outofspace.world.withSettings
+import org.emerge.demo.outofspace.chem.HALF_REACTIONS
+import org.emerge.demo.outofspace.chem.cellAction
 import org.emerge.demo.outofspace.chem.electrolyse
 import org.emerge.demo.outofspace.world.machine.Electrolyzer
 import org.emerge.demo.outofspace.world.machine.HEATER_POWER
@@ -2988,6 +2990,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * as cargo and two gases come out as cargo — and no thermal energy is created or destroyed,
          * because [electrolyse] carries the charge's heat across in proportion. The enthalpy it does
          * not charge for is `PLAN_chemical_rockets.md` §1, not an omission here.
+         *
+         * ⛔ **Nothing here says water.** [cellAction] competes the charge against [HALF_REACTIONS]
+         * and hands back whichever couples win; a charge of water splits because water is the only
+         * thing in it. Increment 1 of `PLAN_electrochemistry.md`.
          */
         fun split(m: Electrolyzer, on: Boolean, tile: TileIndex): Electrolyzer {
             if (!on) return m
@@ -3003,11 +3009,17 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // the microgram, and the heat goes with the water rather than staying behind.
             val charge = feed.take(minOf(Electrolyzer.MASS_PER_TICK, feed.total))
             if (charge.total <= 0L) return m
+            
 
-            val made = electrolyse(charge)
-            putStore(m, tile, BufferRole.Input, (feed - charge).orNull())
-            buffers.put(hydrogenTile, hydrogenHeld?.plus(made.hydrogen) ?: made.hydrogen)
-            buffers.put(oxygenTile, oxygenHeld?.plus(made.oxygen) ?: made.oxygen)
+            val action = cellAction(charge, Electrolyzer.APPLIED_MILLIVOLTS) ?: return m
+            val made = electrolyse(charge, action, charge.total) ?: return m
+
+            // ⚠️ What the pass could not use whole goes back on the feed. `electrolyse` runs whole
+            // passes only, so a charge that does not divide evenly leaves a remainder, and the
+            // remainder is the feed's — not the machine's to keep and not anybody's to lose.
+            putStore(m, tile, BufferRole.Input, (feed - made.consumed).orNull())
+            buffers.put(hydrogenTile, hydrogenHeld?.plus(made.cathode) ?: made.cathode)
+            buffers.put(oxygenTile, oxygenHeld?.plus(made.anode) ?: made.anode)
             return m
         }
 
