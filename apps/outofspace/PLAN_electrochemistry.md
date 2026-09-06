@@ -305,7 +305,7 @@ a lump of sulfate for them to describe.
 Ordered so the case that decides the design comes first. **Each increment is one commit on `main`**,
 green before it lands.
 
-### Increment 0 — the guard
+### Increment 0 — the guard ✅ BUILT (2026-09-06)
 
 A test that walks every `HalfReaction`, asserts its species exist, and derives known cell voltages
 from pairs — Daniell at 1.10 V, water at 1.23 V, copper electrowinning at 0.89 V — against stated
@@ -314,7 +314,7 @@ wrong, and a wrong one is invisible because the row still balances.
 
 Cheap, and it is the guard that has to survive to the end.
 
-### Increment 1 — the potential axis, on water alone ⭐ the hard shape
+### Increment 1 — the potential axis, on water alone ✅ BUILT (2026-09-06)
 
 No leaching. No metals. No new species. Add `HalfReaction`, the two water couples, the competition
 rule, and turn the electrolyzer into the `Cell`.
@@ -378,6 +378,14 @@ The network, the solar panel, and the dial becoming a terminal. Nothing below de
 dial keeps working — but everything below is more interesting once a cell can be **short of power**
 rather than only short of matter.
 
+### ⛔ Owed from increment 1: the rename
+
+**The machine is still called `Electrolyzer`.** The competition rule, the deleted hand-written
+reaction and the deleted `ENTHALPY_PER_KG` all landed; the rename to `Cell` did not. It is thirteen
+compiler-checked registration sites plus a save branch, mechanical and behaviour-free — and it gets
+*larger* the longer it waits, because every increment below adds sites. ⚠️ Until it is done this plan
+says `Cell` and the code says `Electrolyzer`.
+
 ### Increment 2 — copper beats water
 
 Add `Cu²⁺/Cu` at +340 mV. Feed a cell a copper-bearing charge; copper plates, hydrogen does not
@@ -385,6 +393,22 @@ appear, and the anode still makes oxygen. One new number, no new mechanism, and 
 the competition rule does something rather than being a one-branch `if`.
 
 ⚠️ **The charge is handed to it, not leached.** Increment 3's job.
+
+### ⚠️ Increment 3 is a bundle, and should not be taken whole
+
+Assessed 2026-09-06, after increments 0–1 and power 0–2. What §6 forces is that the **species cannot
+land without the leach reaction** — `everyMineralIsMinedOrMade` requires a `MINERALS` entry with no
+abundance to be made by a `REACTIONS` row. Everything else below is separable and should be separated:
+
+| | Piece | Touches |
+|---|---|---|
+| 3a | the three species + host-crystal constants + ion-only declaration + the leach row | the species table, five guard tests, `MINERALS`, `Prices` |
+| 3b | `Cathode`/`Anode` buffer roles, the 1×3 cell | machine geometry, ports, save, renderer |
+| 3c | `dissolvedFraction`, and the electrolyte gate power increment 2 left unwired | `Saturation`-shaped derivation |
+| 3d | ion migration and the membrane | one new mechanism |
+
+⛔ **3a is the single largest commit in either plan** and it is the one that cannot be made smaller.
+It edits the table every other system reads.
 
 ### Increment 3 — the leach, and §6's answer
 
