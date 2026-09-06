@@ -159,6 +159,36 @@ dome. Nothing stores it. Precipitation-when-saturated then falls out the way con
 coupling between §5's rule and the leach — undissolved tenorite is not at the cathode, it is sitting
 in the bottom of the tank.
 
+#### ⛔ Autoionization is NOT this shape, and pure water is the case that says so
+
+Water makes its own ions — `2H₂O ⇌ H₃O⁺ + OH⁻` — but only to 1e-7 M, because Kw is 1e-14. ⚠️ **That
+is an equilibrium constant, not a saturation limit**: nothing is undissolved and nothing has
+precipitated, water simply does not *make* many ions. So it is one constant if it is ever modelled,
+and it must not be bolted onto the dome above, which answers a different question.
+
+The consequence is that **pure water barely conducts** — about 5.5e-6 S/m, against 5 for seawater
+and 80 for molar sulfuric acid. Seven orders of magnitude, which is not a tuning difference but a
+cell that does nothing. Every real alkaline or acid electrolyzer adds KOH or H₂SO₄ for exactly this
+reason. (A PEM cell does run on deionized water, but its protons conduct through the membrane rather
+than the water — the electrolyte *is* the membrane. Kept in mind for increment 3, which has a
+membrane anyway.)
+
+⭐ **Three things this buys, none of which needs a mechanism:**
+
+- **The acid gets a second job** — leach reagent *and* the thing that makes the cell conduct.
+- **A bootstrap puzzle.** No electrolyte, no electrolysis. `Halite` is in the species table and is
+  abundant, so brine is the early answer and mining salt becomes a first-hour goal.
+- **Brine behaves correctly for free.** At the anode, water at +1230 is *below* chloride at +1360, so
+  §5's lowest-wins rule oxidises water and evolves oxygen rather than chlorine; at the cathode Na⁺ at
+  −2710 loses to H⁺. **The salt carries the current and is not consumed**, which is what an
+  electrolyte is, and nobody writes it down. Chlorine wins industrially only on the overpotential §8
+  defers.
+
+⛔ **Where this lands is `PLAN_power_network.md` increment 2, not here.** Conductivity is
+*resistance*, and increment 1 below has a voltage dial with no current behind it — no amps, so
+nothing for a resistance to attach to. Pure water splitting in increment 1 is not wrong, it is
+un-modelled, and it stops working the moment the cell is a load on a real circuit.
+
 ### ⭐ 5.5 The cell has three compartments, and they are buffer tiles
 
 **A cell is a 1×3 machine: feed in the middle, anode at one end, cathode at the other**, each with
@@ -280,6 +310,12 @@ end hoppers at a rate under `holdsBack`, so the 1:8 hydrogen/oxygen split still 
 packets. The bath is upstream of that, not instead of it.
 
 ### What must be true at the end
+
+⚠️ **Pure water splits here, and that is temporary.** There is no current model in this increment, so
+there is nothing to be resistive; see §5's autoionization note. `PLAN_power_network.md` increment 2
+is where a cell with no electrolyte stops drawing current and therefore stops working, and where
+this test's fixture gains salt or acid. A fixture change at the moment the physics arrives — not a
+moved expectation.
 
 **Its acceptance test is `ElectrolyzerTest`, unchanged** — a cell fed water and 1.23 V makes hydrogen
 at one face and oxygen at the other; below 1.23 V it does nothing; the mass ledger closes. The same

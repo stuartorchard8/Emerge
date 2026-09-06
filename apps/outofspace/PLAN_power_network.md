@@ -184,6 +184,24 @@ hold it above 1.23 V and does nothing when it cannot, and **a vessel with too fe
 whose cell does not run** — which is the first time in this game that a machine has been short of
 anything but matter.
 
+### ⭐ The cell is not a plain threshold — it has an internal resistance, and it is the electrolyte
+
+A cell's solution conducts by its dissolved ions, and **pure water has almost none**: ~5.5e-6 S/m
+against 5 for brine and 80 for molar sulfuric acid. Seven orders of magnitude. So the cell's internal
+resistance comes off its own electrolyte's composition, in series with the wire run feeding it, and
+
+> ⭐ **a cell full of pure water fails because the network cannot push current through it** — not
+> because anything forbids it.
+
+That is the same quality as aluminium losing its cathode to hydrogen, and it is why this increment is
+a better exercise of the network than a fixed threshold would have been: the load's resistance is a
+function of what is inside it, which is the case a linear heater cannot pose. See
+`PLAN_electrochemistry.md` §5 for the chemistry and for what it buys — the acid earning a second job,
+the bootstrap through brine, and the salt carrying current without being consumed.
+
+⚠️ **`ElectrolyzerTest`'s fixture gains an electrolyte here**, having survived electrochemistry
+increment 1 unedited. Honest: the physics that makes pure water fail arrives in this commit.
+
 Ships the chatter tripwire per decision 4. ⛔ Not hysteresis.
 
 ### Increment 3 — billing what is already free
