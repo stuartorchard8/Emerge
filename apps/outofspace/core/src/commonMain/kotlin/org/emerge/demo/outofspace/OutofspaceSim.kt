@@ -2110,6 +2110,17 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * production passes rebuild machines as they go, and a `copy` in a later pass would drop a
          * write made by an earlier one.
          */
+        /**
+         * ⚠️ **Last tick's charge, and the machine pass decides from it.** The power pass runs later
+         * in the tick, so a cell reading the live field would see a bus that had not yet collected —
+         * `PLAN_one_tick_causality.md`'s rule, and the reason the draw goes to [chargeDrawn] instead
+         * of coming straight off the field.
+         */
+        val powerBefore: PowerCharge = state.charge
+
+        /** What the cells pulled off the bus this tick, applied by the power pass. */
+        val chargeDrawn: LongArray = LongArray(state.grid.size)
+
         val heatAdded: LongArray = LongArray(state.grid.size)
         var generatedEnergy: Long = state.generatedEnergy
         var insertedEnergy: Long = state.insertedEnergy
@@ -3026,12 +3037,55 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val feed = store(m, tile, BufferRole.Input) ?: return m
             // ⚠️ Through [Mixture.take], the only exact draw: the complement sums back to the feed to
             // the microgram, and the heat goes with the water rather than staying behind.
+            // ⭐ **What the bus is sitting at**, or the unwired fallback where no run passes under
+            // the machine. A cell short of volts does nothing at all; a cell short of *current* runs
+            // slowly, which is the difference between a threshold and a cliff.
+            val onRun = layer(Conduit.Power)[tile.index] != null
+            val volts = if (onRun) PowerFlow.millivoltsAt(powerBefore, tile) else Electrolyzer.UNWIRED_MILLIVOLTS
+
             val charge = feed.take(minOf(Electrolyzer.MASS_PER_TICK, feed.total))
             if (charge.total <= 0L) return m
-            
 
-            val action = cellAction(charge, Electrolyzer.APPLIED_MILLIVOLTS) ?: return m
-            val made = electrolyse(charge, action, charge.total) ?: return m
+            val action = cellAction(charge, volts) ?: return m
+
+            // Three ceilings, and the smallest governs. ⚠️ None of them is a special case for water:
+            // an electrolyte that cannot carry a current and a bus that cannot supply one are the
+            // same kind of shortage, and both read as a slower cell rather than a stopped one.
+            // ⛔ **The electrolyte ceiling is NOT here yet, and the reason is an ordering problem
+            // rather than an omission.** A cell needs dissolved ions to carry its current — see
+            // [electrolyteStrength] — but this machine's appetite is for *pure* water, stated at the
+            // route, so salt cannot ride the feed. An electrolyte is a standing bath and the bath is
+            // the `Inside` store that `PLAN_electrochemistry.md` §5.5 adds. The gate lands with it.
+            var limit = charge.total
+            if (onRun) {
+                // ⛔ **Only the charge ABOVE the knee is spendable, and that is the load model rather
+                // than a guard bolted on.** A cell's current is driven by its *overvoltage*: as the
+                // bus falls towards the potential the reaction needs, the current falls to zero. It
+                // cannot pull itself below its own knee any more than a siphon can run uphill.
+                //
+                // ⚠️ **This is what the chatter tripwire found**, and it is worth saying plainly. A
+                // cell allowed to spend the whole tile drained itself under 1230 mV, went dark,
+                // recharged over several ticks and fired again — a textbook limit cycle, running on
+                // five ticks in forty with power to spare. `PLAN_power_network.md` decision 4 held
+                // that the answer to chatter is hysteresis and that it should wait until something
+                // was measured chattering. Something was, and the answer turned out to be neither
+                // hysteresis nor a dial: the load was simply wrong.
+                val knee = action.requiredMillivolts.toLong() * PowerFlow.CHARGE_PER_MILLIVOLT
+                val headroom = powerBefore[tile] - knee
+                if (headroom <= 0L) return m
+                val affordable = headroom * Electrolyzer.ELECTRONS_PER_CHARGE / action.electrons
+                limit = minOf(limit, affordable * action.consumedMass)
+            }
+            if (limit <= 0L) return m
+
+            val made = electrolyse(charge, action, limit) ?: return m
+
+            // Bill the bus for the electrons that actually moved.
+            if (onRun) {
+                val passes = made.consumed.total / action.consumedMass
+                val drawn = passes * action.electrons / Electrolyzer.ELECTRONS_PER_CHARGE
+                chargeDrawn[tile.index] += minOf(drawn, powerBefore[tile])
+            }
 
             // ⚠️ What the pass could not use whole goes back on the feed. `electrolyse` runs whole
             // passes only, so a charge that does not divide evenly leaves a remainder, and the
@@ -4738,6 +4792,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 }
                 val made = SolarPanel.outputAt(faces, ambient)
                 if (made > 0L) charge = charge.plus(tile, made)
+            }
+
+            // ⚠️ **Applied before the relaxation**, so a cell's draw shows up as a dip the run then
+            // fills from its neighbours — which is what a load on a bus looks like. Applied after,
+            // the dip would sit unserved for a tick and the bus would read as stiffer than it is.
+            for (tile in grid.tiles) {
+                val drawn = chargeDrawn[tile.index]
+                if (drawn > 0L) charge = charge.plus(tile, -minOf(drawn, charge[tile]))
             }
 
             val dissipated = LongArray(grid.size)

@@ -115,7 +115,7 @@ class ElectrolyzerTest {
      * is the one it was; only the call changed.
      */
     private fun split(charge: Mixture): Electrolysed {
-        val action = cellAction(charge, Electrolyzer.APPLIED_MILLIVOLTS)!!
+        val action = cellAction(charge, Electrolyzer.UNWIRED_MILLIVOLTS)!!
         return electrolyse(charge, action, charge.total)!!
     }
 
@@ -273,7 +273,7 @@ class ElectrolyzerTest {
         // ⭐ Now answered one step earlier and more strongly: there is no *action* at all, because
         // an empty charge can supply neither electrode. Nothing has to come out empty because
         // nothing runs.
-        assertNull(cellAction(Mixture.EMPTY, Electrolyzer.APPLIED_MILLIVOLTS), "something came out of nothing")
+        assertNull(cellAction(Mixture.EMPTY, Electrolyzer.UNWIRED_MILLIVOLTS), "something came out of nothing")
     }
 
     /**

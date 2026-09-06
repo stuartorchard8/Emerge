@@ -263,7 +263,7 @@ that *"the layer exists and nothing reads it yet, so a brush for it would lay ca
 and looks like a bug rather than like a feature that has not arrived."* Both exclusions are lifted
 here, and the cut tool with them: a network the player can build is one they must be able to cut.
 
-### Increment 2 — the cell as a load ⭐ the hard shape for the contract
+### Increment 2 — the cell as a load ✅ BUILT (2026-09-06)
 
 `PLAN_electrochemistry.md`'s voltage dial becomes a terminal. The cell splits water when the bus can
 hold it above 1.23 V and does nothing when it cannot, and **a vessel with too few panels is a vessel
@@ -288,7 +288,42 @@ the bootstrap through brine, and the salt carrying current without being consume
 ⚠️ **`ElectrolyzerTest`'s fixture gains an electrolyte here**, having survived electrochemistry
 increment 1 unedited. Honest: the physics that makes pure water fail arrives in this commit.
 
-Ships the chatter tripwire per decision 4. ⛔ Not hysteresis.
+`PoweredCellTest`, 6 tests.
+
+⭐ **Voltage gates, current sets the rate.** A cell below 1230 mV does nothing at all; above it, it
+runs at whatever the bus can feed. That distinction was a design call taken during the build and it
+is the difference between a threshold a player can plan around and a cliff they fall off — a vessel
+with too few panels has a *slow* plant, not a dead one, and adding panels visibly speeds it up.
+
+`ELECTRONS_PER_CHARGE` is derived from what it is for, in `HEATER_POWER`'s idiom: **one fully exposed
+panel runs a cell at about a tenth of its ceiling**, so a bank of ten runs it flat out.
+
+#### ⛔ What the tripwire found, and why the answer was not hysteresis
+
+Decision 4 declined to build hysteresis until something was measured chattering. Something was, on
+the first run: a cell allowed to spend the whole charge on its tile **drained itself under 1230 mV,
+went dark, recharged over several ticks and fired again** — a textbook limit cycle, running on five
+ticks in forty *with power to spare*.
+
+⭐ **The fix was neither hysteresis nor a dial. The load was simply wrong.** A cell's current is
+driven by its *overvoltage*: as the bus falls toward the potential the reaction needs, the current
+falls to zero. It cannot pull itself below its own knee. So a cell may spend only the charge **above**
+the knee, and the limit cycle stops existing rather than being damped. Decision 4 stands, unused and
+vindicated.
+
+#### ⚠️ Two characteristics worth knowing
+
+**A run settles in `L² × SETTLING_TICKS`, not `SETTLING_TICKS`.** The relaxation is diffusive, so a
+fifteen-tile trunk takes some eighteen hundred ticks to come up while a three-tile stub takes
+seventy. §3 called the delay *"invisible at this scale"*; that is true of a short run and false of a
+long one, and it is the capacitance fiction showing through. A capacitor machine would be the handle.
+
+**The electrolyte ceiling is not wired in yet, and that is an ordering problem rather than an
+omission.** `chem/Cell.kt` has `electrolyteStrength` and `AQUEOUS_ELECTROLYTES`, and pure water
+scores zero — but this machine's appetite is for *pure* water, stated at the route, so salt cannot
+ride the feed. An electrolyte is a standing bath, and the bath is the `Inside` store
+`PLAN_electrochemistry.md` §5.5 adds. **The gate lands with it**, and `ElectrolyzerTest`'s fixture
+gains its electrolyte there rather than here.
 
 ### Increment 3 — billing what is already free
 

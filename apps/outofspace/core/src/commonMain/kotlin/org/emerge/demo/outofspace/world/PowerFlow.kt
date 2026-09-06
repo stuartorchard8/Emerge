@@ -80,6 +80,24 @@ object PowerFlow {
      */
     const val MAX_CHARGE = 3_000_000_000L
 
+    /**
+     * **How much charge on one tile reads as one millivolt** — where the wire meets the chemistry.
+     *
+     * ⛔ **Chosen, and it is the only place the two scales touch.** Charge is its own quantity and
+     * potential is charge over a capacitance that is one by construction, so this is really the
+     * capacitance, wearing the units the electrochemistry already speaks. It is set so that **one
+     * fully exposed solar panel brings a tile to roughly the potential water splits at** — 1230 mV
+     * against a panel's four faces of [org.emerge.demo.outofspace.world.machine.SolarPanel.CHARGE_PER_FACE].
+     *
+     * ⚠️ So a single panel is *marginal* and a small bank is comfortable, which is the reading that
+     * makes a threshold worth having: a vessel can be short of power without being dead.
+     */
+    const val CHARGE_PER_MILLIVOLT = 1_000L
+
+    /** What the run at [tile] is sitting at, in millivolts against hull-ground. */
+    fun millivoltsAt(charge: PowerCharge, tile: TileIndex): Int =
+        (charge[tile] / CHARGE_PER_MILLIVOLT).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+
     /** What one tile of laid power conduit conducts, from the metal actually in it. */
     fun conductanceAt(power: List<Segment?>, metalAt: (TileIndex) -> Species?, tile: TileIndex): Long {
         val segment = power[tile.index] ?: return 0L

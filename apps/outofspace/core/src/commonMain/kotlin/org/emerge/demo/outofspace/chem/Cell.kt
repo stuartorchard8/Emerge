@@ -206,3 +206,38 @@ fun electrolyse(charge: Mixture, action: CellAction, limit: Long): Electrolysed?
     }
     return Electrolysed(cathode, anode, consumed)
 }
+
+/**
+ * **The salts a solution conducts by** — the ions that carry the current between the electrodes.
+ *
+ * ⛔ **Pure water is not on this list and that is the whole point.** Water autoionises to 1e-7 M, so
+ * it conducts about 5.5e-6 S/m against brine's 5 — seven orders of magnitude, which is a cell that
+ * does nothing. Every real electrolyser adds an electrolyte for exactly this reason, and here that
+ * makes `Halite` worth mining before a cell will run at all.
+ *
+ * ⚠️ **Two entries, because two are what the table has.** `PLAN_electrochemistry.md` §6's
+ * `SulfuricAcid` joins them when it lands, and it is the better electrolyte — this is the bootstrap,
+ * not the destination. Gypsum, barite and fluorite are deliberately absent: they are sulfates and a
+ * fluoride that a solution barely dissolves, so they would conduct on paper and not in a beaker.
+ */
+val AQUEOUS_ELECTROLYTES: Set<Species> = setOf(Species.Halite, Species.Sylvite)
+
+/**
+ * **What share of a cell's throughput its solution can actually carry**, in permille.
+ *
+ * A current needs ions to ride on, so a cell runs at the rate its electrolyte allows and no faster.
+ * ⭐ Stated as a *fraction of the charge* rather than as a conductance in siemens, because that is
+ * the honest resolution available: the game has no ion concentrations yet — that is
+ * `PLAN_electrochemistry.md` §6 and increment 3 — and a conductance derived from a fraction would be
+ * the same number wearing a unit it had not earned.
+ *
+ * ⚠️ **Zero for pure water**, which is what makes a cell of clean water inert without anything
+ * forbidding it.
+ */
+fun electrolyteStrength(charge: Mixture): Int {
+    val total = charge.total
+    if (total <= 0L) return 0
+    var dissolved = 0L
+    for (species in AQUEOUS_ELECTROLYTES) dissolved += charge[species]
+    return (dissolved * 1000L / total).toInt()
+}

@@ -54,6 +54,22 @@ data class Electrolyzer(
 
     companion object {
         /**
+         * **How many electron-passes one unit of charge buys** — where the wire pays for the
+         * chemistry.
+         *
+         * ⛔ **Derived from what it is for**, in [HEATER_POWER]'s idiom: *one fully exposed solar
+         * panel should run a cell at about a tenth of its ceiling.* A panel makes four faces of
+         * [org.emerge.demo.outofspace.world.machine.SolarPanel.CHARGE_PER_FACE] a tick; a pass of
+         * water electrolysis moves four electrons and consumes 36 of formula mass; and a tenth of
+         * [MASS_PER_TICK] is what a plant filling tanks between burns looks like.
+         *
+         * ⚠️ **So a bank of ten panels runs a cell flat out**, and one panel runs it slowly rather
+         * than not at all — see the rate rule in `OutofspaceSim.split`. That is the difference
+         * between a threshold a player can plan around and a cliff they fall off.
+         */
+        const val ELECTRONS_PER_CHARGE: Long = 1_000L
+
+        /**
          * **The voltage this machine puts across its charge**, and the only thing it decides.
          *
          * ⛔ **This replaced `ENTHALPY_PER_KG`**, which stated what breaking a kilogram of water
@@ -62,15 +78,17 @@ data class Electrolyzer(
          * water's own 1230 and splits, and a charge with copper in it would plate the copper first
          * at 890. See `chem/Cell.kt`.
          *
-         * ⚠️ **A constant, not a per-machine dial, and deliberately so for now.** A field would be a
-         * save-format change for a number nothing can yet vary; `PLAN_power_network.md` increment 2
-         * is where the applied voltage stops being chosen here and starts coming off a terminal,
-         * which is a save change worth making once.
+         * ⛔ **Superseded, and kept only as the fallback for a cell with no cable under it.** As of
+         * `PLAN_power_network.md` increment 2 the applied voltage is *read off the bus* — a cell
+         * standing on a run answers whatever the run is sitting at, and a vessel short of panels is
+         * a vessel whose cell does not clear water's 1230 mV. This is what a cell with no run under
+         * it uses instead, so that a machine placed without wiring still does something rather than
+         * silently doing nothing.
          *
-         * 1500 rather than 1231: comfortably clear of the knee, because nothing yet models the
-         * overpotential a real cell needs on top of the thermodynamic minimum.
+         * ⚠️ **That fallback is a kindness, not a model**, and it is the first thing to delete when
+         * power is billed for — `PLAN_power_network.md` increment 3.
          */
-        const val APPLIED_MILLIVOLTS: Int = 1500
+        const val UNWIRED_MILLIVOLTS: Int = 1500
 
         /**
          * **The dial.** How much water it takes apart in a tick, at full activation: one belt-load.
