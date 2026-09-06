@@ -378,13 +378,33 @@ The network, the solar panel, and the dial becoming a terminal. Nothing below de
 dial keeps working — but everything below is more interesting once a cell can be **short of power**
 rather than only short of matter.
 
-### ⛔ Owed from increment 1: the rename
+### ⏸ The rename, deferred on purpose (Stu, 2026-09-06)
 
-**The machine is still called `Electrolyzer`.** The competition rule, the deleted hand-written
-reaction and the deleted `ENTHALPY_PER_KG` all landed; the rename to `Cell` did not. It is thirteen
-compiler-checked registration sites plus a save branch, mechanical and behaviour-free — and it gets
-*larger* the longer it waits, because every increment below adds sites. ⚠️ Until it is done this plan
-says `Cell` and the code says `Electrolyzer`.
+**The machine stays `Electrolyzer` for now**, and the reason is better than "not yet": ⛔ **the right
+name depends on an open question nobody has answered.**
+
+Increment 1 landed the competition rule and deleted the hand-written reaction and `ENTHALPY_PER_KG`.
+The rename did not, and this plan's earlier claim that the machine "becomes the `Cell`" was
+over-argued — *applying a potential to drive a non-spontaneous reaction **is** electrolysis*.
+Electrowinning copper is electrolysis; so is chlor-alkali. `Electrolyzer` does not lie about the
+process. What it narrows is colloquial: the word usually means the hydrogen device.
+
+⛔ **`Cell` on its own is not available.** `RigidBody.cells` is load-bearing and a body's cell walk
+has its own gotchas; a machine kind called `Cell` would collide with it.
+
+⚠️ **What decides the name is whether a battery is this same machine.** Two futures:
+
+- **A battery is its own kind** — it has no feed, no gas outputs and no throughput, so mechanically it
+  shares the half-reaction table the way `Concentrator` and `Furnace` share reaction machinery
+  without sharing a kind. Then the electrolytic cell stays electrolytic, `ElectrolyticCell` is right,
+  and `Electrolyzer` is merely colloquial rather than wrong.
+- **A battery is this machine run backwards** — which is Stu's leaning, 2026-09-06. Then the machine
+  is a *"highly versatile multi-purpose electrically wired chemical cell"* and `Electrolyzer` is
+  actively wrong, because half of what it does is not electrolysis at all. The name then wants to be
+  general, and the general one has to work around `Cell` being taken.
+
+⭐ **So the rename waits on the battery decision, not on appetite.** Renaming twice would be worse
+than renaming late, and thirteen compiler-checked sites is a cost that stays affordable.
 
 ### Increment 2 — copper beats water
 
