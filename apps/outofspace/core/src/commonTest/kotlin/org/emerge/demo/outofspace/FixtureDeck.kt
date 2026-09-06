@@ -53,7 +53,7 @@ fun segmentOf(conduit: Conduit, links: Int = 0): Segment =
 
 /** Named so a fixture can say what it means without importing the migration. */
 val FIXTURE_RAIL_METAL: Species = materialBefore(Conduit.Rail)
-val FIXTURE_MACHINE_METAL: Species = materialBefore(DeckMachineKind.Storage)
+val FIXTURE_MACHINE_METAL: Species = materialBefore(DeckMachineKind.Warehouse)
 
 /** What a brush would once have laid, for the fixtures that do not care. */
 fun materialOfBrush(brush: Brush): Species = when (brush) {
@@ -148,7 +148,9 @@ fun fixtureStorage(
     center: TileIndex,
     facing: Direction,
     filter: SpeciesFilter? = null,
-): Storage = Storage(center, facing, filter = filter, autoLock = false, autoUnlock = false)
+    /** Which of the three sizes — see [Storage]. A fixture that does not say means the 3×3. */
+    kind: DeckMachineKind = DeckMachineKind.Warehouse,
+): Storage = Storage(center, facing, kind, filter = filter, autoLock = false, autoUnlock = false)
 
 /**
  * A sensor with the dials wide open — as near as there is to what `Sensor(tile, facing)` used to be.

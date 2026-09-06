@@ -20,7 +20,10 @@ fun newDeckMachine(kind: DeckMachineKind, tile: TileIndex, facing: Direction): D
     DeckMachineKind.Hull -> Hull(tile)
     DeckMachineKind.Airlock -> Airlock(tile)
     DeckMachineKind.Vent -> Vent(tile)
-    DeckMachineKind.Storage -> Storage(tile, facing, autoLock = true, autoUnlock = true)
+    // One machine at three sizes — see [Storage]. The kind is handed straight through, which is
+    // what makes a new size cost a line here rather than a class.
+    DeckMachineKind.Warehouse, DeckMachineKind.Silo, DeckMachineKind.Buffer ->
+        Storage(tile, facing, kind, autoLock = true, autoUnlock = true)
     // Placed with both lists empty: a port that has not been told what to trade is inert,
     // and choosing for the player is the one thing a mouth onto their money must not do.
     DeckMachineKind.DockingPort -> DockingPort(tile, facing)

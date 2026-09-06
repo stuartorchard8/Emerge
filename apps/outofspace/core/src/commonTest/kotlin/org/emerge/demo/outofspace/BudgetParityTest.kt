@@ -55,7 +55,9 @@ class BudgetParityTest {
         // mass, because a mass is what a parity test can check.
         assertEquals(200_000L, MACHINE_BUFFER_CAP.grams, "input buffer is two hundred kilograms")
         assertEquals(200_000L, MACHINE_OUTPUT_CAP.grams, "output buffer is two hundred kilograms")
-        assertEquals(20_000_000L, Storage.CAP.grams, "storage is twenty tonnes")
+        assertEquals(20_000_000L, Storage.WAREHOUSE_CAP.grams, "a warehouse is twenty tonnes")
+        assertEquals(5_000_000L, Storage.SILO_CAP.grams, "a silo is five tonnes")
+        assertEquals(2_000_000L, Storage.BUFFER_CAP.grams, "a buffer is two tonnes")
         assertEquals(5_000_000L, Extractor.BUFFER_CAP.grams, "extractor buffer is five tonnes")
 
         // The relationships that actually matter, stated as the ratios they are.

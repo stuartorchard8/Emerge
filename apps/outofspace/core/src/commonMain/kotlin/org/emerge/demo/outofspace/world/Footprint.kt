@@ -6,7 +6,13 @@ val DeckMachineKind.diameter: Int
     get() = when (this) {
         DeckMachineKind.Hull, DeckMachineKind.Airlock, DeckMachineKind.Vent -> 1
         // A room-sized installation, as it was on the machine list.
-        DeckMachineKind.Storage -> 3
+        DeckMachineKind.Warehouse -> 3
+        // Three tiles end to end, and only ever three *along* its facing — the bridge's shape. See
+        // [FootprintShape.Span].
+        DeckMachineKind.Silo -> 3
+        // One tile wide, like the thruster it shares a shape with — its *length* is two, and that is
+        // not this number. See [FootprintShape.Nose].
+        DeckMachineKind.Buffer -> 1
         DeckMachineKind.Sensor, DeckMachineKind.KeyInput, DeckMachineKind.Pump,
         DeckMachineKind.Gauge, DeckMachineKind.Valve,
         // A panel is a plate on the hull, not an installation: one tile, and you build a bank of
@@ -58,22 +64,29 @@ enum class FootprintShape {
     Square,
 
     /**
-     * A line [diameter] long **along the facing**, centred on the anchor. The bridge, and only the
-     * bridge.
+     * A line [diameter] long **along the facing**, centred on the anchor. The bridge and the silo.
      *
      * Worth the exception rather than making a bridge 3×3, which would have it claim nine tiles to
      * cross one, or 1×1, which is what it was when it occupied no floor at all and could be stacked
-     * without limit.
+     * without limit. A [org.emerge.demo.outofspace.world.machine.DeckMachineKind.Silo] is here for
+     * the other half of the same argument: a store that fits in a corridor is the point of it, and
+     * one made 3×3 would just be a small warehouse.
      */
     Span,
 
     /**
      * The anchor, plus **one tile in the facing direction**: a 1×2 whose anchor is at the tail.
      *
-     * The thruster, and only the thruster. The anchor is the chamber — where the propellant arrives
-     * and where the machine's one store sits — and the nose is the bell, which juts out into the
-     * exhaust direction so that a motor's plume starts outside its own feed tile. That is what makes
-     * an engine cost the deck space its exhaust needs rather than borrowing it from the room.
+     * The thruster and the buffer. For a thruster the anchor is the chamber — where the propellant
+     * arrives and where the machine's one store sits — and the nose is the bell, which juts out into
+     * the exhaust direction so that a motor's plume starts outside its own feed tile. That is what
+     * makes an engine cost the deck space its exhaust needs rather than borrowing it from the room.
+     *
+     * A [org.emerge.demo.outofspace.world.machine.DeckMachineKind.Buffer] reads the same shape the
+     * other way round: the anchor is its mouth *and* its store, and the nose is where material
+     * leaves. ⚠️ It is therefore the one Nose machine whose nose is a **port** rather than bare
+     * casing, which is why `localPorts` states it rather than deriving it from `reach` — at one tile
+     * wide `reach` is zero, and both its doors would land on the same tile.
      */
     Nose,
 }
@@ -81,8 +94,8 @@ enum class FootprintShape {
 /** The shape of this kind's footprint — see [FootprintShape] for what each one gives up. */
 val DeckMachineKind.shape: FootprintShape
     get() = when (this) {
-        DeckMachineKind.Bridge -> FootprintShape.Span
-        DeckMachineKind.Thruster -> FootprintShape.Nose
+        DeckMachineKind.Bridge, DeckMachineKind.Silo -> FootprintShape.Span
+        DeckMachineKind.Thruster, DeckMachineKind.Buffer -> FootprintShape.Nose
         else -> FootprintShape.Square
     }
 

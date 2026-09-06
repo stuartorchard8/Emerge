@@ -210,7 +210,12 @@ val DeckMachineKind.fillPermille: Int
         // rechosen, so the migration does not quietly change what the ship weighs.
         DeckMachineKind.Vent -> 40
         // A shell with a room's worth of space inside it — carried across unchanged.
-        DeckMachineKind.Storage, DeckMachineKind.Pump -> 150
+        // ⚠️ **The same fill for all three store sizes, which is a cost per tile and not per tank.**
+        // A silo is three tiles of the same shell, so it costs a third of a warehouse to build and
+        // holds a quarter as much; that gap is the whole trade the small sizes offer, and it comes
+        // out of the caps rather than out of a thicker wall here.
+        DeckMachineKind.Warehouse, DeckMachineKind.Silo, DeckMachineKind.Buffer,
+        DeckMachineKind.Pump -> 150
         // A bell, a throat and the plumbing behind them: thicker than an instrument housing and
         // nowhere near a furnace lining, because the hot part of a rocket is deliberately thin.
         DeckMachineKind.Thruster -> 120

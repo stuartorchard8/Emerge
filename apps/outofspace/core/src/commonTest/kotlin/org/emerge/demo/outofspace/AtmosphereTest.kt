@@ -289,7 +289,7 @@ class AtmosphereTest {
         var s = run(room, 20)
         val aboard = s.atmosphereMass
 
-        s = run(s, 1, OutofspaceInput(listOf(fixturePlace(tile, Brush.Building(DeckMachineKind.Storage), Direction.Right))))
+        s = run(s, 1, OutofspaceInput(listOf(fixturePlace(tile, Brush.Building(DeckMachineKind.Warehouse), Direction.Right))))
         val m: DeckMachine? = s.deck[tile]
         assertTrue(m != null, "the storage went down")
         for (x in 4..6) for (y in 2..4) {

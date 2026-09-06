@@ -69,7 +69,11 @@ fun materialBefore(kind: DeckMachineKind): Species = when (kind) {
     // can contain one. Steel because that is what every other plate defaulted to.
     DeckMachineKind.SolarPanel -> Species.Steel
     DeckMachineKind.Hull, DeckMachineKind.Airlock -> Species.Steel
-    DeckMachineKind.Vent, DeckMachineKind.Storage,
+    DeckMachineKind.Vent, DeckMachineKind.Warehouse,
+    // Unreachable for the docking port's reason below: neither size existed at version 20, so no
+    // file this function reads can name one. Titanium keeps them with the warehouse they are sizes
+    // of rather than inventing an answer for a case that cannot arise.
+    DeckMachineKind.Silo, DeckMachineKind.Buffer,
     DeckMachineKind.Sensor, DeckMachineKind.KeyInput, DeckMachineKind.Pump,
     DeckMachineKind.Thruster, DeckMachineKind.Concentrator,
     DeckMachineKind.Extractor,
@@ -1870,6 +1874,11 @@ object Save {
     private fun canonicalKindName(name: String): String = when (name) {
         "Processor" -> DeckMachineKind.Concentrator.name
         "ThermalDecomposer" -> DeckMachineKind.Furnace.name
+        // ⚠️ The 3×3 store was `Storage` while it was the only one there was. It is `Warehouse` now
+        // that a `Silo` and a `Buffer` stand beside it — a name that says the *size* rather than the
+        // family, since the family is what all three are. No field and no meaning changed, so no
+        // version bump: see the note above for why that is the rule.
+        "Storage" -> DeckMachineKind.Warehouse.name
         else -> name
     }
 
@@ -1957,9 +1966,12 @@ object Save {
                     .firstOrNull { it.startsWith("ORE:") }
                     ?.let { readPermission(it.removePrefix("ORE:"), scale) } ?: 0L,
             )
-            DeckMachineKind.Storage -> Storage(
+            // One reader for all three sizes — the kind is the only thing that differs, and it is
+            // already in hand. See [org.emerge.demo.outofspace.world.machine.Storage].
+            DeckMachineKind.Warehouse, DeckMachineKind.Silo, DeckMachineKind.Buffer -> Storage(
                 tile,
                 facing(),
+                kind,
                 filter = f["filter"].let { name ->
                     val species = Species.ALL.firstOrNull { it.name == name }
                     val pure = purityBefore(f)

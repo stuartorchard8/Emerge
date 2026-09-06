@@ -126,7 +126,7 @@ class VesselSimTest {
         val grid = Grid(12, 5)
         var s = oreLine(grid, toX = 7)
         // Long enough to fill the tank and then back the line up behind it.
-        s = run(s, ticksToMove(Storage.CAP + Extractor.BUFFER_CAP))
+        s = run(s, ticksToMove(Storage.WAREHOUSE_CAP + Extractor.BUFFER_CAP))
 
         val carried = (4..7).map { s.rail.massAt(grid.tile(it, 2)) }
         assertTrue(carried.all { it > 0L }, "every tile should be carrying something: $carried")
@@ -171,7 +171,7 @@ class VesselSimTest {
             480*RAIL_PERIOD,
         )
 
-        assertEquals(Storage.CAP, s.buffers.resourceAt(grid.tile(8, 5))?.total, "the tank filled")
+        assertEquals(Storage.WAREHOUSE_CAP, s.buffers.resourceAt(grid.tile(8, 5))?.total, "the tank filled")
         assertTrue(s.ventedMass > 0L, "and the rest went up the branch and overboard")
         assertBalanced(s, "line with a full tank and an open vent")
     }
@@ -301,7 +301,7 @@ class VesselSimTest {
     fun `a jam clears from the front when the blockage is removed`() {
         val grid = Grid(12, 5)
         var s = oreLine(grid, toX = 7)
-        s = run(s, ticksToMove(Storage.CAP + Extractor.BUFFER_CAP))
+        s = run(s, ticksToMove(Storage.WAREHOUSE_CAP + Extractor.BUFFER_CAP))
 
         // Tear out the full tank and put a vent on the end of the run instead. The vent takes
         // anything, so the line drains from the front — the tile nearest the consumer moves first.

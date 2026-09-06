@@ -172,7 +172,7 @@ class RailMergeTest {
             conduits = Conduits.ofRails(rails.toList()),
             buffers = BufferLayer.forDeck(grid, deck),
             rail = RailLayer.empty(grid.size),
-        ).stocked(tank, Mixture.of(Species.Iron to Storage.CAP, energy = 0L).atAmbient())
+        ).stocked(tank, Mixture.of(Species.Iron to Storage.WAREHOUSE_CAP, energy = 0L).atAmbient())
         for (t in queued) s = s.riding(t, pure(Species.Iron, 25L * kg))
 
         val before = queued.sumOf { s.rail.massAt(it) }

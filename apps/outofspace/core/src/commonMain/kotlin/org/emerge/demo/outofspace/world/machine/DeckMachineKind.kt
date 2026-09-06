@@ -50,7 +50,35 @@ enum class DeckMachineKind(
     Hull("HULL", preventAirflow = true),
     Airlock("AIRLOCK", preventAirflow = true),
     Vent("VENT"),
-    Storage("STORAGE", preventThoroughfare = true, gatesOutput = true),
+    /**
+     * Three tiles square, twenty tonnes: the ship's warehouse — see [Storage], which is the
+     * behaviour all three sizes share.
+     *
+     * ⚠️ **Written to disk as `Storage` before this name existed** — see `Save.canonicalKindName`.
+     * It was the only store there was, so it was called the thing rather than the size of it; now
+     * that there are three sizes the family name belongs to the family and each kind says how big
+     * it is.
+     */
+    Warehouse("WAREHOUSE", preventThoroughfare = true, gatesOutput = true),
+
+    /**
+     * One tile wide and three long, five tonnes — a warehouse's behaviour in a corridor's footprint.
+     *
+     * A line along its facing like a [Bridge] (`FootprintShape.Span`), so it takes material in at
+     * one end and gives it out at the other and a rotation can be refused. **Solid, unlike a
+     * bridge**: a gantry is mostly the air under it, and a silo is a column of ore.
+     */
+    Silo("SILO", preventThoroughfare = true, gatesOutput = true),
+
+    /**
+     * One tile wide and two long, two tonnes: the smallest store there is.
+     *
+     * `FootprintShape.Nose`, the thruster's shape — **the anchor is the tile you feed**, and the
+     * one in front of it is where material leaves. Its store sits on the anchor, which is to say on
+     * the input tile: at two tiles there is no middle to put a volume in, and a store on the mouth
+     * matter arrives at is the honest place for it.
+     */
+    Buffer("BUFFER", preventThoroughfare = true, gatesOutput = true),
     Sensor("SENSOR"),
     KeyInput("BUTTON"),
     // Whole packets, for an extractor's reason: a pump's store is a hopper filling at a rate,

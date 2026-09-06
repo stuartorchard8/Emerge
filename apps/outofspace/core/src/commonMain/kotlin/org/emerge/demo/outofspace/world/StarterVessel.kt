@@ -276,9 +276,9 @@ const val STATION_TILES_AWAY: Long = 200L
 private fun BufferLayer.withStartingIron(grid: Grid, deck: DeckArray): BufferLayer = also {
     val tank = grid.tiles.firstOrNull { deck[it] is Storage } ?: return@also
     val store = bufferTile(grid, deck[tank]!!, tank, BufferRole.Inside) ?: return@also
-    // Half a tank. Enough for a few hundred tiles of track, and short of [Storage.CAP] by enough
+    // Half a tank. Enough for a few hundred tiles of track, and short of [Storage.WAREHOUSE_CAP] by enough
     // that the first thing the player does cannot be to overflow it.
-    val mass = Storage.CAP / 2
+    val mass = Storage.WAREHOUSE_CAP / 2
     val cold = Mixture.of(Species.Iron to mass, energy = 0)
     // ⚠️ At **ambient**, not at zero energy. Ten tonnes of iron at absolute zero is not a stock of
     // building material, it is a heat sink the size of the ship, and it would suck the vessel cold

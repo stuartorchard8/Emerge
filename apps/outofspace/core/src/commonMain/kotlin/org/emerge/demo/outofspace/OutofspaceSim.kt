@@ -4926,7 +4926,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // back, and it comes back as something a sink *asks for* rather than something it
             // happens to reject at the door.
             val cap = when (destination) {
-                is Storage -> Storage.CAP
+                // ⚠️ **The machine's own tank, not the warehouse's.** A silo holds a quarter of what
+                // a warehouse does and a buffer a tenth; reading the constant here would have every
+                // small store accept twenty tonnes and report itself a fraction full for ever.
+                is Storage -> destination.capacity
                 // A doorway, not a warehouse — see [DockingPort.CAP]. Cargo waiting to be sold
                 // should be waiting somewhere the player can change their mind about it.
                 is DockingPort -> DockingPort.CAP

@@ -169,7 +169,7 @@ energy-dimensioned constant in `commonMain` derives from it:
 | `Capacity.PACKET_GRAMS` | `1_000_000L` | `100 × KILOGRAM` — the logistics quantum and the belt's throughput |
 | `MACHINE_BUFFER_CAP` | `4_000_000L` | `4 × TONNE` — 40 ticks of throughput |
 | `MACHINE_OUTPUT_CAP` | `4_000_000L` | `4 × TONNE`, deliberately equal to the input |
-| `Storage.CAP` | `20_000_000L` | `20 × TONNE` |
+| `Storage.WAREHOUSE_CAP` | `20_000_000L` | `20 × TONNE` |
 | `Extractor.BUFFER_CAP` | `5_000_000L` | `5 × TONNE` — 50 ticks |
 | machine `gramsPerTick` ×4 | `250_000L` / `125_000L` | `PACKET_GRAMS` — one belt-load a tick, all four |
 | `Edit.INJECT_GRAMS` | `1000L` | `1 × KILOGRAM` |
@@ -795,7 +795,7 @@ Measured at today's unit, extrapolated to a mass scale of 10⁶ (safety factor 4
 
 | dimension | tightest row | safe k |
 | --- | --- | --- |
-| **mass** | `cargo: Storage.CAP across the grid` | **8.0e7** |
+| **mass** | `cargo: Storage.WAREHOUSE_CAP across the grid` | **8.0e7** |
 | energy | `machine joules` / `tile joules` | 7.0e6 |
 | energy | `atmosphere joules` *(ledger)* | 1.31e6 |
 | energy | **`body joules`** *(a real stored quantity)* | **1,870** |

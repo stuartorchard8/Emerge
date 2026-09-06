@@ -184,7 +184,7 @@ class GrabAndEscapeTest {
         c.grab()
         assertNotNull(c.stamped)
 
-        c.brush = Brush.Building(DeckMachineKind.Storage)
+        c.brush = Brush.Building(DeckMachineKind.Warehouse)
         assertNull(c.stamped)
     }
 

@@ -72,9 +72,9 @@ class ThrusterFilterTest {
             buffers = BufferLayer.forDeck(grid, deck),
             rail = RailLayer.empty(grid.size),
         ).copy(creative = true)
-        s = edit(s, fixturePlace(source, Brush.Building(DeckMachineKind.Storage), Direction.Right))
+        s = edit(s, fixturePlace(source, Brush.Building(DeckMachineKind.Warehouse), Direction.Right))
         s = edit(s, fixturePlace(motorAt, Brush.Building(DeckMachineKind.Thruster), Direction.Up))
-        s = edit(s, fixturePlace(beyond, Brush.Building(DeckMachineKind.Storage), Direction.Right))
+        s = edit(s, fixturePlace(beyond, Brush.Building(DeckMachineKind.Warehouse), Direction.Right))
         for (x in 3 until 16) s = edit(s, fixtureLay(grid.tile(x, row), grid.tile(x + 1, row), Conduit.Rail))
         if (filter != null) {
             val m = s.deck[motorAt] as Thruster

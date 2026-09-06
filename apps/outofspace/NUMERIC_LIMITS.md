@@ -119,7 +119,7 @@ These are hard, checked ceilings, which makes them better bounds than any measur
 
 | Cap | grams |
 |---|---|
-| `Storage.CAP` | 20,000,000 |
+| `Storage.WAREHOUSE_CAP` | 20,000,000 |
 | `Extractors.BUFFER_CAP` | 5,000,000 |
 | `MACHINE_BUFFER_CAP` / `MACHINE_OUTPUT_CAP` | 4,000,000 |
 | `Packet.PACKET_GRAMS` | 100,000 |
@@ -181,7 +181,7 @@ when they look roomy today.
 | 11 | `millimolesOf`: `grams * 1e6/molarMass` | 1 | packed water | 2.1e8 |
 | 12 | body joules: heaviest machine at 3000 K | 1 | 3.29e13 | 2.8e5 |
 | 13 | solid mass: full ship of extractors | 1 | 3.23e9 | 2.9e9 |
-| 14 | cargo: `Storage.CAP` × 5760 tiles | 1 | 1.15e11 | 8.0e7 |
+| 14 | cargo: `Storage.WAREHOUSE_CAP` × 5760 tiles | 1 | 1.15e11 | 8.0e7 |
 | 15 | `gramsPerTileOf`: now `scaledRatio` | **0** | densest tile | **ANY** — unstated invariant gone |
 
 ### Notes on the ones that matter
@@ -629,7 +629,7 @@ The table at one microgram and one centijoule, printed by `NumericLimitsTest` on
 
 | row | headroom | note |
 |---|---|---|
-| `cargo: Storage.CAP across the grid` | 80.1 | k¹; the tightest thing in the game now |
+| `cargo: Storage.WAREHOUSE_CAP across the grid` | 80.1 | k¹; the tightest thing in the game now |
 | `capacityPerTileOf: densest tile × mean specific heat` | 118 | k¹ |
 | `millimolesOf: packed liquid × millimoles/kg` | 124 | k¹ |
 | `ambientPressureOf: SHARE_ONE²` | 9.22 | k⁰ — a fixed constant, cannot move |

@@ -1225,7 +1225,9 @@ fun fullness(machine: DeckMachine?, centre: TileIndex, grid: Grid, buffers: Buff
     // flicker. What a sensor is asked here is "are my propellant lines backing up", which is a
     // question about the doors.
     is Rocket -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / (MACHINE_BUFFER_CAP * 2)).toInt()
-    is Storage -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / Storage.CAP).toInt()
+    // Against this store's own tank — see [Storage.capacity]. A sensor on a buffer reads full when
+    // the buffer is full, which is the only reading that means anything about the line it is on.
+    is Storage -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / machine.capacity).toInt()
     is Sensor, is WireButton -> 0
     is Hull, is Airlock -> 0
     is Vent -> 0

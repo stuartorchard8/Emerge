@@ -574,12 +574,12 @@ class MachineGhostTest {
 
         val chosen = edit(
             empty,
-            Edit.Place(at, Brush.Building(DeckMachineKind.Storage), Direction.Right, Species.Copper),
+            Edit.Place(at, Brush.Building(DeckMachineKind.Warehouse), Direction.Right, Species.Copper),
         )
         assertEquals(Species.Copper, chosen.deck.materialAt(at), "the brush's material did not reach the deck")
         assertEquals(
-            machineBillOfMaterials(DeckMachineKind.Storage, chosen.deck[at]!!.tiles(grid).size, Species.Copper),
-            machineBillOfMaterials(DeckMachineKind.Storage, chosen.deck[at]!!.tiles(grid).size, chosen.deck.materialOf(chosen.deck[at]!!)),
+            machineBillOfMaterials(DeckMachineKind.Warehouse, chosen.deck[at]!!.tiles(grid).size, Species.Copper),
+            machineBillOfMaterials(DeckMachineKind.Warehouse, chosen.deck[at]!!.tiles(grid).size, chosen.deck.materialOf(chosen.deck[at]!!)),
             "and so its bill is not a copper one",
         )
 

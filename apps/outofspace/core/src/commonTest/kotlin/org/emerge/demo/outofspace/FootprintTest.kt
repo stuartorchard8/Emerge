@@ -257,7 +257,7 @@ class FootprintTest {
     @Test
     fun `a sensor pointed at any tile of a building reads that building`() {
         val grid = Grid(12, 12)
-        val stored = Mixture.of(Species.Iron to Storage.CAP, energy = 0)
+        val stored = Mixture.of(Species.Iron to Storage.WAREHOUSE_CAP, energy = 0)
         val deck = DeckArray(grid)
         deck += fixtureStorage(grid.tile(6, 6), Direction.Right)
         // Looking up at the tank's bottom-right corner -- a covered tile, not its centre.

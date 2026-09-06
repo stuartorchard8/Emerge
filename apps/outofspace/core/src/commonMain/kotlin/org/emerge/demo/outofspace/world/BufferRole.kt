@@ -189,6 +189,11 @@ internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
         // banks is what it has drawn out of the room and not yet handed to a belt.
         is Pump -> if (role == BufferRole.Product) pack(0, 0) else NO_OFFSET
 
+        // The volume of the building, at the tile it is stored at — all three sizes, unchanged.
+        // ⚠️ For a `DeckMachineKind.Buffer` the anchor is also its **input door**, which is the one
+        // place a store and a port share a tile on purpose. Harmless here for the reason the note
+        // above gives: a storage's one store serves both doors already, so the store is *on* the
+        // port it serves either way. See `Storage`.
         is Storage -> if (role == BufferRole.Inside) pack(0, 0) else NO_OFFSET
 
         is DockingPort -> when (role) {

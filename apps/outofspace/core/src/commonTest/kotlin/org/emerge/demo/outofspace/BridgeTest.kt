@@ -242,7 +242,7 @@ class BridgeTest {
         var s = crossing(bridged = true)
         s.buffers.put(
             bufferTile(grid, s.deck[grid.tile(15, 5)]!!, grid.tile(15, 5), BufferRole.Inside)!!,
-            Mixture.of(Species.Iron to Storage.CAP, energy = 0),
+            Mixture.of(Species.Iron to Storage.WAREHOUSE_CAP, energy = 0),
         )
         s = run(s, RAIL_PERIOD * 20)
         assertEquals(Bridge.SLOTS, s.slotsFilled(grid.tile(9, 5)), "all three slots loaded")

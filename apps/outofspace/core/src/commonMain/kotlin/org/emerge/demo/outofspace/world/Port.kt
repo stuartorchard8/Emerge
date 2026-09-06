@@ -5,6 +5,7 @@ import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachine
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.DockingPort
 import org.emerge.demo.outofspace.world.machine.DirectedDeckMachine
 import org.emerge.demo.outofspace.world.machine.Extractor
@@ -140,7 +141,18 @@ private fun localPorts(machine: DeckMachine): List<LocalPort> {
         // bought nothing: two lines arriving at one tank is a merge, and a merge is something the
         // player should have to build out of track where they can see it, not something a building
         // does for them out of sight.
-        is Storage -> listOf(
+        //
+        // ⛔ **A `Buffer` states its doors instead of deriving them, and it is the only kind here
+        // that has to.** `±r` names two different tiles only when the machine's middle is its
+        // anchor, which is what a warehouse and a silo both have and a buffer does not: it is 1×2,
+        // so its `reach` is zero and both doors land on the anchor — two rail ports on one tile,
+        // which [Port] forbids, and a far tile left as dead casing. Its shape says where they go
+        // instead: in at the tail, out at the nose, which is the same in-one-end-out-the-other
+        // every other store has.
+        is Storage -> if (machine.kind == DeckMachineKind.Buffer) listOf(
+            LocalPort(0, 0, Direction.Left, PortKind.Input),
+            LocalPort(1, 0, Direction.Right, PortKind.Output),
+        ) else listOf(
             LocalPort(-r, 0, Direction.Left, PortKind.Input),
             LocalPort(r, 0, Direction.Right, PortKind.Output),
         )

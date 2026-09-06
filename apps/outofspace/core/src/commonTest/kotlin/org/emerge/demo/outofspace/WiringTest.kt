@@ -198,10 +198,10 @@ class WiringTest {
      */
     @Test
     fun `a sensor reports a verdict on the tile it faces, not a reading`() {
-        assertEquals(SignalField.FULL, run(tankAndSensor(Storage.CAP / 2), 1).signals.at(sensorTile))
+        assertEquals(SignalField.FULL, run(tankAndSensor(Storage.WAREHOUSE_CAP / 2), 1).signals.at(sensorTile))
         assertEquals(
-            run(tankAndSensor(Storage.CAP), 1).signals.at(sensorTile),
-            run(tankAndSensor(Storage.CAP / 2), 1).signals.at(sensorTile),
+            run(tankAndSensor(Storage.WAREHOUSE_CAP), 1).signals.at(sensorTile),
+            run(tankAndSensor(Storage.WAREHOUSE_CAP / 2), 1).signals.at(sensorTile),
             "a full tank and a half-full one clear the same threshold, so they say the same thing",
         )
         assertEquals(0, run(tankAndSensor(0L), 1).signals.at(sensorTile), "and an empty tank says nothing")
@@ -231,7 +231,7 @@ class WiringTest {
      */
     @Test
     fun `a sensor with no wire beneath it drives nothing, and that is not an error`() {
-        val s = run(tankAndSensor(Storage.CAP, wired = false), 1)
+        val s = run(tankAndSensor(Storage.WAREHOUSE_CAP, wired = false), 1)
         assertEquals(0, s.signals.networkCount, "no wire aboard means no circuits at all")
         assertEquals(0, s.signals.at(sensorTile))
     }
@@ -339,7 +339,7 @@ class WiringTest {
         val firstTenSeconds = ground(run(s, 40))
         assertTrue(firstTenSeconds > 7_000L, "should grind freely while the tank is empty, got ${firstTenSeconds}g")
 
-        // ⛔ **This used to run until the tank filled** — `ticksToMove(Storage.CAP) * 3 / 2`, on the
+        // ⛔ **This used to run until the tank filled** — `ticksToMove(Storage.WAREHOUSE_CAP) * 3 / 2`, on the
         // reasoning that a throttle slows the last of it down. The tank never fills now: the sensor
         // trips on the first packet to land and the feed stops, so waiting for a full one is waiting
         // for something the wiring is there to prevent. Long enough to land a packet and no longer.
@@ -349,7 +349,7 @@ class WiringTest {
 
         val lateRate = ground(run(s, 40)) - ground(s)
         assertEquals(0L, lateRate, "and a firing sensor stops the feed dead, not merely slows it")
-        assertTrue(s.buffers.resourceAt(grid.tile(6, 3))!!.total <= Storage.CAP, "and it never overfills")
+        assertTrue(s.buffers.resourceAt(grid.tile(6, 3))!!.total <= Storage.WAREHOUSE_CAP, "and it never overfills")
     }
 
     /**
@@ -396,7 +396,7 @@ class WiringTest {
         // Nine tenths full, which is where the throttle is doing something visible.
         start.buffers.put(
             bufferTile(g, tank, watched, BufferRole.Inside)!!,
-            Mixture.of(Species.Iron to Storage.CAP * 9 / 10, energy = 0).atAmbient(),
+            Mixture.of(Species.Iron to Storage.WAREHOUSE_CAP * 9 / 10, energy = 0).atAmbient(),
         )
         val banked = start.stockpile.totalMass
 

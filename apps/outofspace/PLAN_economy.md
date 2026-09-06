@@ -383,7 +383,7 @@ at the full 1 kg** — no partial action taken to maximise a margin.
   whose elements are worth more separately *at local prices* (§3.4), convert 1 kg into its elements
   and stop for this tick. If the most abundant is not profitable, try the next.
 
-⚠️ At 64 tps, 1 kg/tick is 3.8 t/minute against a `Storage.CAP` of 20 t. Both rates are a dial;
+⚠️ At 64 tps, 1 kg/tick is 3.8 t/minute against a `Storage.WAREHOUSE_CAP` of 20 t. Both rates are a dial;
 neither has been played with.
 
 ## 7. Docking, and the composite body

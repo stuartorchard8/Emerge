@@ -113,7 +113,7 @@ class SignalWiringTest {
 
     @Test
     fun `a sensor throttles a machine at the far end of a run`() {
-        val s = run(rig(Storage.CAP), 2)
+        val s = run(rig(Storage.WAREHOUSE_CAP), 2)
 
         assertEquals(
             SignalField.FULL,
@@ -129,7 +129,7 @@ class SignalWiringTest {
      */
     @Test
     fun `cutting the wire stops the throttling`() {
-        val joined = rig(Storage.CAP)
+        val joined = rig(Storage.WAREHOUSE_CAP)
         val before = ground(run(joined, 40))
 
         // One link severed, in the middle of the run.
@@ -146,7 +146,7 @@ class SignalWiringTest {
     fun `a machine with no wire under it runs at full`() {
         // The migration-safety property, asserted directly: an unwired WIRE term reads 0, so
         // ALWAYS − WIRE is ALWAYS. This is why every pre-wire vessel kept working.
-        val s = run(rig(Storage.CAP, wired = false), 40)
+        val s = run(rig(Storage.WAREHOUSE_CAP, wired = false), 40)
         assertTrue(ground(s) > 0L, "an unwired throttle is no throttle at all")
     }
 
@@ -188,12 +188,12 @@ class SignalWiringTest {
             .stocked(grid.tile(13, 5), stored)
             // Plenty, so the machine is never short of something to work on: the throttle is the
             // only thing that may govern the rate over the window measured.
-            .stocked(at, Mixture.of(Species.Water to Storage.CAP, energy = 0).atAmbient(), BufferRole.Input)
+            .stocked(at, Mixture.of(Species.Water to Storage.WAREHOUSE_CAP, energy = 0).atAmbient(), BufferRole.Input)
     }
 
     /** How much the machine worked through: what is gone from its input store. */
     private fun burned(s: VesselState): Long =
-        Storage.CAP - (s.inStore(grid.tile(extractorAt.first, extractorAt.second), BufferRole.Input)?.total ?: 0L)
+        Storage.WAREHOUSE_CAP - (s.inStore(grid.tile(extractorAt.first, extractorAt.second), BufferRole.Input)?.total ?: 0L)
 
     /**
      * ⛔ **`a partial reading throttles proportionally` stood here, and it was lost to a boolean on
@@ -212,8 +212,8 @@ class SignalWiringTest {
         // stalls, and a stalled machine works the same amount whatever it was told. Measured over
         // the window where the wire is the only thing governing the rate.
         val empty = burned(run(burnerRig(0L), 4))
-        val quarter = burned(run(burnerRig(Storage.CAP / 4), 4))
-        val half = burned(run(burnerRig(Storage.CAP / 2), 4))
+        val quarter = burned(run(burnerRig(Storage.WAREHOUSE_CAP / 4), 4))
+        val half = burned(run(burnerRig(Storage.WAREHOUSE_CAP / 2), 4))
 
         assertTrue(empty > 0L, "a quiet wire leaves the machine running: $empty")
         assertTrue(empty > quarter, "and anything in the tank stops it: $empty vs $quarter")
@@ -228,7 +228,7 @@ class SignalWiringTest {
     @Test
     fun `two machines on one run see the same value`() {
         val deck = DeckArray(grid)
-        val stored = Mixture.of(Species.Iron to Storage.CAP, energy = 0)
+        val stored = Mixture.of(Species.Iron to Storage.WAREHOUSE_CAP, energy = 0)
         deck += fixtureStorage(grid.tile(13, 5), Direction.Right)
         deck += fixtureSensor(grid.tile(12, 3), Direction.Down)
         val wires = arrayOfNulls<Segment>(grid.size)
@@ -258,7 +258,7 @@ class SignalWiringTest {
      */
     @Test
     fun `a wired vessel survives a save and load`() {
-        val played = run(rig(Storage.CAP), 20)
+        val played = run(rig(Storage.WAREHOUSE_CAP), 20)
         val reloaded = Save.read(Save.write(played))
 
         val after = run(reloaded, 1)
@@ -292,7 +292,7 @@ class SignalWiringTest {
             deck,
             conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()),
             buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
-        ).stocked(grid.tile(13, 5), Mixture.of(Species.Iron to Storage.CAP, energy = 0))
+        ).stocked(grid.tile(13, 5), Mixture.of(Species.Iron to Storage.WAREHOUSE_CAP, energy = 0))
     }
 
     private fun sensor(s: VesselState): Sensor =

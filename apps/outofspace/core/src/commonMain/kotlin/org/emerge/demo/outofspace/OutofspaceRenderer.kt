@@ -868,24 +868,29 @@ class OutofspaceRenderer {
                 tileRect(x, y, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Vent))
                 tileRect(x, y, Visual.VENT_CORE_SCALE, Colors.VENT_CORE)
             }
-            // An iris: hull-coloured door, with a hole in it that grows as the signal does. The
-            // opening is drawn in the vent's colour on purpose — both are holes onto the same space,
-            // and the player should read them as the same kind of thing.
-            // Tank: room-sized fill (legible at distance).
+            // Tank: room-sized fill, legible at distance. ⚠️ **Drawn over the footprint's own
+            // bounding box rather than off `n`**, because two of the three store sizes are not
+            // square: a silo turned upright is one tile wide and three tall, and a fill worked out
+            // from a diameter would put a 3×3 pool of ore across the corridor beside it. The level
+            // is against [Storage.capacity], so a full buffer draws full.
             is Storage -> {
-                footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Storage))
+                footprintRect(state, m, Visual.MACHINE_INSET, kindColor(m.kind))
                 val stored = state.buffers.resourceAt(bufferTile(state.grid, m, tile, BufferRole.Inside)!!)
-                val level = (stored?.total ?: 0L).toFloat() / Storage.CAP
-                if (level > 0f) {
-                    val h = level.coerceIn(0f, 1f) * (n - Visual.TANK_SPAN_INSET)
-                    val bottom = y + n * 0.5f - Visual.TANK_BOTTOM_MARGIN
+                val level = (stored?.total ?: 0L).toFloat() / m.capacity
+                if (level > 0f) overFootprint(state, m) { cx, cy, tilesW, tilesH ->
+                    val w = tilesW - Visual.TANK_SPAN_INSET
+                    val h = level.coerceIn(0f, 1f) * (tilesH - Visual.TANK_SPAN_INSET)
+                    val bottom = cy / tilePx + tilesH * 0.5f - Visual.TANK_BOTTOM_MARGIN
                     rect(
-                        (x + 0.5f) * tilePx, (bottom - h * 0.5f) * tilePx,
-                        (n - Visual.TANK_SPAN_INSET) * tilePx, h * tilePx,
+                        cx, (bottom - h * 0.5f) * tilePx,
+                        w * tilePx, h * tilePx,
                         stored?.color?.toLong() ?: 0x000000FF,
                     )
                 }
             }
+            // An iris: hull-coloured door, with a hole in it that grows as the signal does. The
+            // opening is drawn in the vent's colour on purpose — both are holes onto the same space,
+            // and the player should read them as the same kind of thing.
             is Airlock -> {
                 tileRect(x, y, 1f, kindColor(DeckMachineKind.Airlock))
                 val open = airlockOpenness(m, state.signals) / ApertureField.OPEN
@@ -1896,7 +1901,12 @@ fun kindColor(kind: DeckMachineKind): Long = when (kind) {
     DeckMachineKind.Hull -> 0x4A5464FFL
     DeckMachineKind.Airlock -> 0x6E7C90FFL
     DeckMachineKind.Vent -> 0x3A3A44FFL
-    DeckMachineKind.Storage -> 0x3A4A5AFFL
+    // One family, lightening as it shrinks: three sizes of the same machine should read as three
+    // sizes of the same machine, and a silo standing in a corridor still has to be tellable from the
+    // warehouse at the end of it.
+    DeckMachineKind.Warehouse -> 0x3A4A5AFFL
+    DeckMachineKind.Silo -> 0x475A6DFFL
+    DeckMachineKind.Buffer -> 0x556A80FFL
     DeckMachineKind.Sensor -> 0x24303CFFL
     DeckMachineKind.KeyInput -> 0x2E3A4AFFL
     DeckMachineKind.Pump -> 0xB07840FFL

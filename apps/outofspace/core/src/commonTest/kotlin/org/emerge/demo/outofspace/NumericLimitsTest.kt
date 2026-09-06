@@ -80,7 +80,7 @@ class NumericLimitsTest {
      *
      * It used to be a literal `1_000_000`, and that was right for as long as the knob had not moved.
      * Every worst case in this file is measured by *running the game's own constants* — a hull's
-     * `massPerTile`, a `Storage.CAP` — which are integer counts in whatever unit `Budget` is set to
+     * `massPerTile`, a `Storage.WAREHOUSE_CAP` — which are integer counts in whatever unit `Budget` is set to
      * right now. Multiply those by a fixed million and the answer is only the target while the build
      * is still at one gram per integer. Turn the knob and the file asks for the rescale **twice**:
      * every row failed, including rows with nothing wrong with them, and the whole file had to be
@@ -377,7 +377,7 @@ class NumericLimitsTest {
         // a running total rounded through [scaledRatio]: `cumulative / sum` is a ratio bounded by
         // ONE, so the whole-part term can never exceed the target itself. What is left is linear,
         // and what bounds it is the largest pile anyone can ask to have split — a full Storage.
-        budget("apportion: running total, bounded by the target (full Storage)", Storage.CAP, 1)
+        budget("apportion: running total, bounded by the target (full Storage)", Storage.WAREHOUSE_CAP, 1)
         budget("apportion: running total, bounded by the target (machine buffer)", MACHINE_BUFFER_CAP, 1)
         // This row used to guard an UNSTATED INVARIANT rather than a margin: `total * VOLUME_UNIT`
         // was safe only because both call sites happen to pass per-mille compositions totalling
@@ -509,7 +509,7 @@ class NumericLimitsTest {
 
         // ── Bulk mass ─────────────────────────────────────────────────────
         budget("solid mass: densest deck across the whole grid", densestTileMass * gridTiles, 1)
-        budget("cargo: Storage.CAP across the grid", Storage.CAP * gridTiles, 1)
+        budget("cargo: Storage.WAREHOUSE_CAP across the grid", Storage.WAREHOUSE_CAP * gridTiles, 1)
         budget("densest single tile (bound, not an intermediate)", densestSolidTile, 1)
 
         // Printed on every run, green or red. `NUMERIC_LIMITS.md` §10 says re-measuring means

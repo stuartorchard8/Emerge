@@ -81,7 +81,7 @@ class PumpTest {
             rail = RailLayer.empty(grid.size),
         ).copy(creative = true)
         s = edit(s, fixturePlace(pumpAt, Brush.Building(DeckMachineKind.Pump), Direction.Up))
-        if (withTank) s = edit(s, fixturePlace(tankAt, Brush.Building(DeckMachineKind.Storage), Direction.Right))
+        if (withTank) s = edit(s, fixturePlace(tankAt, Brush.Building(DeckMachineKind.Warehouse), Direction.Right))
         for (x in 5 until 14) s = edit(s, fixtureLay(grid.tile(x, row), grid.tile(x + 1, row), Conduit.Rail))
         return if (atmospheres <= 1L) s else pressurised(s, atmospheres)
     }

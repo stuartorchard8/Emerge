@@ -141,7 +141,11 @@ fun DeckMachine.toMachineSettings(): MachineSettings = MachineSettings(
 fun DeckMachine.withSettings(settings: MachineSettings): DeckMachine {
     val base = this
     return when (kind) {
-        DeckMachineKind.Storage -> {
+        // All three sizes carry the same dials, so they take the same branch. ⚠️ A capture is only
+        // pasted onto a machine of the **same kind** (see the caller), so this never quietly turns a
+        // warehouse's settings into a buffer's — it is one branch because the code is identical, not
+        // because the kinds are interchangeable.
+        DeckMachineKind.Warehouse, DeckMachineKind.Silo, DeckMachineKind.Buffer -> {
             base as Storage
             var result = base
             if (settings.wiring is Setting.Present) result = result.copy(wiring = settings.wiring.value)

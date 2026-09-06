@@ -97,7 +97,7 @@ class ExhaustVelocityTest {
         // ⛔ The regression. `mass × millimolesPerKilogram` for a full store of the lightest species
         // is 10¹⁹, which wraps `Long` negative — so the parcel reported *no* velocity rather than a
         // rounded one, and a motor drawing on a full tank would have made no thrust at all.
-        // A store is `Storage.CAP`, and this is a shade over it on purpose.
+        // A store is `Storage.WAREHOUSE_CAP`, and this is a shade over it on purpose.
         val full = exhaustVelocity(parcel(Species.Hydrogen, 293, mass = 25L * Budget.TONNE))
         assertTrue(full > 0L, "a full tank of hydrogen was worth nothing")
         assertNear(2920, full, 2, "twenty-five tonnes of hydrogen")
