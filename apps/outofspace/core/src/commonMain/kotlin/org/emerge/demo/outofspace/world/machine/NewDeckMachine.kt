@@ -35,5 +35,6 @@ fun newDeckMachine(kind: DeckMachineKind, tile: TileIndex, facing: Direction): D
     DeckMachineKind.Extractor -> Extractor(tile, facing)
     DeckMachineKind.Bridge -> Bridge(tile, facing)
     DeckMachineKind.Gauge -> Gauge(tile)
+    DeckMachineKind.SolarPanel -> SolarPanel(tile)
     DeckMachineKind.Valve -> Valve(tile)
 }

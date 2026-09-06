@@ -230,16 +230,38 @@ The fix keeps the per-edge figures as **weights** and apportions the real drop i
 them — `I²R` says the edge carrying the most current takes the most heat, and `apportion` telescopes
 so the shares sum back to the total exactly.
 
-### Increment 1b — sun and panel
+### Increment 1b — sun and panel ✅ BUILT (2026-09-06)
 
-The `Ambient` insolation scalar and a solar panel, so charge has a source in the world rather than
-only in a test. ⭐ **Exposure is `StructureMap.openToSpace` on the panel's neighbours** — the same
-answer `SolidHeat` already uses to decide what a surface radiates at, so "the sun is anywhere outside
-the vessel" needs no new concept (Stu, 2026-09-06). A tile inside a machine's own footprint faces
-nothing, which is why it is the neighbours that are counted.
+`SolarPanel`, `Ambient.insolation`, `VesselState.charge`, the power pass, save version 27, and the
+`POWER` brush turned on. `SolarPanelTest`, 6 tests.
 
-⚠️ **The panel's output rate is what sizes `PowerFlow.MAX_CHARGE`**, and that is this increment's
-constant to pick rather than one a save discovers.
+⭐ **The whole of a panel is three lines**, because everything it needed already existed:
+`StructureMap.openToSpace` to say which faces see sky, one scalar on `Ambient` to say how bright it
+is, and `PowerFlow` to carry what it pushes. *The sun is anywhere outside the vessel* (Stu), so
+exposure is counted over the panel's **neighbours** — a machine blocks passage, so space never
+reaches the tile it stands on, exactly as `SolidHeat` counts a casing's radiating faces. Bury a panel
+and it makes nothing; nothing forbids that, it simply has no sky.
+
+⭐ **Solar heating is emergent.** Nobody wrote a rule that a panel warms the ship. Charge moves down
+a resistance and `I²R` is what that costs, banked through the same `heat()` every machine's waste
+heat goes through — so it lands in `generatedEnergy` and the existing ledger accounts for it.
+
+**A panel is a current source, not a power source.** It pushes charge at a rate set by the light,
+near enough regardless of what the bus is doing, which is what a photovoltaic cell *is* up to its
+open-circuit voltage. So `P = I × V` rises as the bus charges, and that falls out rather than being
+stated.
+
+⚠️ **`CHARGE_PER_FACE` is sized against the overflow bound, not against a joule.** Charge and the
+game's energy unit meet at `PowerFlow.storedEnergy`, and what a panel is *worth* only becomes a real
+question when something bills for it — increment 3. Sizing it against `MAX_CHARGE` is what can be
+done honestly today; that constant is the lever when the anchor arrives.
+
+#### What the brush was waiting for
+
+`Conduit.Power` had been excluded from the build menu and from the cut tool on the stated grounds
+that *"the layer exists and nothing reads it yet, so a brush for it would lay cable that does nothing
+and looks like a bug rather than like a feature that has not arrived."* Both exclusions are lifted
+here, and the cut tool with them: a network the player can build is one they must be able to cut.
 
 ### Increment 2 — the cell as a load ⭐ the hard shape for the contract
 

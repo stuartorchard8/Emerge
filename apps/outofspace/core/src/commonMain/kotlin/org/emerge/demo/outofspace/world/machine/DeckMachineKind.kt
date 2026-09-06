@@ -113,6 +113,9 @@ enum class DeckMachineKind(
      */
     Gauge("GAUGE"),
 
+    /** Pushes charge onto the power run under it — see [SolarPanel]. */
+    SolarPanel("SOLAR"),
+
     /**
      * An opening between the pipe under it and the room it stands in. Permeable, and that is not a
      * convenience — a valve that displaced the air out of its own tile would open onto the vacuum it

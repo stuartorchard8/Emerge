@@ -26,15 +26,36 @@ class Ambient(
     /** What one tile's volume of it holds — its density, since every tile is the same size. */
     val perTile: Mixture,
     val kelvin: Int,
+    /**
+     * **How bright it is out there**, in permille of full sun at one astronomical unit.
+     *
+     * ⛔ **One number, and deliberately only one** — see this class's doc. There is no sun direction,
+     * no shadow, no day and no night, because any of those is the world map this class exists to
+     * avoid. *The sun is anywhere outside the vessel* (Stu, 2026-09-06), so what a panel collects
+     * depends on how much of it faces out and on nothing else.
+     *
+     * ⚠️ **Independent of [perTile], unlike everything else here.** Hard vacuum is the *brightest*
+     * place a vessel can be, not the dimmest; density and light are two facts about a location that
+     * happen to share a class.
+     */
+    val insolation: Int = FULL_SUN,
 ) {
     val massPerTile: Long get() = perTile.total
 
     companion object {
+        /** The reference [insolation]: full sun at one AU, which is what open space near a star is. */
+        const val FULL_SUN = 1_000
+
         /** Nothing out there: the rim only sheds, which is every save written before this. */
         val VACUUM = Ambient(Mixture.EMPTY, Temperature.AMBIENT_KELVIN)
 
-        /** Sea-level air on a temperate world — the same mixture a hull is pressurised with. */
-        val EARTHLIKE = Ambient(Stuff.AMBIENT_AIR, Temperature.AMBIENT_KELVIN)
+        /**
+         * Sea-level air on a temperate world — the same mixture a hull is pressurised with.
+         *
+         * ⚠️ Dimmer than vacuum, because an atmosphere is in the way: about three quarters of the
+         * light above it reaches the ground on a clear day.
+         */
+        val EARTHLIKE = Ambient(Stuff.AMBIENT_AIR, Temperature.AMBIENT_KELVIN, insolation = 750)
 
         /**
          * The upper cloud deck of a gas giant: hydrogen and helium, cold, and **twenty times** as
@@ -52,6 +73,8 @@ class Ambient(
                 energy = 0,
             ),
             kelvin = 165,
+            // Jupiter is 5.2 AU out, and light falls off as the square: 1/27th of what Earth gets.
+            insolation = 37,
         )
     }
 }

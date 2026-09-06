@@ -38,6 +38,8 @@ import org.emerge.demo.outofspace.world.machine.WireButton
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
+import org.emerge.demo.outofspace.world.machine.SolarPanel
+import org.emerge.demo.outofspace.world.PowerCharge
 
 /** A save that could not be read, with the line that stopped it. */
 class SaveError(message: String) : Exception(message)
@@ -63,6 +65,9 @@ class SaveError(message: String) : Exception(message)
  * added later cannot appear in a file that old.
  */
 fun materialBefore(kind: DeckMachineKind): Species = when (kind) {
+    // ⚠️ Unreachable and stated anyway: a panel postdates version 20, so no file this function reads
+    // can contain one. Steel because that is what every other plate defaulted to.
+    DeckMachineKind.SolarPanel -> Species.Steel
     DeckMachineKind.Hull, DeckMachineKind.Airlock -> Species.Steel
     DeckMachineKind.Vent, DeckMachineKind.Storage,
     DeckMachineKind.Sensor, DeckMachineKind.KeyInput, DeckMachineKind.Pump,
@@ -119,7 +124,13 @@ object Save {
      */
     const val LEGACY_PIPE = "Pipe"
 
-    const val VERSION = 26
+    /**
+     * ⚠️ **27 adds `charge`** — what every tile of [Conduit.Power] is holding, written sparsely in
+     * the same `tag tile=value` form as the heat fields. A file written before it loads with an
+     * empty field, which is the *true* state of a world that has never had a solar panel: charge has
+     * exactly one source and it is a machine that did not exist.
+     */
+    const val VERSION = 27
 
     /**
      * The first version whose filters say **pure / mixed / no opinion** rather than a percentage.
@@ -354,6 +365,9 @@ object Save {
 
         // Packed sparsely like heat. Version 3 and earlier stored per-tile heat; absent loads ambient.
         writeSparse(out, "airheat", state.air.copyEnergy().data)
+        // ⚠️ Unscaled, unlike the heat fields beside it: charge is its own quantity and does not
+        // ride the mass unit, so a rescale must not touch it.
+        writeSparse(out, "charge", state.charge.toLongArray())
         writeDeckHeat(out, state.deck)
         writeDeckStuff(out, state.deck)
         writeTrackStuff(out, state.conduits)
@@ -580,7 +594,8 @@ object Save {
             // its facing and its three slots, and both of those are written by the common code too.
             // A valve is its position and nothing else. An airlock is its wiring, and a bridge its
             // facing and its three slots — all of those are written by the common code around this.
-            is Hull, is Airlock, is Bridge, is Valve -> {}
+            // A panel is where it stands and what it is wired to, and the common code writes both.
+            is Hull, is Airlock, is Bridge, is Valve, is SolarPanel -> {}
             // A gauge's reading persists after the packet has gone, so it is state, not decoration.
             // The field names are the ones the `conduit` record used while a gauge was a segment.
             is Gauge -> {
@@ -939,6 +954,8 @@ object Save {
         val merges = HashMap<TileIndex, Int>()
         val airMass = MassArray(grid.size)
         val airEnergy = EnergyArray(grid.size)
+        /** Zero until a `charge` line says otherwise — see [VERSION] on why that is the true default. */
+        val charge = LongArray(grid.size)
         val edges = EdgeGrid(grid)
         val pipeMass = MassArray(grid.size)
         val pipeEnergy = EnergyArray(grid.size)
@@ -1156,6 +1173,7 @@ object Save {
                     tokens[i].substring(eq + 1).toLongOrNull() ?: fail("bad energy in '${tokens[i]}'")
                 }
                 "airheat" -> readSparse(tokens, airEnergy.data, energyScale, ::fail)
+                "charge" -> readSparse(tokens, charge, Rescale.NONE, ::fail)
                 "deckheat" -> readDeckHeat(
                     tokens, deck.stuff, energyScale, ::fail, legacyThrusterEnergy, legacyThrusters.keys,
                 )
@@ -1428,6 +1446,7 @@ object Save {
             buffers = buffers,
             rail = rail,
             conduits = conduits,
+            charge = PowerCharge.of(charge),
             diverters = FlowCursors(diverters, merges),
             gravity = gravity,
             positionX = positionX,
@@ -1919,6 +1938,7 @@ object Save {
 
         val machine: DeckMachine = when (kind) {
             DeckMachineKind.Hull -> Hull(tile)
+            DeckMachineKind.SolarPanel -> SolarPanel(tile)
             DeckMachineKind.Airlock -> Airlock(tile)
             DeckMachineKind.Vent -> Vent(tile, ventedMass = massNum("vented", 0L))
             // Two lists, each one field. ⚠️ `wiring` is applied after this `when` for every kind

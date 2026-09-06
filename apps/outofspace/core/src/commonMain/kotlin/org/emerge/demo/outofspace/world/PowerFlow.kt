@@ -193,3 +193,39 @@ object PowerFlow {
      */
     fun storedEnergy(q: Long): Long = q * q / 2L
 }
+
+/**
+ * **What every tile of power conduit is holding**, and the one piece of state the network has.
+ *
+ * A class rather than a bare `LongArray` on [VesselState] for the reason every other layer is one:
+ * an array compares by identity, and a state that compares by identity makes two worlds that are
+ * the same read as different — which the save round-trip tests would report as corruption.
+ */
+class PowerCharge private constructor(internal val q: LongArray) {
+
+    operator fun get(tile: TileIndex): Long = q[tile.index]
+
+    val total: Long get() { var sum = 0L; for (v in q) sum += v; return sum }
+
+    val size: Int get() = q.size
+
+    fun copyOf(): PowerCharge = PowerCharge(q.copyOf())
+
+    /** A copy for the save layer, which writes it sparsely exactly as the heat fields are written. */
+    fun toLongArray(): LongArray = q.copyOf()
+
+    /** This, with [amount] added at [tile] — the only way charge enters the world. */
+    fun plus(tile: TileIndex, amount: Long): PowerCharge =
+        PowerCharge(q.copyOf().also { it[tile.index] += amount })
+
+    override fun equals(other: Any?): Boolean =
+        this === other || (other is PowerCharge && q.contentEquals(other.q))
+
+    override fun hashCode(): Int = q.contentHashCode()
+
+    companion object {
+        fun empty(tiles: Int): PowerCharge = PowerCharge(LongArray(tiles))
+
+        fun of(q: LongArray): PowerCharge = PowerCharge(q.copyOf())
+    }
+}

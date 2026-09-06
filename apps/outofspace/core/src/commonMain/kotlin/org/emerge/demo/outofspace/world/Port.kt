@@ -20,6 +20,7 @@ import org.emerge.demo.outofspace.world.machine.Furnace
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.demo.outofspace.world.machine.WireButton
+import org.emerge.demo.outofspace.world.machine.SolarPanel
 
 /**
  * Machine connection point: specific tile of footprint, facing specific way.
@@ -163,7 +164,9 @@ private fun localPorts(machine: DeckMachine): List<LocalPort> {
 
         // No ports at all: a gauge only watches the run under it, and a valve only says that what
         // passes over it may let go of its volatiles. Neither is a place material can be handed to.
-        is Sensor, is WireButton, is Gauge, is Valve -> emptyList()
+        // ⚠️ A panel has no port and never will: what it hands over goes onto the conduit *under*
+        // it, which is not a thing a port addresses. Ports are for matter.
+        is Sensor, is WireButton, is Gauge, is Valve, is SolarPanel -> emptyList()
     }
 }
 

@@ -230,6 +230,9 @@ val DeckMachineKind.fillPermille: Int
         // Fittings on a run, keeping the fill each had while it was a flag on a `Segment` — so the
         // migration does not quietly change what the ship weighs.
         DeckMachineKind.Gauge -> 40
+        // Thinner than any housing aboard: a panel is almost all face and almost no structure, and
+        // the thing it is *for* is having a lot of face.
+        DeckMachineKind.SolarPanel -> 20
         DeckMachineKind.Valve -> 15
         // A collar and a pair of hoppers: mostly structure, and heavier than a warehouse shell
         // because it is a hole in the ship that has to be strong enough to be one.

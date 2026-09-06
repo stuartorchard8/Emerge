@@ -46,12 +46,12 @@ sealed interface Brush {
         /**
          * Everything offered in the build menu, runs first.
          *
-         * ⚠️ [Conduit.Power] is deliberately absent: the layer exists and nothing reads it yet, so a
-         * brush for it would lay cable that does nothing and looks like a bug rather than like a
-         * feature that has not arrived.
+         * ✅ [Conduit.Power] is here as of increment 1b of `PLAN_power_network.md`. It was held back
+         * while *"the layer exists and nothing reads it yet"* — a brush laying cable that did nothing
+         * would read as a bug rather than as a feature that had not arrived. `PowerFlow` reads it
+         * now, and a [org.emerge.demo.outofspace.world.machine.SolarPanel] fills it.
          */
         val ALL: List<Brush> =
-            Conduit.entries.filter { it != Conduit.Power }.map { Run(it) } +
-                DeckMachineKind.ALL.map { Building(it) }
+            Conduit.entries.map { Run(it) } + DeckMachineKind.ALL.map { Building(it) }
     }
 }

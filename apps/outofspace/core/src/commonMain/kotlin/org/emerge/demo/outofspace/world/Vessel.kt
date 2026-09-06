@@ -28,6 +28,7 @@ import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
 
 import org.emerge.sim.core.physics.primitives.Frac2
+import org.emerge.demo.outofspace.world.machine.SolarPanel
 
 /**
  * The whole world at one instant: a tile grid of machines, the global stockpile, and the vessel's
@@ -92,6 +93,16 @@ data class VesselState(
      * has a temperature whether or not anything is flowing down it.
      */
     val conduits: Conduits = Conduits.empty(grid.size),
+    /**
+     * What every tile of [Conduit.Power] is holding — see [PowerCharge] and [PowerFlow].
+     *
+     * ⚠️ **Defaulted, unlike [buffers] and [rail], and the difference is real rather than a
+     * relaxation of the rule.** Those default silently *wrong*: a loader that forgets one hands back
+     * a world with every tank standing and empty. An empty charge field is the **true** state of any
+     * world that has never had a solar panel in it, because charge has exactly one source and that
+     * source is a machine that did not exist before save version 27.
+     */
+    val charge: PowerCharge = PowerCharge.empty(grid.size),
     /** Which way each fork last sent material — see [FlowCursors]. */
     val diverters: FlowCursors = FlowCursors(),
     /**
@@ -1185,7 +1196,9 @@ fun fullness(machine: DeckMachine?, centre: TileIndex, grid: Grid, buffers: Buff
     null -> 0
     // Neither holds anything, so neither has a fullness. A gauge's reading is a different question
     // and reaches the wire by its own route — see [OutofspaceReducer]'s gauge pass.
-    is Gauge, is Valve -> 0
+    // A panel holds no matter either. What it *is* full of is charge, which is a fact about the
+    // wire under it rather than about the machine, and no sensor asks the wire anything yet.
+    is Gauge, is Valve, is SolarPanel -> 0
     // What is waiting to be sold. A sensor on a docking port asks "is my cargo backing up because
     // nobody is buying", which is the same shape of question it asks of every other machine.
     is DockingPort -> (buffers.massAt(bufferTile(grid, machine, centre, BufferRole.Input)!!) *

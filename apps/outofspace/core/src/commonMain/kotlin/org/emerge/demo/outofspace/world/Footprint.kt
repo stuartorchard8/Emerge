@@ -9,6 +9,9 @@ val DeckMachineKind.diameter: Int
         DeckMachineKind.Storage -> 3
         DeckMachineKind.Sensor, DeckMachineKind.KeyInput, DeckMachineKind.Pump,
         DeckMachineKind.Gauge, DeckMachineKind.Valve,
+        // A panel is a plate on the hull, not an installation: one tile, and you build a bank of
+        // them rather than a bigger one.
+        DeckMachineKind.SolarPanel,
         -> 1
         // One tile wide. Its *length* is two, and that is not this number — see [FootprintShape.Nose].
         DeckMachineKind.Thruster -> 1

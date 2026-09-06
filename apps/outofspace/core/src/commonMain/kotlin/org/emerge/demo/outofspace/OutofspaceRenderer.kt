@@ -61,6 +61,7 @@ import kotlin.math.PI
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.sqrt
+import org.emerge.demo.outofspace.world.machine.SolarPanel
 
 /**
  * Draws the vessel: tiles, machines, and every packet in transit.
@@ -786,6 +787,9 @@ class OutofspaceRenderer {
             // a box sitting on it — it is a fitting the track runs through. It wears no colour,
             // because it names none: what it reports on is the wire beneath it.
             is Gauge -> frame(x, y, Colors.GAUGE_COLLAR)
+            // A filled plate. It is all face and that is the whole of what it does, so it reads as
+            // a surface rather than as a housing with something going on inside it.
+            is SolarPanel -> tileRect(x, y, 1f, kindColor(DeckMachineKind.SolarPanel))
             // Bright core, wider than the pipe it opens, centred on the tile.
             is Valve -> footprintRect(state, m, Visual.VALVE_COLLAR, Colors.VALVE_CORE)
             is Hull -> tileRect(x, y, 1f, kindColor(DeckMachineKind.Hull))
@@ -1885,6 +1889,9 @@ fun brushColor(brush: Brush): Long = when (brush) {
 fun kindColor(kind: DeckMachineKind): Long = when (kind) {
     DeckMachineKind.Bridge -> 0x1A2030FFL
     DeckMachineKind.Gauge -> 0x39445AFFL
+    // Deep blue-black, the colour a panel actually is: it is the one thing aboard whose job is to
+    // reflect as little as possible.
+    DeckMachineKind.SolarPanel -> 0x1B2340FFL
     DeckMachineKind.Valve -> 0xD8A860FFL
     DeckMachineKind.Hull -> 0x4A5464FFL
     DeckMachineKind.Airlock -> 0x6E7C90FFL

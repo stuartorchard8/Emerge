@@ -88,11 +88,12 @@ enum class Tool(val label: String) {
         /**
          * What [Cut] will sever, and in the order the key cycles them.
          *
-         * ⚠️ **`Conduit.Power` is deliberately absent**, exactly as it is from [DeleteLayer]: nothing
-         * lays it yet, and a key that quietly reaches a fourth network is how a player loses a run
-         * of cable without ever learning what did it.
+         * ✅ **[Conduit.Power] joined this** when a brush started laying it — increment 1b of
+         * `PLAN_power_network.md`. It was held back while nothing lays it, on the grounds that a key
+         * quietly reaching a fourth network is how a player loses a run of cable without learning
+         * what did it. A network the player can build is one they must be able to cut.
          */
-        val CUTTABLE: List<Conduit> = listOf(Conduit.Rail, Conduit.Signal)
+        val CUTTABLE: List<Conduit> = listOf(Conduit.Rail, Conduit.Signal, Conduit.Power)
     }
 }
 

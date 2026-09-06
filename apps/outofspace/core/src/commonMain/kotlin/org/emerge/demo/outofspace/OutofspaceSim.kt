@@ -164,6 +164,10 @@ import org.emerge.demo.outofspace.world.energyAtKelvin
 import org.emerge.demo.outofspace.world.thermalMassOf
 import org.emerge.demo.outofspace.world.thermalMassAt
 import org.emerge.demo.outofspace.world.thermalMass
+import org.emerge.demo.outofspace.world.machine.SolarPanel
+import org.emerge.demo.outofspace.world.PowerCharge
+import org.emerge.demo.outofspace.world.PowerFlow
+import org.emerge.demo.outofspace.world.Ambient
 
 /** One tick: edits → sense → produce → process → eject → advance conduits → fluid → heat → motion.
  *
@@ -461,8 +465,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // [advanceBridges] with the rest of the conduit step, not by running the machine.
                     // Inert: none of these is run by the tick. A gauge is read after the conduit
                     // step (see [readGauges]) and a valve is a hole, not a mechanism.
+                    // A solar panel is inert here for the same reason a gauge is: it does its work
+                    // in the power pass, against the conduit under it, not against a buffer.
                     is Hull, is Airlock, is Vent, is Storage, is Bridge, is Gauge, is Valve,
-                    is Sensor, is WireButton -> m
+                    is Sensor, is WireButton, is SolarPanel -> m
                     is Pump -> w.suck(m, on, tile)
                     // A thruster on flight control answers the pilot's stick, not the wire — see
                     // [ThrusterControl]. Worked out per motor from where it sits and which way it
@@ -559,6 +565,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // wrongness in front of it. Cheaper and more honest to let completion push the air out at
         // the moment it completes.
         if (w.solidityChanged) structure = StructureMap.derive(w.grid, w.deck, openness)
+
+        // ── Power ─────────────────────────────────────────────────────────────────
+        //
+        // ⚠️ **After `structure`, and that is what decides where it sits.** A panel collects on each
+        // face space reaches, which is [StructureMap.openToSpace]'s answer, so the pass has to run
+        // once the tick's walls are known — a panel that a bulkhead was just built over should stop
+        // collecting on the tick the bulkhead lands, not on the next one.
+        //
+        // ⛔ **Before the heat pass**, because the wire's I²R is heat like any other and `heat()`
+        // banks it into `heatAdded`, which the heat pass is about to conduct away. Running after it
+        // would hold every joule the wire made for a whole tick.
+        val charge = w.collectAndRelax(state.charge, structure, state.ambient, state.signals)
 
         // ── Heat ──────────────────────────────────────────────────────────────────
         val _h0 = _prof0; val _h = if (_h0) TimeSource.Monotonic.markNow() else null
@@ -1094,6 +1112,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             networks = networks,
             structure = structure,
             occupancy = occupancy,
+            charge = charge,
             generatedEnergy = w.generatedEnergy,
             radiatedEnergy = state.radiatedEnergy + conductedRadiated,
             insertedEnergy = w.insertedEnergy,
@@ -4683,6 +4702,50 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * instead — after the step and after machines have pushed their output out, which is the
          * same moment the last of those writes used to happen.
          */
+        /**
+         * One tick of the power network: panels collect, the wire relaxes, and what it dissipates
+         * is banked as waste heat.
+         *
+         * ⭐ **The whole of a solar panel is three lines**, because everything it needs already
+         * existed: [StructureMap.openToSpace] to say which faces see sky, [Ambient.insolation] to
+         * say how bright it is, and [PowerFlow] to carry what it pushes.
+         *
+         * ⚠️ **Exposure is counted over the neighbours**, not the panel's own tile. A machine blocks
+         * passage, so space never reaches the tile it stands on — the same reason `SolidHeat` counts
+         * a casing's radiating faces the way it does. A panel walled in on all four sides has no sky
+         * and makes nothing, which is the right answer and needs no rule of its own.
+         */
+        fun collectAndRelax(
+            before: PowerCharge,
+            structure: StructureMap,
+            ambient: Ambient,
+            signals: SignalField,
+        ): PowerCharge {
+            val power = layer(Conduit.Power)
+            var charge = before.copyOf()
+
+            for (tile in grid.tiles) {
+                val panel = deck[tile] as? SolarPanel ?: continue
+                if (deck.isGhost(tile)) continue
+                if (!panel.wiring.isOn(Action.Run, signals.at(tile))) continue
+                // Nothing to push onto: a panel needs a run under it, the way a gauge needs track.
+                if (power[tile.index] == null) continue
+
+                var faces = 0
+                for (dir in Direction.entries) {
+                    val next = grid.neighbour(tile, dir)
+                    if (next == TileIndex.NONE || structure.openToSpace(next)) faces++
+                }
+                val made = SolarPanel.outputAt(faces, ambient)
+                if (made > 0L) charge = charge.plus(tile, made)
+            }
+
+            val dissipated = LongArray(grid.size)
+            PowerFlow.relax(grid, power, { tracks.dominantAt(Conduit.Power, it) }, charge.q, dissipated)
+            for (tile in grid.tiles) heat(tile, dissipated[tile.index])
+            return charge
+        }
+
         fun readGauges() {
             for (tile in grid.tiles) {
                 val gauge = deck[tile] as? Gauge ?: continue
@@ -4711,6 +4774,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         private fun deliver(port: Port, destination: DeckMachine, packet: Packet): Boolean {
             return when (destination) {
+                // ⚠️ Nothing is ever delivered to a panel: it has no port, so the flow graph never
+                // routes to it and this branch is unreachable rather than a refusal.
+                is SolarPanel -> false
                 // A lump stepping onto a bridge goes into the near-end slot.
                 //
                 // ⚠️ **A slot takes one packet or none**, and does not merge — which is the one way

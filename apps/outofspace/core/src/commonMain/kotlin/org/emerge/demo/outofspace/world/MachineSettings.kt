@@ -247,6 +247,9 @@ fun DeckMachine.withSettings(settings: MachineSettings): DeckMachine {
             if (settings.wiring is Setting.Present) result = result.copy(wiring = settings.wiring.value)
             result
         }
+        // Nothing to configure but the wire: what a panel makes is set by where it stands and how
+        // bright it is out there, neither of which is a setting.
+        DeckMachineKind.SolarPanel -> settings.wiring.let { if (it is Setting.Present) withWiring(it.value) else base }
         DeckMachineKind.Gauge -> {
             base as Gauge
             var result = base
