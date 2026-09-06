@@ -227,33 +227,78 @@ inside *one* of them becomes reachable **with the power off**. Copper cementing 
 legitimate `Reaction` row needing no voltage at all. That is not a bug, but the cell stops being
 inert when unpowered, which today's electrolyzer is.
 
-## 6. ⛔ OPEN — the one question, and it is the species budget
+## 6. ✅ DECIDED (Stu, 2026-09-06) — the species budget
 
-Everything above adds **zero** species. The leach does not, and this is the only place the explosion
-we spent this design avoiding can get back in.
+**Option A: one species per anion family.** `Sulfate` (SO₄, 96), `Hydroxide` (OH, 17) and
+`SulfuricAcid` (H₂SO₄, 98). +3, leaving 15 of the 18 slots before `StuffLayer`'s three-word presence
+bitmask grows a fourth.
 
-`CuO + H₂SO₄ → Cu²⁺ + SO₄²⁻ + H₂O`. The copper is `Species.Copper` by decision 1. The sulfate is
-not anything yet. Three ways, and the budget is tight: **`Species.COUNT` is 174 and `StuffLayer`'s
-presence bitmask is three words — 192 slots — so there are 18 before every row in every layer grows
-a fourth.**
+`CuO + H₂SO₄ → Cu²⁺ + SO₄²⁻ + H₂O`. The copper is `Species.Copper` by decision 1. The sulfate had no
+home, and now it has one.
 
-- **A. One species per anion family** — add `Sulfate` (SO₄, 96), `SulfuricAcid` (H₂SO₄, 98) and
-  `Hydroxide` (OH, 17). **+3 now**, +1 per acid ever added. The charge is oracle data on top. Keeps sulfate distinct from
-  sulfite and from sulfide, which the game already distinguishes everywhere else.
-- **B. Solutions hold elements only** — copper, sulfur, oxygen, hydrogen, speciation derived. **+1**
-  (the acid, which is still cargo). But nothing then distinguishes sulfate from sulfite, and a leach
-  cannot say which acid it used. Cheapest and, I think, too lossy to live with.
-- **C. Metal salts as species** — `CopperSulfate`, `ZincSulfate`, `IronSulfate`… This is the n×m
-  table. Reject.
+### What was rejected, and the argument that settled it
 
-⚠️ **This grew from +2 to +3 when the cell became three-compartment (§5.5).** A divided cell turns
-the catholyte basic, so caustic is a real co-product and needs a hydroxide to be one — new scope that
-was not here when the options were first written.
+- **B. Solutions hold elements only** — copper, sulfur, oxygen, hydrogen, speciation derived. +1, but
+  nothing distinguishes sulfate from sulfite and a leach cannot say which acid it used.
+- **C. Metal salts as species** — `CopperSulfate`, `ZincSulfate`… the n×m table this arc exists to
+  avoid.
+- **D. Throw away every ionically bonded species and keep only ions**, deriving a salt as a *reading*
+  over a set of them. Conceptually blurrier but more physically honest in solution, and it is the
+  only alternative that would have replaced the foundations rather than added to them.
 
-**Recommendation: A.** +3 species, 15 slots of headroom left, and the anion keeps an identity the
-rest of the chemistry can already talk about. ⚠️ It needs your yes, because it spends a tenth of the
-remaining bitmask and the fourth word is a cost paid by every layer in the game whether or not it
-ever holds a sulfate.
+  ⛔ **Rejected on physics, by Stu.** *Mixing two salts does not let them swap partners.* Dissolving
+  them and driving the water off does — and the crystal that forms is a **lower-energy locked
+  state**, not a bookkeeping choice about which cation sits next to which anion. A salt is therefore
+  not a bag of ions, and a model that says it is would let a vessel transmute halite and gypsum into
+  each other by pouring them into the same hopper. The distinction between dissolved and crystalline
+  is real, and it is exactly what the ion-only model cannot express.
+
+### ⚠️ These are the first ion-only species, and that is a new category
+
+`SulfuricAcid` is ordinary — neutral, real, liquid at 283 K, 1830 kg/m³, shippable. **`Sulfate` and
+`Hydroxide` are not.** Neutral SO₄ does not exist and neutral OH is the hydroxyl radical, a transient
+nothing puts on a belt. They are the first entries in the table that **cannot exist uncharged**.
+
+⛔ **This does not breach decision 1**, and the distinction is worth stating because it is the whole
+difference between n+m and n×m: decision 1 forbids a charged *duplicate* of a species that already
+exists (`CopperIon` beside `Copper`), which is what makes every salt want to be a species too. This
+adds a **group the table has never had**, which happens only to exist charged.
+
+### ⛔ Why they cannot be a standalone commit
+
+Measured 2026-09-06, before writing a line. **Five guard tests hold over every species**, and they
+exist precisely to keep invented numbers out of the table:
+
+| Test | Demands |
+|---|---|
+| `MineralTest.everySpeciesHasPhysicalConstants` | molar mass, specific heat, **and a solid density** |
+| `SpeciesPropertyTest.nothing was left without a conductivity or a melting point` | both > 0 |
+| `SpeciesPropertyTest.every conductivity is inside the range real solids occupy` | 20 ≤ k ≤ silver |
+| `PricesTest.every species has a price` | `listPrice > 0` |
+| `PricesTest.every element occurs in some rock` | a `MINERALS` composition **or** rock abundance |
+
+And one that closes a loop: `MineralTest.everyMineralIsMinedOrMade` requires a `MINERALS` entry with
+zero abundance to be the product of some `REACTIONS` row. Sulfate must be in `MINERALS` to be
+priced; once there it must be *made*; and the thing that makes it is the leach.
+
+⭐ **So the species land with increment 3 and not before.** Added alone they take the build red, and
+that is the table's guards working rather than an obstacle to route around.
+
+### ⛔ How the guards are satisfied: a host crystal, not an exemption
+
+The obvious move is to exempt ion-only species from those five tests. **Do not.** They are what keeps
+the table honest, and an exemption list punches the hole in exactly the wrong place — the same
+argument that deleted `Material` rather than live with a name that lies.
+
+Instead **borrow real constants from a named host crystal**: sulfate takes barite's density, melting
+point and the existing `K_SULFATE` class estimate; hydroxide takes a hydroxide mineral's. Documented
+as *what the group answers inside a real crystal* — traceable rather than invented, and every guard
+stays intact.
+
+Paired with an **ion-only declaration** in `Fluid.kt`'s idiom — a stated set, and a test that neither
+species ever appears in a cargo layer, the atmosphere, a rock or a construction site. ⚠️ That test is
+the one that makes the borrowed constants safe: they are only harmless because nothing can ever hold
+a lump of sulfate for them to describe.
 
 ## 7. Increments
 
@@ -343,7 +388,9 @@ the competition rule does something rather than being a one-branch `if`.
 
 ### Increment 3 — the leach, and §6's answer
 
-`Sulfate`, `SulfuricAcid` and `Hydroxide` (pending §6), `dissolvedFraction`, and `CuO + H₂SO₄ →` as
+`Sulfate`, `SulfuricAcid` and `Hydroxide` (§6, decided — and they land **here**, in the same commit
+as the row that makes them, because the table's guards will not take them alone), `dissolvedFraction`,
+and `CuO + H₂SO₄ →` as
 a reaction whose reagents and products are all inside one machine's compartments. Tenorite goes in,
 copper in solution comes out, and increment 2's cell plates it.
 
