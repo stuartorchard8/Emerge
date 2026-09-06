@@ -157,11 +157,37 @@ network has to be designed against. The full order:
 | 3 | `PLAN_electrochemistry.md` inc 2+ — copper, the leach, the loop |
 | 4 | **this plan, inc 3** — billing |
 
-### Increment 0 — the guard
+### Increment 0 — the guard ✅ BUILT (2026-09-06)
 
-The conductivity derivation scored against known figures for every metal in the table, and a
-**charge ledger** asserted closed from the first commit. `FormationTest`'s argument: a number nobody
-can check is a number that is eventually wrong.
+`chem/Conductivity.kt` and `ConductivityTest`, 9 tests. The derivation scored against measured σ for
+every metal the game has: **the ten a wire would be drawn from land within 15%**, tin exact to three
+figures. The poor metals — manganese, bismuth, tungsten — reach 60%, checked at a looser bound rather
+than excluded, because a manganese wire should still be bad by roughly the right amount.
+
+⚠️ **The charge ledger moved to increment 1**, where there is charge to conserve. Asserting it here
+would be asserting over an empty set.
+
+#### ⛔ What the build found: the metal line no longer has clear air
+
+The obvious gate was `Material.kt`'s `METALLIC_CONDUCTION_MILLIWATTS`, which calls a solid a metal
+above 10 W/m/K and whose doc claims *"the table has a factor of four of clear air on either side of
+it. The poorest conductor the game calls a metal is titanium at 22, and the best it calls a mineral
+is forsterite at 5. Nothing sits near the line."*
+
+**Fourteen species now sit in that gap, and it misclassifies in both directions:**
+
+| Above the line, and a mineral | Below the line, and a metal |
+|---|---|
+| pyrite 20, cassiterite 12, hematite 11.3, thorianite 10 | mercury 8.3, manganese 8, bismuth 8 |
+
+Deriving conductivity from that threshold would let a vessel **draw wire out of iron ore**. So
+`Conductivity.kt` states what a metal *is* — an element that is not one of twenty non-metals, plus
+one alloy — which is a fact about chemistry rather than a threshold that drifts as the table grows.
+Two tests pin both directions.
+
+⚠️ **This is a live defect in `roughnessOf`, which is not fixed here.** That function reads the same
+threshold, so today hematite and pyrite grip like metals and mercury grips like rock. Changing it
+re-tunes collision behaviour, which is a decision and not a refactor — see §8.
 
 ### Increment 1 — sun to heat, end to end ⭐ the hard shape for the network
 
@@ -226,3 +252,8 @@ so it is the one machine whose bill is a real number rather than a figure invent
 - **Transmission loss as a separate mechanism.** It is I²R and it is already there.
 - **A battery**, which is `PLAN_electrochemistry.md`'s cell run backwards and belongs to that plan
   once this one has somewhere for its electrons to go.
+- ⛔ **Fixing `roughnessOf`'s metal test.** Increment 0 found that `METALLIC_CONDUCTION_MILLIWATTS`
+  misclassifies fourteen species, so hematite and pyrite currently grip like metals and mercury like
+  rock. `conductsElectrically` is the correct predicate and the fix is to route grip through it —
+  but that re-tunes every friction interaction in the game, which is Stu's call and belongs in a
+  commit whose subject is collision rather than power.
