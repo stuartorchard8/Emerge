@@ -92,9 +92,20 @@ The out is to give a wire much more capacitance than a wire has, so its settling
 rather than a fraction of one. **Derived from the target, not chosen**, in `HEATER_POWER`'s idiom:
 
 ```
-WIRE_SETTLING_TICKS = 4          // the number that is chosen
-capacitance = WIRE_SETTLING_TICKS * conductance
+SETTLING_TICKS = 8               // the number that is chosen
+fraction moved per edge = G / (SETTLING_TICKS * MAX_CONDUCTANCE)
 ```
+
+⭐ **Eight rather than four, and it is derived (built 2026-09-06).** An explicit relaxation is
+non-oscillatory when a node sheds at most *half* its excess per step. A tile has at most four
+neighbours, so no single edge may move more than an eighth — and since the fraction scales with the
+edge's conductance, the denominator has to be the **most conductive metal in the table** or a silver
+bus would breach the bound copper was sized against. `MAX_CONDUCTANCE` is therefore a maximum over
+`Species`, not silver's figure written down.
+
+⚠️ **Capacitance is geometric, conductance is material.** A tile of wire is a tile of wire, so every
+segment gets the same capacitance and the metal shows up only in `G`. A per-material capacitance
+would put a division inside the potential and the ledger would stop closing to the unit.
 
 So the fiction is one dial, in one place, with the honest name on it. ⚠️ **What it costs in play**: a
 bus does not respond instantly, and a load switched on takes a few ticks to pull the line down. That
@@ -189,19 +200,46 @@ Two tests pin both directions.
 threshold, so today hematite and pyrite grip like metals and mercury grips like rock. Changing it
 re-tunes collision behaviour, which is a decision and not a refactor — see §8.
 
-### Increment 1 — sun to heat, end to end ⭐ the hard shape for the network
+### Increment 1a — the wire carries charge ✅ BUILT (2026-09-06)
 
-Wire as a `Conduit`, the relaxation, hull-ground, the `Ambient` scalar, a solar panel, and a
-resistive load. One commit, because a network with no source and no sink is not testable and each
-half alone is not worth a commit.
+⚠️ **Split from what was one increment.** The original said one commit *"because a network with no
+source and no sink is not testable"* — which was wrong. It is not **playable** without a source; it
+is entirely testable by injecting charge directly, and the relaxation is the part carrying the design
+risk. So it got its own commit and its own tests.
 
-What must be true at the end: a panel in sunlight warms a heater through a wire; a copper run
-delivers measurably more than an iron one of the same length; a run to nothing carries nothing; the
-charge ledger closes; the relaxation settles rather than rings.
+⭐ **`Conduit.Power` already existed** — laid, saved, rendered, defaulting to copper, with a bill of
+materials and an inspector line reading *"carries nothing yet."* This is what it carries.
 
-⚠️ **The load interface is specified for a threshold load from the start** even though this
-increment's load is linear. Not building the mitigation is decision 4; painting into a corner it
-cannot fit is a different mistake.
+`world/PowerFlow.kt`, `PowerFlowTest`, 9 tests. Charge relaxes between joined segments at
+`seriesConductance` of what they are made of — the same harmonic mean heat already crosses a joint
+by. Two ledgers asserted as identities: **charge is conserved to the unit**, and **every joule the
+field gives up becomes heat**.
+
+#### ⛔ What the build found: per-edge dissipation does not add up
+
+Moving `m` across one edge costs `m × (Δq − m)`, and that is exact *for one move*. Every edge moves
+simultaneously from the same snapshot — Jacobi, per the one-tick causality rule — so a tile shedding
+to two neighbours at once has a **cross term between them that no per-edge formula sees**. Summed,
+the per-edge figures came to **5.2% less than the field actually lost**, and a wire that dissipates
+95% of what it takes is a wire quietly minting energy for ever.
+
+⚠️ It would have passed any tolerance-based test. It was caught because the ledger was written as an
+*identity*.
+
+The fix keeps the per-edge figures as **weights** and apportions the real drop in `Σ q²/2` across
+them — `I²R` says the edge carrying the most current takes the most heat, and `apportion` telescopes
+so the shares sum back to the total exactly.
+
+### Increment 1b — sun and panel
+
+The `Ambient` insolation scalar and a solar panel, so charge has a source in the world rather than
+only in a test. ⭐ **Exposure is `StructureMap.openToSpace` on the panel's neighbours** — the same
+answer `SolidHeat` already uses to decide what a surface radiates at, so "the sun is anywhere outside
+the vessel" needs no new concept (Stu, 2026-09-06). A tile inside a machine's own footprint faces
+nothing, which is why it is the neighbours that are counted.
+
+⚠️ **The panel's output rate is what sizes `PowerFlow.MAX_CHARGE`**, and that is this increment's
+constant to pick rather than one a save discovers.
 
 ### Increment 2 — the cell as a load ⭐ the hard shape for the contract
 
