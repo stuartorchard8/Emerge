@@ -16,9 +16,9 @@ import kotlin.test.assertTrue
 class HalfReactionTest {
 
     private fun couple(species: Species): HalfReaction =
-        HALF_REACTIONS.first { it.principal == species && it.oxidised.size == 1 }
+        HALF_REACTIONS.first { it.principal == species }
 
-    private val water: HalfReaction = HALF_REACTIONS.first { it.reduced.any { p -> p.first == Species.Water } }
+    private val water: HalfReaction = couple(Species.Water)
     private val hydrogen: HalfReaction = couple(Species.Hydrogen)
 
     // ── The table is internally sound ────────────────────────────────────────
@@ -35,6 +35,24 @@ class HalfReactionTest {
         for (h in HALF_REACTIONS) {
             assertEquals(h.oxidisedMass, h.reducedMass, "${h.formula()} does not balance")
         }
+    }
+
+    /**
+     * ⚠️ **A proton weighs one gram, not two.** [Species.Hydrogen] is H₂ at 2 g/mol because pressure
+     * is what reads it, so a couple counting protons must reach for [Species.atomicMass] — the
+     * distinction [ATOMIC_MASS] exists for. Getting it wrong doubles the hydrogen side of both water
+     * couples and nothing else in the suite would notice.
+     */
+    @Test
+    fun aProtonWeighsAnAtomOfHydrogenAndNotAMolecule() {
+        assertEquals(1, Species.Hydrogen.atomicMass)
+        assertEquals(2, Species.Hydrogen.molarMass)
+        // 2 H+ -> H2 : two protons in, one molecule out, two grams either way.
+        assertEquals(2L, hydrogen.oxidisedMass)
+        assertEquals(2L, hydrogen.reducedMass)
+        // O2 + 4 H+ -> 2 H2O : 32 + 4 = 36 = 2 x 18.
+        assertEquals(36L, water.oxidisedMass)
+        assertEquals(36L, water.reducedMass)
     }
 
     /** The charge on each metal ion, derived from its electron count rather than stated. */
@@ -140,7 +158,38 @@ class HalfReactionTest {
     @Test
     fun theWaterAnodeYieldsBothOxygenAndTheAcidBack() {
         assertEquals(listOf(Species.Water to 2), water.reduced)
-        assertEquals(setOf(Species.Oxygen, Species.Hydrogen), water.oxidised.map { it.first }.toSet())
+        assertEquals(listOf(Species.Oxygen to 1), water.oxidised)
         assertEquals(4, water.electrons)
+        assertEquals(4, water.protons, "the acid an anode regenerates")
+    }
+
+    /**
+     * ⭐ **The protons cancel when the halves are combined, and that is why water splits cleanly.**
+     *
+     * At four electrons the cathode runs twice and eats four protons; the anode runs once and makes
+     * four. Net zero, so `2 H₂O → 2 H₂ + O₂` needs no proton source and leaves no acid behind.
+     *
+     * ⚠️ Contrast copper, whose cathode eats none: all four of the anode's protons survive, and
+     * those are the regenerated acid of `PLAN_electrochemistry.md` §2.4. The two cases differ by
+     * arithmetic alone — there is no branch anywhere that knows which is which.
+     */
+    @Test
+    fun protonsCancelForWaterAndSurviveForCopper() {
+        val electrons = 4
+        fun net(cathode: HalfReaction) =
+            water.protons * (electrons / water.electrons) -
+                cathode.protons * (electrons / cathode.electrons)
+
+        assertEquals(0, net(hydrogen), "splitting water should need no proton source")
+        assertEquals(4, net(couple(Species.Copper)), "a copper cell should leave its acid behind")
+    }
+
+    /** Only the metals are single-species couples; the two water couples are not, and say so. */
+    @Test
+    fun theMetalCouplesAreTheOnesThatDepositAnElement() {
+        assertTrue(couple(Species.Copper).isMetalCouple)
+        assertTrue(couple(Species.Aluminum).isMetalCouple)
+        assertTrue(!hydrogen.isMetalCouple, "the hydrogen couple is protons, not a dissolved metal")
+        assertTrue(!water.isMetalCouple, "the water couple carries protons too")
     }
 }

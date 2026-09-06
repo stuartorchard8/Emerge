@@ -32,13 +32,28 @@ package org.emerge.demo.outofspace.chem
  * from [MINERALS], and a mistyped electron count is a test failure rather than an ion that quietly
  * carries the wrong charge.
  *
- * ⚠️ **Both sides count formula units, [Species.molarMass]'s way**, which is why `2 H⁺` is written as
- * one unit of [Species.Hydrogen] — the game's hydrogen is H₂ at 2 g/mol, and two protons weigh the
- * same two grams. The masses balance across a couple for the same reason they balance across a
- * reaction, and `HalfReactionTest` checks every one.
+ * ### ⛔ Protons are counted, not listed
+ *
+ * `H⁺` appears in half of these couples and is **not** written as a species. It is [protons], a
+ * count — partly for the reason above, and partly for one that only shows up when the halves are
+ * combined.
+ *
+ * A cell reaction is cathode plus anode with the electrons balanced, and the protons **cancel**
+ * against each other. Splitting water, the anode makes exactly as many as the cathode eats, and what
+ * is left is `2 H₂O → 2 H₂ + O₂`. Winning copper, the cathode eats none and the anode's four are
+ * left over — ⭐ **and those are the regenerated acid**, which is `PLAN_electrochemistry.md` §2.4's
+ * whole loop, falling out of arithmetic rather than out of a mechanism.
+ *
+ * ⚠️ Had `H⁺` been spelled [Species.Hydrogen] instead, copper would cancel against *itself* — its
+ * oxidised and reduced sides are the same species, differing only by a charge this table does not
+ * store — and a copper cell would evolve hydrogen instead of plating metal.
+ *
+ * ⚠️ **Everything else counts formula units, [Species.molarMass]'s way.** A proton weighs
+ * [Species.Hydrogen]'s *atomic* mass, which is the distinction [ATOMIC_MASS] exists for. Masses
+ * balance across every couple and `HalfReactionTest` checks each one.
  */
 class HalfReaction(
-    /** The side that gains electrons — what is present *before* reduction. */
+    /** The side that gains electrons — what is present *before* reduction, protons excepted. */
     val oxidised: List<Pair<Species, Int>>,
     /** What it becomes. */
     val reduced: List<Pair<Species, Int>>,
@@ -46,12 +61,26 @@ class HalfReaction(
     val electrons: Int,
     /** E° against the standard hydrogen electrode. Positive is easier to reduce. */
     val standardMillivolts: Int,
+    /**
+     * `H⁺` consumed on the oxidised side per the units written above — see the class doc.
+     *
+     * Read as a reduction this is how many protons are eaten; read backwards, as an anode reads it,
+     * it is how many are **made**.
+     */
+    val protons: Int = 0,
 ) {
-    /** The species this couple is *about*: the one that changes oxidation state. */
-    val principal: Species = oxidised.first().first
+    /**
+     * The species this couple is *about*: what it deposits or evolves.
+     *
+     * Taken from the **reduced** side, because that is the side every couple has — the hydrogen
+     * couple's oxidised side is nothing but protons, which are not a species.
+     */
+    val principal: Species = reduced.first().first
 
-    /** Mass of the oxidised side as written — the denominator of every ratio here. */
-    val oxidisedMass: Long = oxidised.sumOf { it.second.toLong() * it.first.molarMass }
+    /** Mass of the oxidised side as written, protons included — the denominator of every ratio here. */
+    val oxidisedMass: Long =
+        oxidised.sumOf { it.second.toLong() * it.first.molarMass } +
+            protons.toLong() * Species.Hydrogen.atomicMass
 
     /** Mass of the reduced side as written. Equal to [oxidisedMass], and a test says so. */
     val reducedMass: Long = reduced.sumOf { it.second.toLong() * it.first.molarMass }
@@ -60,15 +89,22 @@ class HalfReaction(
      * The charge on one formula unit of [principal] in its oxidised form — **derived**.
      *
      * Two electrons shared over one unit of copper is Cu²⁺; three over one aluminium is Al³⁺. ⚠️ Only
-     * meaningful for the couples whose oxidised side is a single dissolved species, which is every
-     * metal here; the water couples spread their electrons over a molecule and answer nonsense.
+     * meaningful for an [isMetalCouple]; the others spread their electrons over a molecule and a
+     * proton count, and answer nonsense.
      */
     val chargeOn: Int get() = electrons / oxidised.first().second
 
-    fun formula(): String =
-        oxidised.joinToString(" + ") { "${it.second} ${it.first}" } +
-            " + $electrons e- -> " +
-            reduced.joinToString(" + ") { "${it.second} ${it.first}" }
+    /** A couple whose oxidised side is one dissolved species and nothing else — every metal here. */
+    val isMetalCouple: Boolean get() = protons == 0 && oxidised.size == 1 && reduced.size == 1
+
+    fun formula(): String {
+        val left = buildList {
+            oxidised.forEach { add("${it.second} ${it.first}") }
+            if (protons > 0) add("$protons H+")
+            add("$electrons e-")
+        }.joinToString(" + ")
+        return "$left -> " + reduced.joinToString(" + ") { "${it.second} ${it.first}" }
+    }
 }
 
 /**
@@ -115,8 +151,15 @@ val HALF_REACTIONS: List<HalfReaction> = listOf(
     // ══ THE DEFINITION ════════════════════════════════════════════════════════════════════════
     //
     // 2 H+ + 2e- -> H2. Zero by definition — every number on this page is measured against it, and
-    // it is the line every metal above is on the wrong side of.
-    HalfReaction(listOf(Species.Hydrogen to 1), listOf(Species.Hydrogen to 1), 2, 0),
+    // it is the line every metal above is on the wrong side of. ⚠️ Its oxidised side is **empty**:
+    // there is nothing here but protons, and the solvent is what supplies them.
+    HalfReaction(
+        oxidised = emptyList(),
+        reduced = listOf(Species.Hydrogen to 1),
+        electrons = 2,
+        standardMillivolts = 0,
+        protons = 2,
+    ),
 
     // ══ ABOVE HYDROGEN: what an aqueous cell can actually win ═════════════════════════════════
     //
@@ -131,9 +174,10 @@ val HALF_REACTIONS: List<HalfReaction> = listOf(
     // `2 H2O -> O2 + 4 H+ + 4e-`: the oxygen a cell evolves and the acid it regenerates, in one row
     // that nobody had to write twice.
     HalfReaction(
-        oxidised = listOf(Species.Oxygen to 1, Species.Hydrogen to 2),
+        oxidised = listOf(Species.Oxygen to 1),
         reduced = listOf(Species.Water to 2),
         electrons = 4,
         standardMillivolts = 1230,
+        protons = 4,
     ),
 )
