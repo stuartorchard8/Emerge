@@ -30,7 +30,6 @@ import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.conduitBillOfMaterials
 import org.emerge.demo.outofspace.world.machineBillOfMaterials
-import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.world.buildableFrom
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Conduits
@@ -72,7 +71,6 @@ import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.machine.MACHINE_OUTPUT_CAP
 import org.emerge.demo.outofspace.world.machine.DockingPort
 import org.emerge.demo.outofspace.world.Market
-import org.emerge.demo.outofspace.world.Prices
 import org.emerge.demo.outofspace.world.BodyKind
 import org.emerge.demo.outofspace.world.Station
 import org.emerge.demo.outofspace.world.Assembly
@@ -80,9 +78,7 @@ import org.emerge.demo.outofspace.world.Member
 import org.emerge.demo.outofspace.world.Docking
 import org.emerge.demo.outofspace.world.Held
 import org.emerge.demo.outofspace.world.Welding
-import org.emerge.demo.outofspace.world.Composite
 import org.emerge.demo.outofspace.world.worked
-import org.emerge.demo.outofspace.world.heatCapacityOf
 import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.MotionLog
 import org.emerge.demo.outofspace.world.Cadence
@@ -137,9 +133,6 @@ import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.TileArray
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.airlockOpenness
-import org.emerge.demo.outofspace.world.millimolesOf
-import org.emerge.demo.outofspace.world.kelvinOf
-import org.emerge.demo.outofspace.world.VolumeField
 import org.emerge.demo.outofspace.world.Share
 import org.emerge.demo.outofspace.world.diffuseFluid
 import org.emerge.demo.outofspace.world.gasKelvin
@@ -1372,7 +1365,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     private fun Work.refine(cfg: OutofspaceConfig, m: Concentrator, on: Boolean, tile: TileIndex): Concentrator {
         // Starting a fresh lump is a move between two stores, and the whole tick's heat is applied
         // the moment it starts rather than dribbled out over the action.
-        val inProgress = store(m, tile, BufferRole.Inside) ?: run {
+        var inProgress = store(m, tile, BufferRole.Inside) ?: run {
             val available = store(m, tile, BufferRole.Input) ?: return m // Nothing to do if there's no input
             val charge = available.takeAtLeast(Concentrator.CHARGE_MASS) ?: return m
 
@@ -1385,39 +1378,46 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
             putStore(m, tile, BufferRole.Input, available-charge)
             putStore(m, tile, BufferRole.Inside, charge)
-            heat(tile, heatOfWorking(charge.total, m))
             charge
+        }
+        val missingMass = Concentrator.CHARGE_MASS - inProgress.total
+        if (missingMass > 0) {
+            val available = store(m, tile, BufferRole.Input) ?: return m // Nothing to do if there's no input
+            val addition = available.takeAtLeast(missingMass) ?: return m
+            inProgress += addition
+            putStore(m, tile, BufferRole.Input, available-addition)
+            putStore(m, tile, BufferRole.Inside, inProgress)
+            heat(tile, heatOfWorking(inProgress.total, m))
         }
 
         val (actionProgress, carry) = throttled(1, if (on) SignalField.FULL else 0, m.carry)
         if (m.progress + actionProgress >= m.ticksPerAction) {
-            val r = process(inProgress, m.efficiencyPermille)
-            val banked = store(m, tile, BufferRole.Product)
-            val tailings = store(m, tile, BufferRole.Waste)
-            // ⛔ **A hopper that is ALREADY full blocks the machine — not one the next batch would
-            // overfill.** [MACHINE_OUTPUT_CAP] says what a buffer holds "before the machine stops
-            // *running*", and the distinction is the difference between a stall and a deadlock: a
-            // threshold read off what is standing there is always relieved by shipping, while a
-            // ceiling the next batch has to fit under can be permanently unsatisfiable.
-            //
-            // ⚠️ **Stu's save, 2026-09-05.** The concentrator at (9,12) held 83 kg of tailings —
-            // under a packet, so `holdsBack` would not ship it — and its charge would have made
-            // another 181 kg. 83 + 181 was over the cap, so the deposit was refused, and neither
-            // figure could ever change again. Sizing the feed at one charge stops that arising (see
-            // [Concentrator.CHARGE_MASS]); asking the question this way round stops it *mattering*,
-            // and rescues the machines already wedged by it.
-            //
-            // A deposit may therefore take a hopper past its cap, by at most one action's output.
-            // The machine then stops until the rail has taken enough away, which is the same
-            // visible backing-up every other blockage in the game has.
-            if ((banked?.total ?: 0L) >= MACHINE_OUTPUT_CAP ||
-                (tailings?.total ?: 0L) >= MACHINE_OUTPUT_CAP
+            val r = process(inProgress)
+            val input = store(m, tile, BufferRole.Input) ?: Mixture.EMPTY
+            val banked = store(m, tile, BufferRole.Product) ?: Mixture.EMPTY
+            val tailings = store(m, tile, BufferRole.Waste) ?: Mixture.EMPTY
+            if (banked.total >= MACHINE_OUTPUT_CAP ||
+                tailings.total >= MACHINE_OUTPUT_CAP
             ) {
                 return m.copy(progress = m.ticksPerAction, carry = carry)
             }
+
+            // Only take exactly 1 packet of product, and mix the rest back in with the input
+            val output = r.product.takeAtLeast(Capacity.PACKET_MASS)
+            val remaining = if (output == null) r.product else r.product - output
+            if (output != null) {
+                putStore(m, tile, BufferRole.Product, banked + output)
+            }
+
+            if (input.isEmpty || input.dominant == remaining.dominant) {
+                // Merge the remaining part with the input if they match in dominant species
+                putStore(m, tile, BufferRole.Input, input + remaining)
+                putStore(m, tile, BufferRole.Waste, tailings + r.tailings)
+            } else {
+                // Otherwise dump it all to tailings
+                putStore(m, tile, BufferRole.Waste, tailings + r.tailings + remaining)
+            }
             putStore(m, tile, BufferRole.Inside, null)
-            putStore(m, tile, BufferRole.Product, (banked ?: Mixture.EMPTY) + r.product)
-            putStore(m, tile, BufferRole.Waste, (tailings ?: Mixture.EMPTY) + r.tailings)
             return m.copy(progress = 0, carry = carry)
         }
         return m.copy(progress = m.progress + actionProgress.toInt(), carry = carry)
@@ -2371,7 +2371,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // as its own entry because a player pointing at a bridge means the bridge.
                     DeleteLayer.Bridge -> removeMachine(edit.tile)
                     DeleteLayer.Rail -> removeConduit(edit.tile, Conduit.Rail)
-                    DeleteLayer.Wire -> removeConduit(edit.tile, Conduit.Signal)
+                    DeleteLayer.Signal -> removeConduit(edit.tile, Conduit.Signal)
+                    DeleteLayer.Power -> removeConduit(edit.tile, Conduit.Power)
                     DeleteLayer.Deck -> removeMachine(edit.tile)
                     DeleteLayer.All -> {
                         for (c in Conduit.entries) removeConduit(edit.tile, c)

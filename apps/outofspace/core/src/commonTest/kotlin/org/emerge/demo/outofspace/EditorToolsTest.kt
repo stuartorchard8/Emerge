@@ -102,7 +102,7 @@ class EditorToolsTest {
         val tile = grid.tile(6, 5)
         assertNotNull(c.state.conduits[Conduit.Signal][tile.index], "the fixture built no wire")
 
-        c.removeAt(tile, DeleteLayer.Wire)
+        c.removeAt(tile, DeleteLayer.Signal)
         c.stepOnce()
 
         assertNull(c.state.conduits[Conduit.Signal][tile.index], "the wire survived being named")

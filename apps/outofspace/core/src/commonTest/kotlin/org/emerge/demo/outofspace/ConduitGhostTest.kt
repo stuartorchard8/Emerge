@@ -11,12 +11,9 @@ import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.Segment
-import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.conduitBillOfMaterials
 import org.emerge.demo.outofspace.world.machine.DeckArray
-import org.emerge.demo.outofspace.world.machine.Sensor
-import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -147,7 +144,7 @@ class ConduitGhostTest {
         s = OutofspaceReducer.reduce(
             cfg,
             s,
-            mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.Remove(grid.tile(5, 3), DeleteLayer.Wire)))),
+            mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.Remove(grid.tile(5, 3), DeleteLayer.Signal)))),
         )
         assertNotNull(s.conduits.at(Conduit.Signal, grid.tile(5, 3)), "the delete took the tile straight out")
 
@@ -202,7 +199,7 @@ class ConduitGhostTest {
         s = OutofspaceReducer.reduce(
             cfg,
             s,
-            mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.Remove(grid.tile(5, 3), DeleteLayer.Wire)))),
+            mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.Remove(grid.tile(5, 3), DeleteLayer.Signal)))),
         )
         s = run(s, RAIL_PERIOD * 100)
 
