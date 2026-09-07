@@ -363,29 +363,32 @@ class OutofspaceRenderer {
             else if (hovered.kind != DeckMachineKind.Bridge) footprintRect(state, hovered, 1f, Colors.HOVER)
         }
 
-        // Signal wire under everything: it is the thinnest run and the one most often threaded
-        // beneath a machine to reach it, so anything it passes under should still read clearly.
-        for (y in mMinY..mMaxY) {
-            for (x in mMinX..mMaxX) {
-                val tile = grid.tile(x, y)
-                drawWire(state, tile, x, y, highlight = inspectLayer==InspectLayer.Rail && tile==inspectTile)
-            }
-        }
-
-        // Track over buildings (on deck).
+        // Conduit over buildings (on deck).
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
                 val tile = grid.tile(x, y)
                 drawRail(state, tile, x, y, highlight = inspectLayer==InspectLayer.Rail && tile==inspectTile)
             }
         }
+
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
-                drawRailPacket(state, grid.tile(x, y), x, y)
+                val tile = grid.tile(x, y)
+                // Draw packets in their own sweep since animation may draw them where they were not where they are
+                drawRailPacket(state, tile, x, y)
             }
         }
 
-        // Bridges last (above track).
+        for (y in mMinY..mMaxY) {
+            for (x in mMinX..mMaxX) {
+                val tile = grid.tile(x, y)
+                // Draw wire and signal largest to smallest
+                drawPowerWire(state, tile, x, y, highlight = inspectLayer==InspectLayer.Power && tile==inspectTile)
+                drawSignalWire(state, tile, x, y, highlight = inspectLayer==InspectLayer.Signal && tile==inspectTile)
+            }
+        }
+
+        // Bridges last (over track).
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
                 val tile = grid.tile(x, y)
@@ -523,7 +526,7 @@ class OutofspaceRenderer {
      * mass. Its colour is the value on it (Increment C); until something transmits, that is the dull
      * end of the ramp, which is the honest picture of a wire nobody is driving.
      */
-    private fun drawWire(state: VesselState, tile: TileIndex, x: Int, y: Int, highlight: Boolean) {
+    private fun drawSignalWire(state: VesselState, tile: TileIndex, x: Int, y: Int, highlight: Boolean) {
         val segment = state.conduits.at(Conduit.Signal, tile) ?: return
         val cx = (x + 0.5f) * tilePx
         val cy = (y + 0.5f) * tilePx
@@ -549,6 +552,35 @@ class OutofspaceRenderer {
                 )
             }
             rect(cx, cy, Visual.WIRE_DIAMETER * tilePx, Visual.WIRE_DIAMETER * tilePx, Colors.HOVER)
+        }
+    }
+    // Thicker wires for current transfer
+    private fun drawPowerWire(state: VesselState, tile: TileIndex, x: Int, y: Int, highlight: Boolean) {
+        val segment = state.conduits.at(Conduit.Power, tile) ?: return
+        val cx = (x + 0.5f) * tilePx
+        val cy = (y + 0.5f) * tilePx
+        val color = Colors.WIRE_POWER
+        for (dir in Direction.ALL) {
+            if (!segment.linkedTo(dir)) continue
+            rect(
+                cx + dir.dx * Visual.POWER_ARM_OFFSET * tilePx, cy + dir.dy * Visual.POWER_ARM_OFFSET * tilePx,
+                (if (dir.dx != 0) Visual.POWER_ARM_LENGTH else Visual.POWER_DIAMETER) * tilePx,
+                (if (dir.dy != 0) Visual.POWER_ARM_LENGTH else Visual.POWER_DIAMETER) * tilePx,
+                color,
+            )
+        }
+        rect(cx, cy, Visual.POWER_DIAMETER * tilePx, Visual.POWER_DIAMETER * tilePx, color)
+        if (highlight) {
+            for (dir in Direction.ALL) {
+                if (!segment.linkedTo(dir)) continue
+                rect(
+                    cx + dir.dx * Visual.POWER_ARM_OFFSET * tilePx, cy + dir.dy * Visual.POWER_ARM_OFFSET * tilePx,
+                    (if (dir.dx != 0) Visual.POWER_ARM_LENGTH else Visual.POWER_DIAMETER) * tilePx,
+                    (if (dir.dy != 0) Visual.POWER_ARM_LENGTH else Visual.POWER_DIAMETER) * tilePx,
+                    Colors.HOVER,
+                )
+            }
+            rect(cx, cy, Visual.POWER_DIAMETER * tilePx, Visual.POWER_DIAMETER * tilePx, Colors.HOVER)
         }
     }
 
@@ -612,6 +644,10 @@ class OutofspaceRenderer {
         val cx = (x + 0.5f) * tilePx
         val cy = (y + 0.5f) * tilePx
         val railColor = conduitColor(state, Conduit.Rail, tile)
+        val outlineColor = speciesColor(segment.material)
+        // The hub, always drawn
+        rect(cx, cy, Visual.RAIL_DIAMETER * tilePx, Visual.RAIL_DIAMETER * tilePx, outlineColor)
+        rect(cx, cy, Visual.INNER_RAIL_DIAMETER * tilePx, Visual.INNER_RAIL_DIAMETER * tilePx, railColor)
         // Only joined arms (not touching — two lines side by side stay separate).
         for (dir in Direction.ALL) {
             if (!segment.linkedTo(dir)) continue
@@ -619,22 +655,26 @@ class OutofspaceRenderer {
                 cx + dir.dx * Visual.RAIL_ARM_OFFSET * tilePx, cy + dir.dy * Visual.RAIL_ARM_OFFSET * tilePx,
                 (if (dir.dx != 0) Visual.RAIL_ARM_LENGTH else Visual.RAIL_DIAMETER) * tilePx,
                 (if (dir.dy != 0) Visual.RAIL_ARM_LENGTH else Visual.RAIL_DIAMETER) * tilePx,
+                outlineColor,
+            )
+            rect(
+                cx + dir.dx * Visual.RAIL_ARM_OFFSET * tilePx, cy + dir.dy * Visual.RAIL_ARM_OFFSET * tilePx,
+                (if (dir.dx != 0) Visual.RAIL_ARM_LENGTH else Visual.INNER_RAIL_DIAMETER) * tilePx,
+                (if (dir.dy != 0) Visual.RAIL_ARM_LENGTH else Visual.INNER_RAIL_DIAMETER) * tilePx,
                 railColor,
             )
         }
-        // The hub, always drawn
-        rect(cx, cy, Visual.RAIL_DIAMETER * tilePx, Visual.RAIL_DIAMETER * tilePx, railColor)
         if (highlight) {
             for (dir in Direction.ALL) {
                 if (!segment.linkedTo(dir)) continue
                 rect(
                     cx + dir.dx * Visual.RAIL_ARM_OFFSET * tilePx, cy + dir.dy * Visual.RAIL_ARM_OFFSET * tilePx,
-                    (if (dir.dx != 0) Visual.RAIL_ARM_LENGTH else Visual.RAIL_DIAMETER) * tilePx,
-                    (if (dir.dy != 0) Visual.RAIL_ARM_LENGTH else Visual.RAIL_DIAMETER) * tilePx,
+                    (if (dir.dx != 0) Visual.RAIL_ARM_LENGTH else Visual.INNER_RAIL_DIAMETER) * tilePx,
+                    (if (dir.dy != 0) Visual.RAIL_ARM_LENGTH else Visual.INNER_RAIL_DIAMETER) * tilePx,
                     Colors.HOVER,
                 )
             }
-            rect(cx, cy, Visual.RAIL_DIAMETER * tilePx, Visual.RAIL_DIAMETER * tilePx, Colors.HOVER)
+            rect(cx, cy, Visual.INNER_RAIL_DIAMETER * tilePx, Visual.INNER_RAIL_DIAMETER * tilePx, Colors.HOVER)
         }
     }
 
@@ -940,8 +980,9 @@ class OutofspaceRenderer {
             // before there is a drag would be inventing a shape the click will not produce.
             is Brush.Run -> {
                 val gauge = when (brush.conduit) {
-                    Conduit.Rail -> Visual.RAIL_DIAMETER
-                    Conduit.Signal, Conduit.Power -> Visual.WIRE_DIAMETER
+                    Conduit.Rail -> Visual.INNER_RAIL_DIAMETER
+                    Conduit.Power -> Visual.POWER_DIAMETER
+                    Conduit.Signal -> Visual.WIRE_DIAMETER
                 }
                 rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, gauge * tilePx, gauge * tilePx, edge)
                 tileRect(x, y, 1f, fill)
@@ -1684,6 +1725,7 @@ class OutofspaceRenderer {
         const val GAUGE_COLLAR = 0xE0A93AFFL
         const val WIRE_DARK    = 0x33513FFFL
         const val WIRE_LIVE    = 0x6EE08AFFL
+        const val WIRE_POWER   = 0xE08A3AFFL
 
         const val STOPPED_BODY    = 0x1A1A20FFL
         const val STOPPED_INDICATOR = 0x8A3030FFL
@@ -1795,24 +1837,28 @@ class OutofspaceRenderer {
         // ── Port dimensions ─────────────────────────────────────────────
         const val PORT_SIZE = 0.75f
 
+        const val SPECIES_OUTLINE_DIAMETER = 0.10f
+
         // ── Rail dimensions ─────────────────────────────────────────────
         const val RAIL_DIAMETER = 0.50f
+        const val INNER_RAIL_DIAMETER = RAIL_DIAMETER - SPECIES_OUTLINE_DIAMETER
 
-        /** Narrower than the rail, so a crossing reads as two runs rather than one junction. */
-        const val PIPE_DIAMETER = 0.28f
         /** Wider than the pipe, so a tap reads against a long run without hiding its arms. */
         const val VALVE_COLLAR  = 0.46f
         const val INTAKE_OFFSET = 0.34f
         const val INTAKE_WIDTH  = 0.44f
         const val INTAKE_DEPTH  = 0.14f
-        const val PIPE_ARM_LENGTH = (1f-PIPE_DIAMETER)/2f
-        const val PIPE_ARM_OFFSET = (1f+PIPE_DIAMETER)/4f
-        const val RAIL_ARM_LENGTH = (1f-RAIL_DIAMETER)/2f
-        const val RAIL_ARM_OFFSET = (1f+RAIL_DIAMETER)/4f
+        const val RAIL_ARM_LENGTH = (1f-INNER_RAIL_DIAMETER)/2f
+        const val RAIL_ARM_OFFSET = (1f+INNER_RAIL_DIAMETER)/4f
+
+        /** Narrower than the rail, so a crossing reads as two runs rather than one junction. */
+        const val POWER_DIAMETER = 0.20f
+        const val POWER_ARM_LENGTH = (1f-POWER_DIAMETER)/2f
+        const val POWER_ARM_OFFSET = (1f+POWER_DIAMETER)/4f
 
         // ── Signal wire dimensions ──────────────────────────────────────
-        /** Thinner than the pipe: it carries a reading, not a thing, and should not shout. */
-        const val WIRE_DIAMETER = 0.16f
+        /** Thinner than power wires: it carries a low current reading. */
+        const val WIRE_DIAMETER = 0.12f
         const val WIRE_ARM_LENGTH = (1f-WIRE_DIAMETER)/2f
         const val WIRE_ARM_OFFSET = (1f+WIRE_DIAMETER)/4f
 

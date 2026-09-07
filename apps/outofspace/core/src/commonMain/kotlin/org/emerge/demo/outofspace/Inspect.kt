@@ -34,7 +34,7 @@ enum class InspectLayer(val label: String) {
 
 
     /** The wire, and what the circuit under this tile is carrying. */
-    Wire("WIRE"),
+    Signal("SIGNAL"),
 
     /** Cable. Carries nothing yet — see [Conduit.Power]. */
     Power("POWER"),
@@ -63,7 +63,7 @@ fun inspectableLayers(state: VesselState, tile: TileIndex): List<InspectLayer> {
     // only the one square the object happens to be stored at.
     if (state.occupancy[tile] != TileIndex.NONE) out.add(InspectLayer.Deck)
     if (state.conduits[Conduit.Rail][tile.index] != null) out.add(InspectLayer.Rail)
-    if (state.conduits[Conduit.Signal][tile.index] != null) out.add(InspectLayer.Wire)
+    if (state.conduits[Conduit.Signal][tile.index] != null) out.add(InspectLayer.Signal)
     if (state.conduits[Conduit.Power][tile.index] != null) out.add(InspectLayer.Power)
     if (!state.structure.blocksAir(tile)) out.add(InspectLayer.Atmosphere)
     return out

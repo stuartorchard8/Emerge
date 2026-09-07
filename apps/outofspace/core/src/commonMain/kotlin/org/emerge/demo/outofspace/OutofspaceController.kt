@@ -6,7 +6,6 @@ import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.machine.InputKey
 import org.emerge.demo.outofspace.world.machine.Engine
 import org.emerge.demo.outofspace.world.machine.Rocket
-import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.ThrusterControl
 import org.emerge.demo.outofspace.world.machine.WireButton
 import org.emerge.demo.outofspace.world.machine.Storage
@@ -33,7 +32,6 @@ import org.emerge.demo.outofspace.world.MachineSettings
 import org.emerge.demo.outofspace.world.aimed
 import org.emerge.demo.outofspace.world.toMachineSettings
 import org.emerge.demo.outofspace.world.withSettings
-import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.demo.outofspace.world.starterWorld
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.Tick
@@ -690,7 +688,7 @@ class OutofspaceController(
                 return true
             }
             InspectLayer.Rail -> Conduit.Rail
-            InspectLayer.Wire -> Conduit.Signal
+            InspectLayer.Signal -> Conduit.Signal
             InspectLayer.Power -> Conduit.Power
             // There is no brush for a room. The air is the one layer the inspector always offers,
             // so this is the case a player reaches by pressing C on bare deck, and the honest answer

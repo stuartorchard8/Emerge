@@ -16,7 +16,6 @@ import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.VesselState
-import org.emerge.demo.outofspace.world.Structure
 import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.InputKey
 import org.emerge.demo.outofspace.world.machine.WireButton
@@ -35,10 +34,8 @@ import org.emerge.demo.outofspace.world.machine.Engine
 import org.emerge.demo.outofspace.world.machine.Rocket
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.ThrusterControl
-import org.emerge.demo.outofspace.world.SpeciesFilter
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.bufferTile
-import org.emerge.demo.outofspace.world.SignalField
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.contentsBreakdown
@@ -58,6 +55,8 @@ import kotlin.math.absoluteValue
 import org.emerge.demo.outofspace.world.Market
 import org.emerge.demo.outofspace.world.Station
 import org.emerge.demo.outofspace.num.scaledRatio
+import org.emerge.demo.outofspace.world.BodyKind
+import kotlin.math.sqrt
 
 /** A full-screen overlay: the game's own controls, or the sim's readouts. One at a time. */
 enum class Sheet { None, Menu, Readouts, SaveLoad, Trade }
@@ -1280,6 +1279,34 @@ class OutofspaceHud {
             label("origin", ox, oy - d - 9f * density, 8f * density, 0x5A82A8FFL)
         }
 
+        // Station markers
+        for (b in s.bodies.filter { it.kind == BodyKind.STATION }) {
+            val station = b.station ?: continue
+            val stationTileX = b.positionX.toFloat() / Flight.PER_TILE
+            val stationTileY = b.positionY.toFloat() / Flight.PER_TILE
+            var sx = panelX(stationTileX-vesselTileX, stationTileY-vesselTileY)
+            var sy = panelY(stationTileX-vesselTileX, stationTileY-vesselTileY)
+            val dx = (sx - cx)
+            val dy = (sy - cy)
+            val r = (radius - 4f * density)
+            if (dx*dx + dy*dy < r*r) {
+                val d = 2.5f * density
+                val nearColor = 0x5A82A8FFL
+                rect(sx - d, sy - d, d * 2f, d * 2f, nearColor)
+                label("station ${station.id}", sx, sy - d - 9f * density, 8f * density, nearColor)
+            } else {
+                val scaleFactor = sqrt(dx*dx + dy*dy)/r
+                val sdx = dx/scaleFactor
+                val sdy = dy/scaleFactor
+                sx = sdx + cx
+                sy = sdy + cy
+                val d = 2.5f * density
+                val farColor = 0x5A3248FFL
+                rect(sx - d, sy - d, d * 2f, d * 2f, farColor)
+                label("station ${station.id} (far)", sx, sy - d - 9f * density, 8f * density, farColor)
+            }
+        }
+
         // Velocity needle (drawn from ship outward; stationary = nothing).
         val vx = s.velocityX.toFloat() / Flight.PER_TILE
         val vy = s.velocityY.toFloat() / Flight.PER_TILE
@@ -1424,7 +1451,7 @@ class OutofspaceHud {
             when (layer) {
                 InspectLayer.Deck -> deckLayer(controller, tile)
                 InspectLayer.Rail -> conduitLayer(controller, tile, Conduit.Rail)
-                InspectLayer.Wire -> conduitLayer(controller, tile, Conduit.Signal)
+                InspectLayer.Signal -> conduitLayer(controller, tile, Conduit.Signal)
                 InspectLayer.Power -> conduitLayer(controller, tile, Conduit.Power)
                 InspectLayer.Atmosphere -> atmosphereLayer(controller, tile)
             }
