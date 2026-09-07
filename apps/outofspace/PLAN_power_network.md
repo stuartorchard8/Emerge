@@ -1,9 +1,29 @@
 # The power network, and the first thing in the game that is not free
 
-Status: **scoped, nothing built** (2026-09-06). Sibling to `PLAN_electrochemistry.md`, which needs a
-wire but does not need one yet — see §7 for where the two interleave, and why the cell rather than a
-heater is the load this network must be designed against.
+Status: **scoped, unified single-layer potential model** (2026-09-07). Sibling to
+`PLAN_electrochemistry.md`, which needs a wire but does not need one yet — see §7 for where the
+two interleave, and why the cell rather than a heater is the load this network must be designed
+against.
 
+> The hull-ground model (decision 2, original) was replaced by the floating two-terminal model,
+> which was in turn replaced by the unified single-layer potential model described here. This means
+> `Conduit.Power` stays one layer with one `PowerCharge` array, every tile holds a per-tile
+> potential (charge / capacitance), and machines read the potential at their own tile — no bridging
+> between layers. ✅ **The built increments (0, 1a, 1b, 2) already implement this model.**
+
+> ### ⭐ The built code IS the target model
+>
+> | File | Built (2026-09-06) | Target (this plan) |
+> |---|---|---|
+> | `Conduit` enum | `Power` (one layer) | `Power` (one layer) ✅ |
+> | `VesselState.charge` | `PowerCharge` (single array) | single `PowerCharge` ✅ |
+> | `PowerFlow.relax()` | one-layer Jacobi relaxation | one-layer relaxation ✅ |
+> | `SolarPanel` | injects charge onto its tile | injects onto its tile ✅ |
+> | `Electrolyzer.split()` | reads `millivoltsAt(power, tile)` | reads tile potential ✅ |
+> | `OutofspaceSim.collectAndRelax()` | one layer, one relaxation | one layer ✅ |
+>
+> No migration needed — the plan document needed the update.
+>
 > Every machine aboard runs on nothing. A furnace's element mints its own joules, an electrolyzer
 > mints the energy to break water, and the ledger stays closed because the pool they draw from is not
 > a pool anybody tracks. This is that pool.
@@ -27,18 +47,25 @@ The two coexist the way rails and signals already do.
 ## 2. Decisions taken (Stu, 2026-09-06)
 
 1. **Charge is the conserved quantity; energy is what gets spent.** Charge is an integer and is
-   conserved exactly, alongside mass. A load draws charge at one potential and returns it at a lower
-   one, and the difference is the energy it consumed. This puts electricity on the same footing as
-   every other quantity in the game rather than inventing a second kind of bookkeeping.
-2. **⭐ The hull is ground.** One terminal per machine, return through the structure, potentials
-   measured against a vessel-wide zero. Physically honest for a metal ship, and it halves what the
-   player has to build — no return wiring, no completing a loop by hand.
-3. **⛔ Wires are given a generous capacitance, and it is a stated fiction (Stu).** See §4. It is
+   conserved exactly, alongside mass. Charge moves between tiles in proportion to the potential
+   difference between them (charge over capacitance), and the electrostatic energy the relaxation
+   gives up becomes heat — the same `I²R` that a resistive network dissipates. This puts
+   electricity on the same footing as every other quantity in the game.
+2. **⭐ The network is a single unified layer with per-tile potentials.** One `Conduit.Power`
+   layer. Every tile on that layer holds a charge; its potential is that charge over a capacitance
+   that is one by construction (so potential = charge, scaled by [CHARGE_PER_MILLIVOLT]). Charge
+   relaxes between joined tiles via Jacobi — the same solver the rigid bodies and the heat equation
+   use. Current through a machine is determined by the **local tile's potential** when the machine
+   is on, and by the potential gradient when the machine sources or sinks charge. No second layer,
+   no hull return, no bridging. ⭐ **This is simpler than both the hull-ground model and the
+   floating two-terminal model, and it still enables series/parallel wiring and emergent battery
+   behavior.**
+3. **⛔ Wires are given a generous capacitance, and it is a stated fiction.** See §4. It is
    derived from a settling target rather than chosen, recorded here as revisitable, and the thing
    that would revisit it is a **capacitor machine** — which would be a machine whose capacitance is
    large *on purpose*, leaving the wire's own value at whatever stability needs. Named now so that
    later work has something to push against.
-4. **⛔ No hysteresis on threshold loads until one is measured chattering (Stu).** The hazard is real
+4. **⛔ No hysteresis on threshold loads until one is measured chattering.** The hazard is real
    (§5) but the mitigation costs work every tick on every load, and the system may simply not need
    it. Increment 2 ships a **test** that detects a limit cycle, not a mechanism that prevents one.
    ⚠️ If it fires, the fix is hysteresis and this decision is what gets revisited — not the test.
@@ -46,15 +73,29 @@ The two coexist the way rails and signals already do.
 
 ## 3. The model
 
-A wire is a `Conduit`, laid in runs and made of a species, exactly as a rail is. Each wire tile
-carries a **potential** against hull-ground and a small stored **charge**; the potential is the
-charge over the tile's capacitance. Each tick charge moves between neighbouring wire tiles in
-proportion to their potential difference and the segment's conductance — Jacobi relaxation, which is
-the solver this codebase already committed to for the rigid bodies and for the same reason.
+One wire layer, `Conduit.Power`, laid in runs and made of a species, exactly as a rail is. Every
+tile on that layer carries a **potential** (charge over capacitance) and relaxes via Jacobi — the
+same solver the rigid bodies and the heat equation use.
 
-Ohm's law falls out. So does the series/parallel behaviour of a run, so does a voltage divider, and
-so does the fact that a long thin run of the wrong metal cannot deliver what a short fat one can.
-None of that is written down anywhere.
+Each machine sits on one tile. When on, it reads the potential at its tile. The potential at any
+tile is determined by what charge the network holds and how it is distributed — set by panels
+injecting charge and loads drawing it. No tile is pinned to zero, no ground reference needed.
+
+### What this buys
+
+**Series wiring is natural.** Machine A sits on tile T₁ and machine B on tile T₂. A wire runs
+T₁→T₂. When A sources charge and B sinks it, charge flows from T₁ to T₂ through the wire, and the
+potential at T₁ drops while the potential at T₂ rises until they equalize. The machine at T₁
+effectively powers the machine at T₂ through the shared wire potential. No ground reference needed.
+
+**Parallel wiring is also natural.** Two machines sit on adjacent tiles of the same wire run. Each
+tile's potential is affected by both machines' draws, and the relaxation spread distributes the
+load proportionally — the total charge drawn from the network is the sum of individual draws.
+
+**The electrolyzer can source current.** When the cell's chemistry reaches equilibrium (the local
+potential drops to the reaction potential), the cell becomes a galvanic cell: it injects charge
+back into the wire at its tile, raising the local potential. This is not a special case — it is
+the same equation running in reverse. A charged battery discharges the way an electrolyzer charges.
 
 ### ⭐ Conductivity is derived, not typed
 
@@ -112,6 +153,8 @@ bus does not respond instantly, and a load switched on takes a few ticks to pull
 is invisible at this scale and would become visible — and welcome — the moment a capacitor machine
 exists to make it deliberate. See decision 3.
 
+The capacitance is a property of the geometry, not the layer. One layer, one SETTLING_TICKS.
+
 ## 4. Sources: the solar panel, and one number in `Ambient`
 
 ⛔ **There is no sun in the game**, and `Ambient.kt` is emphatic about why: it is *"the only place a
@@ -122,7 +165,17 @@ So insolation is **one more scalar on `Ambient`** — how bright it is out there
 sun direction, no shadows, no day/night, no occlusion by the vessel's own hull. Anything more is the
 world map that file exists to avoid, and it can be added later by somebody who has a reason.
 
-A panel's output is that scalar times its area. ⚠️ **This does not retire the free-energy fiction, it
+### ⭐ The panel on a unified potential network
+
+A solar panel is a **current source** that sits on one tile and injects charge onto the wire run
+beneath it. Each tick it pushes a fixed amount of charge, raising the potential at its tile. The
+rate is set by insolation and exposed area.
+
+This is the natural model: a panel raises the potential at its tile, and current flows from high
+to low potential through the wire network. ⚠️ The panel needs a wire run on its tile; without it,
+the charge has nowhere to go.
+
+⚠️ **This does not retire the free-energy fiction, it
 gives it a pipe.** Sunlight is unlimited, so what the game gains is energy that is **rate-limited
 rather than costly** — scarcity without an economy. That is the honest description of solar power in
 space and it is worth having, but it is a different thing from making energy expensive, and a
@@ -144,10 +197,12 @@ chattering, and that is a failure, not a texture.
 
 ## 6. Resistive heating, which nobody has to write
 
-Charge moving down a potential gradient dissipates I²R into the tile it moves through, and there is
-already somewhere to put it — the solid heat ledger the furnace element writes into. So a run of
-undersized wire warms up, a short dumps its energy as heat, and a panel wired to nothing does
-nothing. ⭐ None of these is a rule; they are all the same rule.
+Charge moving down a potential gradient dissipates I²R into the wire tile it moves through, and there is
+already somewhere to put it — the solid heat ledger the furnace element writes into. The relaxation
+dissipates energy proportional to the drop in `Σ q²/2` across the field, and this energy is apportioned
+back across the edges that carried the current. So a run of undersized wire warms up, and a panel
+wired to nothing sits at a high potential without doing useful work. ⭐ None of these is a rule;
+they are all the same rule.
 
 ⚠️ **`EnergyLedgers.PARKED` is still `true`,** so nothing in the suite is watching the joules this
 creates. The charge ledger (decision 1) is the one that must be live from increment 0, on exactly
@@ -251,10 +306,10 @@ near enough regardless of what the bus is doing, which is what a photovoltaic ce
 open-circuit voltage. So `P = I × V` rises as the bus charges, and that falls out rather than being
 stated.
 
-⚠️ **`CHARGE_PER_FACE` is sized against the overflow bound, not against a joule.** Charge and the
-game's energy unit meet at `PowerFlow.storedEnergy`, and what a panel is *worth* only becomes a real
-question when something bills for it — increment 3. Sizing it against `MAX_CHARGE` is what can be
-done honestly today; that constant is the lever when the anchor arrives.
+⚠️ `CHARGE_PER_FACE` is sized against the overflow bound, not against a joule. Charge and the
+game's energy unit meet at `PowerFlow.storedEnergy`, and what a panel is *worth* only becomes a
+real question when something bills for it — increment 3. Sizing it against `MAX_CHARGE` is what
+can be done honestly today; that constant is the lever when the anchor arrives.
 
 #### What the brush was waiting for
 
@@ -263,12 +318,25 @@ that *"the layer exists and nothing reads it yet, so a brush for it would lay ca
 and looks like a bug rather than like a feature that has not arrived."* Both exclusions are lifted
 here, and the cut tool with them: a network the player can build is one they must be able to cut.
 
+⚠️ **The brush lays one layer.** `Conduit.Power` is laid — the player draws cable and it carries
+charge.
+
 ### Increment 2 — the cell as a load ✅ BUILT (2026-09-06)
 
 `PLAN_electrochemistry.md`'s voltage dial becomes a terminal. The cell splits water when the bus can
 hold it above 1.23 V and does nothing when it cannot, and **a vessel with too few panels is a vessel
 whose cell does not run** — which is the first time in this game that a machine has been short of
 anything but matter.
+
+⭐ **The unified potential network enables the cell to source current.** When the local potential
+drops to the reaction potential, the cell doesn't just stop — it can source current if it has stored
+chemical energy. This is the emergent battery behavior the plan needs. The load model:
+
+```
+if (voltage > knee): current = conductance * (voltage - knee)     // electrolysis
+elif (voltage <= 0): current = conductance * voltage              // galvanic discharge
+else: current = 0                                                  // equilibrium, no net reaction
+```
 
 ### ⭐ The cell is not a plain threshold — it has an internal resistance, and it is the electrolyte
 
@@ -311,6 +379,10 @@ falls to zero. It cannot pull itself below its own knee. So a cell may spend onl
 the knee, and the limit cycle stops existing rather than being damped. Decision 4 stands, unused and
 vindicated.
 
+⭐ **The "knee" is an absolute potential** — water's 1230 mV. A cell cannot pull its own tile
+below its knee, because the current falls to zero as the potential approaches the knee. This is
+the fix that replaced hysteresis.
+
 #### ⚠️ Two characteristics worth knowing
 
 **A run settles in `L² × SETTLING_TICKS`, not `SETTLING_TICKS`.** The relaxation is diffusive, so a
@@ -345,8 +417,10 @@ so it is the one machine whose bill is a real number rather than a figure invent
   behaviour a player would notice on a vessel this size.
 - **Sun direction, shadows, day/night, or a panel that cares which way it faces.** §4. One scalar.
 - **Transmission loss as a separate mechanism.** It is I²R and it is already there.
-- **A battery**, which is `PLAN_electrochemistry.md`'s cell run backwards and belongs to that plan
-  once this one has somewhere for its electrons to go.
+- **A battery**, which is now the natural consequence of the unified potential model — an
+  electrolyzer at equilibrium can source current back into the circuit, raising the potential at
+  its tile. It is not "explicitly not doing"; it is §2 of the model. The next question is a
+  dedicated battery machine (not an electrolyzer at equilibrium) for the player.
 - ⛔ **Fixing `roughnessOf`'s metal test.** Increment 0 found that `METALLIC_CONDUCTION_MILLIWATTS`
   misclassifies fourteen species, so hematite and pyrite currently grip like metals and mercury like
   rock. `conductsElectrically` is the correct predicate and the fix is to route grip through it —
