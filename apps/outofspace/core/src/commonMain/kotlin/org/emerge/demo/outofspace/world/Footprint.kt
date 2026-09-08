@@ -15,6 +15,9 @@ val DeckMachineKind.diameter: Int
         DeckMachineKind.Buffer -> 1
         DeckMachineKind.Sensor, DeckMachineKind.KeyInput, DeckMachineKind.Pump,
         DeckMachineKind.Gauge, DeckMachineKind.Valve,
+        // One tile, and the panel's constraint does not reach it: a terminal has no second end to
+        // keep on a separate body, because it has no ends at all. See [TerminalRole.Bond].
+        DeckMachineKind.Terminal,
         -> 1
         // ⛔ **Three, and the geometry forced it.** This was one tile, on the argument that *"a panel
         // is a plate on the hull, not an installation: one tile, and you build a bank of them rather

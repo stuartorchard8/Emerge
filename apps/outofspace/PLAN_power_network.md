@@ -558,11 +558,34 @@ world sees neither bug; both need a picture taken **before** a change and anothe
 is that shape by construction, and `probe` gained a `circuit` line — the component id and the
 per-face currents — because an overlay is a picture and a script needs a number to assert on.
 
-### Increment 3c — the terminal machine
+### Increment 3c — the terminal machine ✅ BUILT (2026-09-09)
 
-⚠️ **Not started.** The standalone `Terminal` machine, its brush and the cut tool. Machine-borne
-terminals work (the panel and the cell declare theirs), so this is the piece that lets a player bond
-layers wherever they choose rather than only where a machine stands.
+`DeckMachineKind.Terminal`, `machine/Terminal.kt`, `TerminalRole.Bond`, and `agent-scripts/terminal.txt`.
+Three tests in `CircuitTest`. Machine-borne terminals already worked (the panel and the cell declare
+theirs); this is the piece that lets a player bond layers wherever they choose rather than only where
+a machine happens to stand.
+
+⭐ **A third role, because a bonding point is not one end of anything.** A device terminal is one of
+a pair — the whole of §5 is that a casing is a parallel path *between* two ends — and the standalone
+rod has no pair. `TerminalRole.Bond` says so, and it joined the graph with **no branch anywhere**:
+everything that asks *does a terminal stand here* walks `entries`, and everything that asks for a
+device's ends names a role and never finds it.
+
+⭐ **The cut tool needed nothing.** `Conduit.Power` joined `Tool.CUTTABLE` back at increment 1b, when
+a brush started laying cable, so the network a player can now bond is one they could already sever.
+The scoping note that put the cut tool in this increment predates that.
+
+⛔ **A terminal's own material does NOT gate the bond, and that is deliberate.** The rod is *"assumed
+not to be the bottleneck"* — the join it makes is weighted by the worse of the two things it bonds,
+like every other edge — so a terminal built out of rock still bonds. ⚠️ **It has to be that way for
+machine-borne terminals**: a silicon panel's casing conducts *nothing*, and its two terminals are
+what drive the whole network. Gating the rod on the declaring machine's matter would kill the only
+panel that works. ⚠️ **A player can therefore build a forsterite rod and have it conduct**, which is
+the one place in this plan where a material choice does not bite. Left as it is rather than given a
+rule; if it should bite, the rule belongs to the standalone machine and not to the graph.
+
+⚠️ **A ghost terminal bonds nothing**, which needed nothing built either: `terminalTiles` already
+skips a machine that has not been delivered, for decision 6's reason.
 
 #### The original increment 3, as scoped
 

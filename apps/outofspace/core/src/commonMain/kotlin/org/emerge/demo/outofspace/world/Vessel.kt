@@ -7,6 +7,7 @@ import org.emerge.demo.outofspace.world.machine.Electrolyzer
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.machine.Gauge
+import org.emerge.demo.outofspace.world.machine.Terminal
 import org.emerge.demo.outofspace.world.machine.Valve
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Extractor
@@ -1209,7 +1210,8 @@ fun fullness(machine: DeckMachine?, centre: TileIndex, grid: Grid, buffers: Buff
     // and reaches the wire by its own route — see [OutofspaceReducer]'s gauge pass.
     // A panel holds no matter either. What it *is* full of is charge, which is a fact about the
     // wire under it rather than about the machine, and no sensor asks the wire anything yet.
-    is Gauge, is Valve, is SolarPanel -> 0
+    // A terminal holds nothing at all — not even the charge, which is on the run beneath it.
+    is Gauge, is Valve, is SolarPanel, is Terminal -> 0
     // What is waiting to be sold. A sensor on a docking port asks "is my cargo backing up because
     // nobody is buying", which is the same shape of question it asks of every other machine.
     is DockingPort -> (buffers.massAt(bufferTile(grid, machine, centre, BufferRole.Input)!!) *

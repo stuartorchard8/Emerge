@@ -16,6 +16,7 @@ import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.Terminal
 import org.emerge.demo.outofspace.world.machine.Valve
 import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.InputKey
@@ -65,8 +66,9 @@ class SaveError(message: String) : Exception(message)
  */
 fun materialBefore(kind: DeckMachineKind): Species = when (kind) {
     // ⚠️ Unreachable and stated anyway: a panel postdates version 20, so no file this function reads
-    // can contain one. Steel because that is what every other plate defaulted to.
-    DeckMachineKind.SolarPanel -> Species.Steel
+    // can contain one, and a terminal postdates it by five more versions. Steel because that is what
+    // every other plate defaulted to.
+    DeckMachineKind.SolarPanel, DeckMachineKind.Terminal -> Species.Steel
     DeckMachineKind.Hull, DeckMachineKind.Airlock -> Species.Steel
     DeckMachineKind.Vent, DeckMachineKind.Warehouse,
     // Unreachable for the docking port's reason below: neither size existed at version 20, so no
@@ -597,7 +599,9 @@ object Save {
             // A valve is its position and nothing else. An airlock is its wiring, and a bridge its
             // facing and its three slots — all of those are written by the common code around this.
             // A panel is where it stands and what it is wired to, and the common code writes both.
-            is Hull, is Airlock, is Bridge, is Valve, is SolarPanel -> {}
+            // A terminal is where it stands and nothing else — it has no state at all, which is the
+            // shortest entry on this list and the honest one.
+            is Hull, is Airlock, is Bridge, is Valve, is SolarPanel, is Terminal -> {}
             // A gauge's reading persists after the packet has gone, so it is state, not decoration.
             // The field names are the ones the `conduit` record used while a gauge was a segment.
             is Gauge -> {
@@ -1945,6 +1949,7 @@ object Save {
         val machine: DeckMachine = when (kind) {
             DeckMachineKind.Hull -> Hull(tile)
             DeckMachineKind.SolarPanel -> SolarPanel(tile)
+            DeckMachineKind.Terminal -> Terminal(tile)
             DeckMachineKind.Airlock -> Airlock(tile)
             DeckMachineKind.Vent -> Vent(tile, ventedMass = massNum("vented", 0L))
             // Two lists, each one field. ⚠️ `wiring` is applied after this `when` for every kind

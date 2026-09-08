@@ -238,6 +238,9 @@ val DeckMachineKind.fillPermille: Int
         // Thinner than any housing aboard: a panel is almost all face and almost no structure, and
         // the thing it is *for* is having a lot of face.
         DeckMachineKind.SolarPanel -> 20
+        // A rod and the plate that bolts it to the deck: less than an instrument's housing, because
+        // there is no space inside it, and more than a valve's collar, because it is solid metal.
+        DeckMachineKind.Terminal -> 30
         DeckMachineKind.Valve -> 15
         // A collar and a pair of hoppers: mostly structure, and heavier than a warehouse shell
         // because it is a hole in the ship that has to be strong enough to be one.

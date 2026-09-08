@@ -1,0 +1,81 @@
+# The terminal: the machine that lets a player choose their conductor.
+#
+# `PLAN_power_network.md` increment 3c, decision 4. Charge crosses between layers ONLY where a
+# terminal stands, which is the single place the electrical contact graph differs from the thermal
+# one. Machines declare their own ends -- a panel's two, a cell's two arms -- and this is the other
+# form: a standalone rod, bonding whatever stands on its tile because the player put it there.
+#
+# The scene is a panel wired to itself the long way round, with the BOTTOM LEG OF THE LOOP MADE OF
+# RAIL instead of cable. Track is metal, so it conducts; it is a separate layer, so it is a separate
+# circuit until somebody says otherwise.
+#
+# What to read in the shots:
+#   `terminal-open`   -- three circuits in three tints: the cable off the panel's left terminal, the
+#                        cable off its right, and the rail between them. No carriers anywhere,
+#                        because the panel is open-circuit and drives nothing.
+#   `terminal-closed` -- one tint over the whole ring. Two rods, and the loop is closed THROUGH THE
+#                        TRACK.
+#   `terminal-live`   -- carriers streaming round it, along the rail with the rest. ⚠️ They run
+#                        against the conventional current, because carriers are ELECTRONS.
+#
+# ⚠️ The panel is FORSTERITE: a conductive casing is a parallel path between a machine's own two
+# terminals, so a steel panel shorts itself and drives nothing -- §5.
+
+new
+creative 1
+
+# A panel needs sky, and the inside of a pressurised hull has none. Open the roof above it.
+brush HULL
+remove 24 4
+remove 25 4
+remove 26 4
+
+material FORSTERITE
+brush SOLAR
+place 25 6
+
+# Down from each terminal and along -- but the two ends stop short of each other.
+material COPPER
+brush POWER
+drag 24 6 22 6
+drag 22 6 22 9
+drag 28 9 28 6
+drag 28 6 26 6
+
+# What joins them is a belt -- the vessel's own, which runs along this row already and is IRON, and
+# iron conducts. The drag only makes sure the stretch between the two corners is joined.
+brush RAIL
+drag 22 9 28 9
+
+escape
+escape
+camera centre 25 8 68
+run 40
+
+overlay CIRCUIT
+shot terminal-open
+echo --- three circuits, and nothing moving in any of them ---
+probe 22 7
+probe 25 9
+probe 28 7
+
+# Two rods, one at each corner where the cable meets the track.
+brush TERMINAL
+place 22 9
+place 28 9
+escape
+escape
+run 40
+shot terminal-closed
+echo --- one circuit now, and the current runs through the track ---
+probe 22 7
+probe 25 9
+probe 28 7
+
+# ⚠️ **Twice, and the first one is what makes the second honest.** A still capture stops the clock
+# (`OutofspaceRenderer.SETTLED`), so the frame after one has no elapsed time to advance a carrier by
+# — the first live shot is what gives the second a previous instant to have moved since.
+run 60
+shot terminal-live live
+run 5
+shot terminal-live live

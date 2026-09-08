@@ -17,6 +17,8 @@ import org.emerge.demo.outofspace.world.bodiesOf
 import org.emerge.demo.outofspace.world.circuitOf
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Electrolyzer
+import org.emerge.demo.outofspace.world.machine.Gauge
+import org.emerge.demo.outofspace.world.machine.Terminal
 import org.emerge.demo.outofspace.world.terminalTile
 import org.emerge.demo.outofspace.world.terminalTiles
 import kotlin.test.Test
@@ -235,6 +237,78 @@ class CircuitTest {
         }, org.emerge.demo.outofspace.world.TrackLayers.empty(grid.size))
         val (c, _) = circuit(unpaid)
         assertEquals(0, c.componentCount, "unpaid track carried a current")
+    }
+
+    // ── The terminal the player stands ──────────────────────────────────────
+
+    /**
+     * ⭐ **Increment 3c: the same bond, made by a machine rather than by a test.** The crossing
+     * tests above hand [circuitOf] a terminal array directly, which is what let them be four lines;
+     * this one builds a standalone [Terminal] on the deck and asks [terminalTiles] for the array —
+     * so what is under test is that the *machine* declares its bond, through [TerminalRole.Bond].
+     */
+    @Test
+    fun `a terminal machine joins the layers it stands on`() {
+        val cross = grid.tile(6, 4)
+        val conduits = Conduits.of(
+            grid.size,
+            Conduit.Rail to run(Conduit.Rail, row = 4, x0 = 2, x1 = 10),
+            Conduit.Power to column(Conduit.Power, col = 6, y0 = 1, y1 = 7),
+        )
+        val deck = DeckArray(grid)
+        deck.stand(Terminal(cross), withCasing = true, material = Species.Copper)
+        val (c, bodies) = circuit(conduits, deck)
+        assertEquals(1, c.componentCount, "a terminal machine failed to bond the layers under it")
+        assertEquals(
+            nodeAt(c, bodies, Conduit.Rail, cross),
+            nodeAt(c, bodies, Conduit.Power, cross),
+            "a terminal stands on the crossing and it still reads as two circuits",
+        )
+    }
+
+    /**
+     * ⚠️ **And it is the terminal doing it, not the machine standing there.** Every deck machine
+     * has a casing on its tile; only one that declares a terminal bonds what is under it, which is
+     * the difference between "wiring is a decision" and "wiring is where you happened to build".
+     */
+    @Test
+    fun `a machine without a terminal leaves the crossing alone`() {
+        val cross = grid.tile(6, 4)
+        val conduits = Conduits.of(
+            grid.size,
+            Conduit.Rail to run(Conduit.Rail, row = 4, x0 = 2, x1 = 10),
+            Conduit.Power to column(Conduit.Power, col = 6, y0 = 1, y1 = 7),
+        )
+        val deck = DeckArray(grid)
+        deck.stand(Gauge(cross), withCasing = true, material = Species.Copper)
+        val (c, bodies) = circuit(conduits, deck)
+        assertTrue(
+            nodeAt(c, bodies, Conduit.Rail, cross) != nodeAt(c, bodies, Conduit.Power, cross),
+            "a copper gauge bonded the layers under it without being a terminal",
+        )
+    }
+
+    /**
+     * ⛔ **A ghost terminal bonds nothing** — decision 6, the same rule that keeps unpaid track out
+     * of the graph. A rod that has not been delivered is a plan for a rod.
+     */
+    @Test
+    fun `a ghost terminal bonds nothing`() {
+        val cross = grid.tile(6, 4)
+        val conduits = Conduits.of(
+            grid.size,
+            Conduit.Rail to run(Conduit.Rail, row = 4, x0 = 2, x1 = 10),
+            Conduit.Power to column(Conduit.Power, col = 6, y0 = 1, y1 = 7),
+        )
+        val deck = DeckArray(grid)
+        deck.stand(Terminal(cross), withCasing = false, material = Species.Copper)
+        assertTrue(deck.isGhost(cross), "fixture: a terminal with no casing was supposed to be a ghost")
+        val (c, bodies) = circuit(conduits, deck)
+        assertEquals(2, c.componentCount, "a terminal nobody has built yet bonded two layers")
+        assertTrue(
+            nodeAt(c, bodies, Conduit.Rail, cross) != nodeAt(c, bodies, Conduit.Power, cross),
+            "a ghost rod carried charge between the layers under it",
+        )
     }
 
     /** ⛔ Decision 5 — a warehouse full of copper does not conduct. */

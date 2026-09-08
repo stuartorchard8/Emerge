@@ -122,6 +122,7 @@ import org.emerge.demo.outofspace.world.Motor
 import org.emerge.demo.outofspace.world.flightActivations
 import org.emerge.demo.outofspace.world.machine.Engine
 import org.emerge.demo.outofspace.world.machine.Rocket
+import org.emerge.demo.outofspace.world.machine.Terminal
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.ThrusterControl
 import org.emerge.demo.outofspace.world.machine.exhaustPath
@@ -466,8 +467,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // step (see [readGauges]) and a valve is a hole, not a mechanism.
                     // A solar panel is inert here for the same reason a gauge is: it does its work
                     // in the power pass, against the conduit under it, not against a buffer.
+                    // A terminal is inert in the strongest sense on this list: it is a rod, and the
+                    // only pass that reads it is the one that builds the contact graph.
                     is Hull, is Airlock, is Vent, is Storage, is Bridge, is Gauge, is Valve,
-                    is Sensor, is WireButton, is SolarPanel -> m
+                    is Sensor, is WireButton, is SolarPanel, is Terminal -> m
                     is Pump -> w.suck(m, on, tile)
                     // A thruster on flight control answers the pilot's stick, not the wire — see
                     // [ThrusterControl]. Worked out per motor from where it sits and which way it
@@ -4894,9 +4897,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         private fun deliver(port: Port, destination: DeckMachine, packet: Packet): Boolean {
             return when (destination) {
-                // ⚠️ Nothing is ever delivered to a panel: it has no port, so the flow graph never
-                // routes to it and this branch is unreachable rather than a refusal.
-                is SolarPanel -> false
+                // ⚠️ Nothing is ever delivered to a panel or a terminal: neither has a port, so the
+                // flow graph never routes to them and these branches are unreachable rather than
+                // refusals.
+                is SolarPanel, is Terminal -> false
                 // A lump stepping onto a bridge goes into the near-end slot.
                 //
                 // ⚠️ **A slot takes one packet or none**, and does not merge — which is the one way

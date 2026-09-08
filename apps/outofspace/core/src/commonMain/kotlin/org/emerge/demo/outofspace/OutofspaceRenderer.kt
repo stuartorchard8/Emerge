@@ -39,6 +39,7 @@ import org.emerge.demo.outofspace.world.FlowField
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.Rotation
 import org.emerge.demo.outofspace.world.machine.Rocket
+import org.emerge.demo.outofspace.world.machine.Terminal
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.massIn
@@ -842,6 +843,13 @@ class OutofspaceRenderer {
             is SolarPanel -> tileRect(x, y, 1f, kindColor(DeckMachineKind.SolarPanel))
             // Bright core, wider than the pipe it opens, centred on the tile.
             is Valve -> footprintRect(state, m, Visual.VALVE_COLLAR, Colors.VALVE_CORE)
+            // A rod seen end-on, standing on the plate that bolts it down. Deliberately small: what
+            // a terminal is *for* is the runs crossing under it, and a body that covered them would
+            // hide the one thing the player put it there to join.
+            is Terminal -> {
+                tileRect(x, y, Visual.TERMINAL_PLATE, kindColor(DeckMachineKind.Terminal))
+                tileRect(x, y, Visual.TERMINAL_ROD, Colors.TERMINAL_ROD)
+            }
             is Hull -> tileRect(x, y, 1f, kindColor(DeckMachineKind.Hull))
             is Extractor -> {
                 // A tray, not a block. The recessed floor is what says "things go on top of this",
@@ -1891,6 +1899,8 @@ class OutofspaceRenderer {
         const val VENT_CORE     = 0x0A0A0CFFL
         /** Bright, because a valve's core is the way through rather than a hole into space. */
         const val VALVE_CORE    = 0xD8A860FFL
+        /** Bare copper: a terminal is the one thing aboard that is *only* a conductor. */
+        const val TERMINAL_ROD  = 0xD07A3CFFL
 
         // ── Port colours ────────────────────────────────────────────────
         const val PORT_IN  = 0xE8ECF2FFL
@@ -1983,6 +1993,10 @@ class OutofspaceRenderer {
 
         /** Wider than the pipe, so a tap reads against a long run without hiding its arms. */
         const val VALVE_COLLAR  = 0.46f
+
+        /** The plate a terminal is bolted to, and the rod standing on it. */
+        const val TERMINAL_PLATE = 0.46f
+        const val TERMINAL_ROD   = 0.22f
         const val INTAKE_OFFSET = 0.34f
         const val INTAKE_WIDTH  = 0.44f
         const val INTAKE_DEPTH  = 0.14f
@@ -2092,6 +2106,8 @@ fun kindColor(kind: DeckMachineKind): Long = when (kind) {
     // Deep blue-black, the colour a panel actually is: it is the one thing aboard whose job is to
     // reflect as little as possible.
     DeckMachineKind.SolarPanel -> 0x1B2340FFL
+    // The plate under the rod — dark, so the copper on top of it carries the tile.
+    DeckMachineKind.Terminal -> 0x2E3540FFL
     DeckMachineKind.Valve -> 0xD8A860FFL
     DeckMachineKind.Hull -> 0x4A5464FFL
     DeckMachineKind.Airlock -> 0x6E7C90FFL

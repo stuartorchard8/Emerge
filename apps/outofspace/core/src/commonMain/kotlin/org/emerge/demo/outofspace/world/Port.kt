@@ -11,6 +11,7 @@ import org.emerge.demo.outofspace.world.machine.DirectedDeckMachine
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.Terminal
 import org.emerge.demo.outofspace.world.machine.Valve
 import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.Pump
@@ -178,7 +179,10 @@ private fun localPorts(machine: DeckMachine): List<LocalPort> {
         // passes over it may let go of its volatiles. Neither is a place material can be handed to.
         // ⚠️ A panel has no port and never will: what it hands over goes onto the conduit *under*
         // it, which is not a thing a port addresses. Ports are for matter.
-        is Sensor, is WireButton, is Gauge, is Valve, is SolarPanel -> emptyList()
+        // ⚠️ A terminal has none either, and for a sharper version of the panel's reason: what
+        // crosses it is charge, and charge is not handed over at a door. It is the *layers* under
+        // its tile that meet there, which is a fact about the contact graph and not about a port.
+        is Sensor, is WireButton, is Gauge, is Valve, is SolarPanel, is Terminal -> emptyList()
     }
 }
 

@@ -3,6 +3,7 @@ package org.emerge.demo.outofspace.world
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.Electrolyzer
 import org.emerge.demo.outofspace.world.machine.SolarPanel
+import org.emerge.demo.outofspace.world.machine.Terminal
 
 /**
  * **Which of a machine's tiles bond the layers under them**, and which end of it each one is.
@@ -18,12 +19,13 @@ import org.emerge.demo.outofspace.world.machine.SolarPanel
  * two circuits — so crossings are free and no power bridge is needed — and the player picks whether
  * charge travels by wire, by rail, or through the building itself.
  *
- * ### Why two roles rather than one flag
+ * ### Why roles rather than one flag
  *
- * A bonding point and a *device* terminal are not quite the same thing. The standalone terminal
- * machine of increment 3 is only the first; a machine that does electrical work has **two** ends and
- * has to tell them apart, because the whole of `PLAN_power_network.md` §5 is that its casing is a
- * parallel path *between* them. So they are named here and the naming costs nothing.
+ * A bonding point and a *device* terminal are not quite the same thing. A machine that does
+ * electrical work has **two** ends and has to tell them apart, because the whole of
+ * `PLAN_power_network.md` §5 is that its casing is a parallel path *between* them; the standalone
+ * [Terminal] of increment 3c has no ends at all and says so with [TerminalRole.Bond]. So they are
+ * named here and the naming costs nothing.
  *
  * ⚠️ **They must sit on different tiles, and that is a constraint on the footprint rather than a
  * rule stated here.** A one-tile machine's casing is a single body, so both its ends would be the
@@ -34,7 +36,24 @@ import org.emerge.demo.outofspace.world.machine.SolarPanel
  * does; they coincide on the cell's arms and they will not always, and this codebase deleted
  * `Material` rather than live with a name that means two things.
  */
-enum class TerminalRole { Positive, Negative }
+enum class TerminalRole {
+    Positive,
+    Negative,
+
+    /**
+     * ⭐ **A bonding point, which is not one end of anything.**
+     *
+     * The standalone [org.emerge.demo.outofspace.world.machine.Terminal] of increment 3c is a rod
+     * and nothing else: it does no work, so it has no element for a casing to be a parallel path
+     * around and no pair for [Positive] and [Negative] to be the two of. Calling it positive would
+     * have it answer a question it has no answer to, and every walk that asks for a *device's* ends
+     * asks for a named role and would then find one that is not there.
+     *
+     * ⚠️ **Everything that merely asks "does a terminal stand here" walks [entries]**, so this joins
+     * the graph with no branch anywhere — see [terminalTiles] and [hasTerminalAt].
+     */
+    Bond,
+}
 
 /**
  * Where the [role] terminal of the machine at [centre] stands, or null if it keeps no such terminal.
@@ -92,6 +111,7 @@ private fun localTerminalOffset(machine: DeckMachine, role: TerminalRole): Int {
         is Electrolyzer -> when (role) {
             TerminalRole.Negative -> packTerminal(-r, 0)
             TerminalRole.Positive -> packTerminal(r, 0)
+            else -> NO_TERMINAL
         }
         // ⭐ **The centre line at either end** (Stu), which is the same pair for the same reason:
         // three tiles of casing between them, so what the casing is made of decides whether the
@@ -103,7 +123,12 @@ private fun localTerminalOffset(machine: DeckMachine, role: TerminalRole): Int {
         is SolarPanel -> when (role) {
             TerminalRole.Negative -> packTerminal(r, 0)
             TerminalRole.Positive -> packTerminal(-r, 0)
+            else -> NO_TERMINAL
         }
+        // ⭐ **On its own tile, because the machine *is* the terminal.** One tile is the whole of it
+        // — there is nothing to be at one end of, which is why the role is [TerminalRole.Bond] and
+        // why the one-body-one-node constraint that forced the panel to 3×3 does not apply here.
+        is Terminal -> if (role == TerminalRole.Bond) packTerminal(0, 0) else NO_TERMINAL
         else -> NO_TERMINAL
     }
 }
