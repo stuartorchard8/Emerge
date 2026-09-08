@@ -48,7 +48,7 @@ sealed interface Brush {
          *
          * ✅ [Conduit.Power] is here as of increment 1b of `PLAN_power_network.md`. It was held back
          * while *"the layer exists and nothing reads it yet"* — a brush laying cable that did nothing
-         * would read as a bug rather than as a feature that had not arrived. `PowerFlow` reads it
+         * would read as a bug rather than as a feature that had not arrived. the circuit solve reads it
          * now, and a [org.emerge.demo.outofspace.world.machine.SolarPanel] fills it.
          */
         val ALL: List<Brush> =

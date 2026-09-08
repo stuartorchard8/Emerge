@@ -39,7 +39,6 @@ import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
 import org.emerge.demo.outofspace.world.machine.SolarPanel
-import org.emerge.demo.outofspace.world.PowerCharge
 
 /** A save that could not be read, with the line that stopped it. */
 class SaveError(message: String) : Exception(message)
@@ -134,7 +133,7 @@ object Save {
      * empty field, which is the *true* state of a world that has never had a solar panel: charge has
      * exactly one source and it is a machine that did not exist.
      */
-    const val VERSION = 27
+    const val VERSION = 28
 
     /**
      * The first version whose filters say **pure / mixed / no opinion** rather than a percentage.
@@ -371,7 +370,6 @@ object Save {
         writeSparse(out, "airheat", state.air.copyEnergy().data)
         // ⚠️ Unscaled, unlike the heat fields beside it: charge is its own quantity and does not
         // ride the mass unit, so a rescale must not touch it.
-        writeSparse(out, "charge", state.charge.toLongArray())
         writeDeckHeat(out, state.deck)
         writeDeckStuff(out, state.deck)
         writeTrackStuff(out, state.conduits)
@@ -1450,7 +1448,6 @@ object Save {
             buffers = buffers,
             rail = rail,
             conduits = conduits,
-            charge = PowerCharge.of(charge),
             diverters = FlowCursors(diverters, merges),
             gravity = gravity,
             positionX = positionX,

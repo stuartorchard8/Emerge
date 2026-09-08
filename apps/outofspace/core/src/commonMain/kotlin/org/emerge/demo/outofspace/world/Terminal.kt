@@ -2,6 +2,7 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.Electrolyzer
+import org.emerge.demo.outofspace.world.machine.SolarPanel
 
 /**
  * **Which of a machine's tiles bond the layers under them**, and which end of it each one is.
@@ -77,10 +78,9 @@ private fun packTerminal(dx: Int, dy: Int): Int = ((dx + TERMINAL_BIAS) shl 8) o
 /**
  * **What has terminals, and where.**
  *
- * ⚠️ **One machine so far, deliberately.** `PLAN_power_network.md` increment 1 builds the graph and
- * nothing that runs on it; the cell is the machine the network is designed against, so it is the one
- * that declares its ends first and the one the graph's tests are written against. The panel gets
- * its pair in increment 3, when it also gets the footprint to hang them off.
+ * ⚠️ **Two so far.** The cell is the machine the network was designed against, so it declared its
+ * ends first and the graph's tests are written against it; the panel got its pair in increment 3,
+ * along with the footprint to hang them off.
  */
 private fun localTerminalOffset(machine: DeckMachine, role: TerminalRole): Int {
     val r = machine.reach
@@ -92,6 +92,17 @@ private fun localTerminalOffset(machine: DeckMachine, role: TerminalRole): Int {
         is Electrolyzer -> when (role) {
             TerminalRole.Negative -> packTerminal(-r, 0)
             TerminalRole.Positive -> packTerminal(r, 0)
+        }
+        // ⭐ **The centre line at either end** (Stu), which is the same pair for the same reason:
+        // three tiles of casing between them, so what the casing is made of decides whether the
+        // panel drives anything or merely warms itself.
+        //
+        // ⚠️ A photovoltaic cell drives electrons from its P side to its N side, so the **N side is
+        // the negative terminal** — the one with the surplus. Getting this backwards would run the
+        // whole network the wrong way and look entirely plausible doing it.
+        is SolarPanel -> when (role) {
+            TerminalRole.Negative -> packTerminal(r, 0)
+            TerminalRole.Positive -> packTerminal(-r, 0)
         }
         else -> NO_TERMINAL
     }

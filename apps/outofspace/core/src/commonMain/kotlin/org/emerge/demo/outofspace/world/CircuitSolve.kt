@@ -177,18 +177,36 @@ fun solveCircuit(
 
     val chains = reduceToJunctions(circuit, sources)
 
-    // ── The gauge. One node per component held at zero: a floating resistive network determines
+    // ── The gauge. One node per *supply group* held at zero: a floating resistive network determines
     // potentials only up to a constant, so something has to name the constant. ⚠️ Nothing physical
     // rests on which node — every device reads a difference across itself. ⚠️ Pinned among the
     // junctions, because the interior of a chain is interpolated rather than solved and pinning one
     // would bend the line it sits on.
+    //
+    // ⛔ **A supply group, not a component, and the difference is a bug this had.** [Circuit]'s
+    // components are joined by *conductor*; a source is not one. Two stubs with a panel across them
+    // and nothing else joining them are two components, and pinning each of them separately holds
+    // both ends of the panel at zero — so an open-circuit panel drove **nothing** instead of sitting
+    // at its stall. Found by `SolarPanelTest :: an open circuit panel sits at its open circuit
+    // voltage`, which is exactly the case a load would have hidden.
+    val group = IntArray(circuit.componentCount) { it }
+    fun rootOf(x: Int): Int {
+        var i = x
+        while (group[i] != i) { group[i] = group[group[i]]; i = group[i] }
+        return i
+    }
+    for (s in sources) {
+        val ra = rootOf(circuit.circuitOfNode(s.fromNode))
+        val rb = rootOf(circuit.circuitOfNode(s.toNode))
+        if (ra != rb) group[rb] = ra
+    }
     val pinned = BooleanArray(n)
     val pinnedOf = IntArray(circuit.componentCount) { -1 }
     for (node in 0 until n) {
         if (!chains.isJunction[node]) continue
-        val c = circuit.circuitOfNode(node)
-        if (pinnedOf[c] == -1) {
-            pinnedOf[c] = node
+        val g = rootOf(circuit.circuitOfNode(node))
+        if (pinnedOf[g] == -1) {
+            pinnedOf[g] = node
             pinned[node] = true
         }
     }

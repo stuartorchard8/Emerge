@@ -15,10 +15,15 @@ val DeckMachineKind.diameter: Int
         DeckMachineKind.Buffer -> 1
         DeckMachineKind.Sensor, DeckMachineKind.KeyInput, DeckMachineKind.Pump,
         DeckMachineKind.Gauge, DeckMachineKind.Valve,
-        // A panel is a plate on the hull, not an installation: one tile, and you build a bank of
-        // them rather than a bigger one.
-        DeckMachineKind.SolarPanel,
         -> 1
+        // ⛔ **Three, and the geometry forced it.** This was one tile, on the argument that *"a panel
+        // is a plate on the hull, not an installation: one tile, and you build a bank of them rather
+        // than a bigger one"* — which is a good argument and loses to a hard constraint. A machine
+        // has two electrical ends and a one-tile machine's casing is a **single body**, so its two
+        // ends would be the same node: a dead short no material can fix. The terminals go on the
+        // centre line at either end (Stu), which is `Warehouse`'s shape and needs no new machinery.
+        // See `PLAN_power_network.md` §4.
+        DeckMachineKind.SolarPanel -> 3
         // One tile wide. Its *length* is two, and that is not this number — see [FootprintShape.Nose].
         DeckMachineKind.Thruster -> 1
         DeckMachineKind.Concentrator, DeckMachineKind.Furnace -> 3

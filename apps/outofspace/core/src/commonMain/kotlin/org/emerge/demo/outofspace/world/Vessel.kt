@@ -94,15 +94,19 @@ data class VesselState(
      */
     val conduits: Conduits = Conduits.empty(grid.size),
     /**
-     * What every tile of [Conduit.Power] is holding — see [PowerCharge] and [PowerFlow].
+     * **The potential each tile's conductor settled at last tick, in microvolts** — the seed the
+     * next solve warm-starts from. See [CircuitSolve].
      *
-     * ⚠️ **Defaulted, unlike [buffers] and [rail], and the difference is real rather than a
-     * relaxation of the rule.** Those default silently *wrong*: a loader that forgets one hands back
-     * a world with every tank standing and empty. An empty charge field is the **true** state of any
-     * world that has never had a solar panel in it, because charge has exactly one source and that
-     * source is a machine that did not exist before save version 27.
+     * ⛔ **Not state, and not saved.** The wire holds nothing: a resistive network's potentials are
+     * whatever satisfies Kirchhoff *now*, so this is an accelerator and never an authority. A world
+     * that arrives without it solves cold and reaches the same answer — which is exactly what
+     * `CircuitSolveTest :: a long run converges from a cold start` asserts, and why save version 28
+     * dropped the field its predecessor persisted.
+     *
+     * ⚠️ **Keyed by tile rather than by node**, because node ids are rebuilt with the bodies every
+     * tick and an edit renumbers them. A tile index does not move.
      */
-    val charge: PowerCharge = PowerCharge.empty(grid.size),
+    val potential: LongArray = LongArray(grid.size),
     /** Which way each fork last sent material — see [FlowCursors]. */
     val diverters: FlowCursors = FlowCursors(),
     /**

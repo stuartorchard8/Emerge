@@ -456,7 +456,56 @@ discovers.
 EMFs stated by the test — the same argument the old increment 1a split was made on: the solver is
 the part carrying the design risk and it is testable with nothing else built.
 
-### Increment 3 — the panel, the terminal, and seeing what you built
+### Increment 3a — the panel, and power in the world ✅ BUILT (2026-09-08)
+
+The panel at 3×3 with terminals on its centre line, as a two-terminal source with a stall; the solve
+wired into the tick; `I²R` banked through `heat()`; `PowerFlow.kt`, `PowerCharge`, `chargeDrawn` and
+`VesselState.charge` deleted; save version **28**. `SolarPanelTest` rewritten, 6 tests.
+
+⭐ **The panel is `Source(positive, negative, OPEN_CIRCUIT_MICROVOLTS, G)`** — an EMF behind a
+conductance, which is a photovoltaic cell linearised. Into a short it gives `G·V`; open-circuit it
+sits at `V` and drives nothing. So *"a panel wired to nothing does nothing"* stopped being a thing
+anybody wrote down, and the `MAX_CHARGE` overflow closed by construction rather than by a clamp.
+
+⭐ **`VesselState.potential` is a seed, not state**, and is **not saved** — the wire holds nothing, so
+a world that arrives without it solves cold to the same answer. Keyed by *tile*, because node ids are
+rebuilt with the bodies every tick and an edit renumbers them.
+
+#### ⛔ What the build found: a source spanning two components pinned both ends to zero
+
+The gauge pinned one node per **component**, and a component is joined by *conductor* — a source is
+not one. Two stubs with a panel across them are two components, so both ends were pinned at zero and
+an open-circuit panel drove **nothing**. Fixed by pinning per **supply group**: components are
+unioned across sources first. ⚠️ A load would have hidden this entirely; it was the open-circuit
+test that found it.
+
+#### ⭐ What the build found: a steel panel is a dead panel
+
+§5 applied to the machine that *makes* the power. A panel's casing spans its own two terminals, so a
+conductive one shorts it — measured at **less than half** the potential a silicon one holds. Silicon
+is already a declared non-metal in `Conductivity.kt` (a semiconductor's conductivity is a fact about
+doping), so **a silicon panel works and a steel one does not**, which is Stu's P/N framing arriving
+through the back door rather than being written down.
+
+⚠️ **`Save.materialBefore` says a panel used to be steel.** That table is historical rather than
+normative and is left alone — but it means the obvious material makes a dead panel, and until the
+overlay lands a player has no way to see why. **This is the strongest argument that increment 3b is
+not optional.**
+
+#### ⛔ The cell runs free again, and it is a stated regression
+
+The old model gated the electrolyzer on the potential of its own tile against an **absolute** knee.
+That reference does not exist in a unified network, and a gate compared against the wrong reference
+is worse than no gate because it looks like it works. The cell reads `UNWIRED_MILLIVOLTS` until
+increment 4 replaces it with a difference across its own two terminals.
+
+### Increment 3b — the terminal machine, and seeing what you built
+
+⚠️ **Not started.** The standalone `Terminal` machine, its brush and the cut tool; and the overlay —
+tinted by component, with carriers animated along the conductor. See the design above, which is
+unchanged.
+
+#### The original increment 3, as scoped
 
 `SolarPanel` at 3×3 with terminals on the centre line, as a current source with a stall voltage. The
 standalone **Terminal** machine, its brush, and the cut tool. And the connectivity readout, which

@@ -9,122 +9,188 @@ import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.Segment
+import org.emerge.demo.outofspace.world.TerminalRole
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.SolarPanel
+import org.emerge.demo.outofspace.world.terminalTile
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * **A panel with sky makes power; a panel without makes nothing.**
+ * **A panel with sky drives a current; a panel without drives nothing.**
  *
- * Increment 1b of `PLAN_power_network.md`. ⭐ Nothing here is a rule of its own: exposure is
- * `StructureMap.openToSpace`, which already decides what a hot surface radiates at, and the light is
- * one number on [Ambient]. *The sun is anywhere outside the vessel* (Stu, 2026-09-06).
+ * Increment 3 of `PLAN_power_network.md`. ⭐ Almost nothing here is a rule of its own: exposure is
+ * `StructureMap.openToSpace`, which already decides what a hot surface radiates at, the light is one
+ * number on [Ambient], and what the panel does to the ship is whatever Kirchhoff says. *The sun is
+ * anywhere outside the vessel* (Stu).
  */
 class SolarPanelTest {
 
-    private val grid = Grid(16, 8)
+    private val grid = Grid(16, 9)
     private val panelAt = grid.tile(4, 4)
 
-    /** A panel on a run of cable heading right, with [walls] optionally boxing it in. */
-    private fun world(walls: Boolean = false, ambient: Ambient = Ambient.VACUUM): VesselState {
+    private fun panel() = SolarPanel(panelAt)
+    private fun positive(): TileIndex = terminalTile(grid, panel(), panelAt, TerminalRole.Positive)!!
+    private fun negative(): TileIndex = terminalTile(grid, panel(), panelAt, TerminalRole.Negative)!!
+
+    /** Cable laid along [path], each tile joined to the next. */
+    private fun cable(path: List<TileIndex>): List<Segment?> {
+        val layer = arrayOfNulls<Segment>(grid.size)
+        for (t in path) layer[t.index] = Segment(Conduit.Power, material = Species.Copper)
+        for (i in 0 until path.size - 1) {
+            val a = path[i]
+            val b = path[i + 1]
+            val dir = Direction.entries.first { grid.neighbour(a, it) == b }
+            layer[a.index] = layer[a.index]!!.joinedTo(dir)
+            layer[b.index] = layer[b.index]!!.joinedTo(dir.opposite)
+        }
+        return layer.toList()
+    }
+
+    /**
+     * ⛔ **Silicon, and the reason is the point of §5.** A machine's casing is a parallel path
+     * between its own two terminals, so a panel made of anything conductive shorts itself and drives
+     * nothing at all. Silicon is a semiconductor and `Conductivity.kt` declares it a non-metal, so a
+     * silicon panel works — which is Stu's P/N framing arriving through the back door rather than
+     * being written down. `a steel panel shorts itself` below is the other half of this.
+     */
+    private fun world(
+        power: List<Segment?>,
+        walls: Boolean = false,
+        ambient: Ambient = Ambient.VACUUM,
+        casing: Species = Species.Silicon,
+    ): VesselState {
         val deck = DeckArray(grid)
-        deck += SolarPanel(panelAt)
-        // ⚠️ **All four**, and the first version of this fixture left one open so the cable could
-        // run — which the panel then quite correctly collected through. A neighbour holding conduit
-        // but no machine does not block passage, so space still reaches it. The cable stays; it is
-        // the *hull* that has to be complete.
+        deck.stand(panel(), withCasing = true, material = casing)
         if (walls) {
-            for (dir in Direction.entries) {
-                val next = grid.neighbour(panelAt, dir)
-                if (next != TileIndex.NONE) deck += Hull(next)
+            for (x in 2..6) for (y in 2..6) {
+                if (x in 3..5 && y in 3..5) continue
+                deck += Hull(grid.tile(x, y))
             }
         }
-        val power = arrayOfNulls<Segment>(grid.size)
-        for (x in 4..5) power[grid.tile(x, 4).index] = Segment(Conduit.Power, material = Species.Copper)
-        power[panelAt.index] = power[panelAt.index]!!.joinedTo(Direction.Right)
-        power[grid.tile(5, 4).index] = power[grid.tile(5, 4).index]!!.joinedTo(Direction.Left)
-
         return VesselState(
             grid, deck,
-            conduits = Conduits.empty(grid.size).with(Conduit.Power, power.toList()),
+            // ⚠️ **`Conduits.of`, not `empty().with()`** — the latter skips `finished()`, which is
+            // what puts the metal in the track. Cable that has not been paid for is a **ghost** and
+            // conducts nothing (decision 6), so the first version of this fixture wired every panel
+            // to a run that was not there. The old charge model could not have noticed.
+            conduits = Conduits.of(grid.size, Conduit.Power to power),
             buffers = BufferLayer.forDeck(grid, deck),
             rail = RailLayer.empty(grid.size),
             ambient = ambient,
         )
     }
 
-    private fun run(state: VesselState, ticks: Int): VesselState {
+    private fun run(state: VesselState, ticks: Int = 8): VesselState {
         var s = state
         val cfg = OutofspaceConfig(initialGrid = state.grid)
         repeat(ticks) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
         return s
     }
 
-    // ── It collects ──────────────────────────────────────────────────────────
+    private fun VesselState.across(): Long = potential[positive().index] - potential[negative().index]
 
-    @Test
-    fun `a panel facing space puts charge on the cable under it`() {
-        val after = run(world(), 20)
-        assertTrue(after.charge.total > 0L, "a panel in open space made nothing")
-        assertTrue(after.charge[panelAt] > 0L, "the charge did not land on the panel's own tile")
+    /** Both terminals stubbed and nothing joining them — an open circuit. */
+    private fun openStubs(): List<Segment?> {
+        val layer = arrayOfNulls<Segment>(grid.size)
+        layer[positive().index] = Segment(Conduit.Power, material = Species.Copper)
+        layer[negative().index] = Segment(Conduit.Power, material = Species.Copper)
+        return layer.toList()
     }
 
-    /** ⭐ And it spreads: the cable beside it carries what the panel pushed. */
-    @Test
-    fun `the charge runs along the cable`() {
-        val after = run(world(), 40)
-        assertTrue(after.charge[grid.tile(5, 4)] > 0L, "the neighbouring cable stayed empty")
-    }
+    /** The two terminals joined the long way round, outside the footprint. */
+    private fun loop(): List<Segment?> = cable(
+        listOf(
+            positive(), grid.tile(2, 4), grid.tile(2, 5), grid.tile(2, 6),
+            grid.tile(3, 6), grid.tile(4, 6), grid.tile(5, 6), grid.tile(6, 6),
+            grid.tile(6, 5), grid.tile(6, 4), negative(),
+        )
+    )
+
+    // ── The stall ────────────────────────────────────────────────────────────
 
     /**
-     * ⭐ **Bury it and it makes nothing**, and nothing forbids that — it simply has no sky.
-     *
-     * This is the whole of "the sun is anywhere outside the vessel", asserted.
+     * ⭐ **Open-circuit, a panel sits at its stall and drives nothing** — which is the half of a
+     * photovoltaic cell the old model was missing, and the reason it overran its own overflow bound
+     * in about 2500 ticks. ⚠️ [Ambient.VACUUM] is full sun: the light is a scalar and vacuum does
+     * not dim it.
      */
+    @Test
+    fun `an open circuit panel sits at its open circuit voltage`() {
+        val s = run(world(openStubs(), ambient = Ambient.VACUUM))
+        assertEquals(
+            SolarPanel.OPEN_CIRCUIT_MICROVOLTS,
+            s.across(),
+            "an unloaded panel did not stall at its open-circuit voltage",
+        )
+    }
+
+    /** ⭐ And loaded, it drives a current and the run it drives warms up — `I²R`, written nowhere. */
+    @Test
+    fun `a loaded panel drives a current and warms the run`() {
+        val s = run(world(loop(), ambient = Ambient.VACUUM))
+        val across = s.across()
+        assertTrue(across > 0L, "a loaded panel drove nothing")
+        assertTrue(
+            across < SolarPanel.OPEN_CIRCUIT_MICROVOLTS,
+            "a loaded panel sat at its open-circuit voltage ($across), so no current flowed",
+        )
+        assertTrue(s.generatedEnergy > 0L, "the run carried a current and did not warm up")
+    }
+
+    // ── What stops it ────────────────────────────────────────────────────────
+
+    /** Bury one and it has no sky. Nothing forbids it; it simply makes nothing. */
     @Test
     fun `a panel walled in on every side makes nothing`() {
-        val after = run(world(walls = true), 20)
-        assertEquals(0L, after.charge.total, "a buried panel made power")
+        val s = run(world(openStubs(), walls = true, ambient = Ambient.VACUUM))
+        assertEquals(0L, s.across(), "a buried panel drove its terminals apart")
     }
 
-    /** How far out the vessel is dims it, which is the only thing insolation says. */
+    /** Far from the sun there is less of it, and that is one scalar on [Ambient]. */
     @Test
-    fun `a vessel at a gas giant collects far less than one near the sun`() {
-        val near = run(world(), 20).charge.total
-        val far = run(world(ambient = Ambient.GAS_GIANT), 20).charge.total
-        assertTrue(far in 1L until near, "gas giant collected $far against $near in open space")
+    fun `a vessel at a gas giant collects less than one near the sun`() {
+        val near = run(world(loop(), ambient = Ambient.VACUUM))
+        val far = run(world(loop(), ambient = Ambient.GAS_GIANT))
+        assertTrue(
+            far.across() < near.across(),
+            "a panel at Jupiter (${far.across()}) drove as hard as one at Earth (${near.across()})",
+        )
     }
-
-    // ── And the wire warms up, which is the point of increment 1a ─────────────
 
     /**
-     * ⭐ **Emergent solar heating**: nobody wrote a rule that a panel warms the ship. Charge moves
-     * down a resistance, and `I²R` is what that costs.
+     * ⛔ **A panel built out of anything conductive shorts itself**, because its casing is a parallel
+     * path between its own two ends — `PLAN_power_network.md` §5, applied to the machine that makes
+     * the power rather than to one that spends it.
+     *
+     * ⚠️ **`materialBefore` says a panel used to be steel**, which under this model is a dead panel.
+     * That table is historical rather than normative and is left alone; what it means is that
+     * *choosing* the substance is now part of building one.
      */
     @Test
-    fun `a run carrying a panel's output warms the ship`() {
-        val idle = run(world(walls = true), 60).generatedEnergy
-        val lit = run(world(), 60).generatedEnergy
-        assertTrue(lit > idle, "a live run generated $lit against a dark one's $idle")
+    fun `a steel panel shorts itself through its own casing`() {
+        val silicon = run(world(loop(), casing = Species.Silicon)).across()
+        val steel = run(world(loop(), casing = Species.Steel)).across()
+        assertTrue(silicon > 0L, "fixture: the silicon panel was supposed to drive something")
+        // ⚠️ **Much less, not nothing.** A short is a *lower*-resistance path and not a zero one, so
+        // a steel-cased panel still develops something across its ends — it is just spending most of
+        // what it makes on warming its own chassis.
+        assertTrue(
+            steel * 2L < silicon,
+            "a steel-cased panel held $steel against a silicon one's $silicon — its casing is not shorting it",
+        )
     }
 
-    /** Charge only ever enters through a panel, so a world without one stays at zero for ever. */
+    /** A panel needs a conductor on both ends. One is not a circuit. */
     @Test
-    fun `a cable with no panel on it never charges`() {
-        val deck = DeckArray(grid)
-        val power = arrayOfNulls<Segment>(grid.size)
-        for (x in 4..6) power[grid.tile(x, 4).index] = Segment(Conduit.Power, material = Species.Copper)
-        val bare = VesselState(
-            grid, deck,
-            conduits = Conduits.empty(grid.size).with(Conduit.Power, power.toList()),
-            buffers = BufferLayer.forDeck(grid, deck),
-            rail = RailLayer.empty(grid.size),
-        )
-        assertEquals(0L, run(bare, 30).charge.total, "charge appeared with nothing to make it")
+    fun `a panel with only one terminal wired drives nothing`() {
+        val layer = arrayOfNulls<Segment>(grid.size)
+        layer[positive().index] = Segment(Conduit.Power, material = Species.Copper)
+        val s = run(world(layer.toList(), ambient = Ambient.VACUUM))
+        assertEquals(0L, s.across(), "a panel wired at one end drove something")
     }
 }

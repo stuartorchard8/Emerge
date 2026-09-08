@@ -158,8 +158,13 @@ import org.emerge.demo.outofspace.world.thermalMassOf
 import org.emerge.demo.outofspace.world.thermalMassAt
 import org.emerge.demo.outofspace.world.thermalMass
 import org.emerge.demo.outofspace.world.machine.SolarPanel
-import org.emerge.demo.outofspace.world.PowerCharge
-import org.emerge.demo.outofspace.world.PowerFlow
+import org.emerge.demo.outofspace.world.Circuit
+import org.emerge.demo.outofspace.world.Source
+import org.emerge.demo.outofspace.world.TerminalRole
+import org.emerge.demo.outofspace.world.circuitOf
+import org.emerge.demo.outofspace.world.solveCircuit
+import org.emerge.demo.outofspace.world.terminalTile
+import org.emerge.demo.outofspace.world.terminalTiles
 import org.emerge.demo.outofspace.world.Ambient
 
 /** One tick: edits → sense → produce → process → eject → advance conduits → fluid → heat → motion.
@@ -569,7 +574,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // ⛔ **Before the heat pass**, because the wire's I²R is heat like any other and `heat()`
         // banks it into `heatAdded`, which the heat pass is about to conduct away. Running after it
         // would hold every joule the wire made for a whole tick.
-        val charge = w.collectAndRelax(state.charge, structure, state.ambient, state.signals)
+        val potential = w.solvePower(state.potential, structure, state.ambient, state.signals)
 
         // ── Heat ──────────────────────────────────────────────────────────────────
         val _h0 = _prof0; val _h = if (_h0) TimeSource.Monotonic.markNow() else null
@@ -1105,7 +1110,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             networks = networks,
             structure = structure,
             occupancy = occupancy,
-            charge = charge,
+            potential = potential,
             generatedEnergy = w.generatedEnergy,
             radiatedEnergy = state.radiatedEnergy + conductedRadiated,
             insertedEnergy = w.insertedEnergy,
@@ -2110,16 +2115,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * production passes rebuild machines as they go, and a `copy` in a later pass would drop a
          * write made by an earlier one.
          */
-        /**
-         * ⚠️ **Last tick's charge, and the machine pass decides from it.** The power pass runs later
-         * in the tick, so a cell reading the live field would see a bus that had not yet collected —
-         * `PLAN_one_tick_causality.md`'s rule, and the reason the draw goes to [chargeDrawn] instead
-         * of coming straight off the field.
-         */
-        val powerBefore: PowerCharge = state.charge
-
-        /** What the cells pulled off the bus this tick, applied by the power pass. */
-        val chargeDrawn: LongArray = LongArray(state.grid.size)
 
         val heatAdded: LongArray = LongArray(state.grid.size)
         var generatedEnergy: Long = state.generatedEnergy
@@ -3041,8 +3036,16 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // ⭐ **What the bus is sitting at**, or the unwired fallback where no run passes under
             // the machine. A cell short of volts does nothing at all; a cell short of *current* runs
             // slowly, which is the difference between a threshold and a cliff.
-            val onRun = layer(Conduit.Power)[tile.index] != null
-            val volts = if (onRun) PowerFlow.millivoltsAt(powerBefore, tile) else Electrolyzer.UNWIRED_MILLIVOLTS
+            // ⛔ **The cell runs free again, and this is a stated regression.** Increment 2 of the
+            // old power model gated it on the potential of its own tile; that model is gone —
+            // `PLAN_power_network.md` §1 — and the knee it compared against was an *absolute*
+            // potential measured against a vessel-wide zero, which the unified network does not
+            // have. The replacement reads a difference across the cell's own two terminals and is
+            // increment 4's, together with the electrolyte that sets its internal resistance.
+            //
+            // ⚠️ **Not left reading a stale field in the meantime.** A gate that compares against
+            // the wrong reference is worse than no gate: it would look like it worked.
+            val volts = Electrolyzer.UNWIRED_MILLIVOLTS
 
             val charge = feed.take(minOf(Electrolyzer.MASS_PER_TICK, feed.total))
             if (charge.total <= 0L) return m
@@ -3058,35 +3061,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // route, so salt cannot ride the feed. An electrolyte is a standing bath and the bath is
             // the `Inside` store that `PLAN_electrochemistry.md` §5.5 adds. The gate lands with it.
             var limit = charge.total
-            if (onRun) {
-                // ⛔ **Only the charge ABOVE the knee is spendable, and that is the load model rather
-                // than a guard bolted on.** A cell's current is driven by its *overvoltage*: as the
-                // bus falls towards the potential the reaction needs, the current falls to zero. It
-                // cannot pull itself below its own knee any more than a siphon can run uphill.
-                //
-                // ⚠️ **This is what the chatter tripwire found**, and it is worth saying plainly. A
-                // cell allowed to spend the whole tile drained itself under 1230 mV, went dark,
-                // recharged over several ticks and fired again — a textbook limit cycle, running on
-                // five ticks in forty with power to spare. `PLAN_power_network.md` decision 4 held
-                // that the answer to chatter is hysteresis and that it should wait until something
-                // was measured chattering. Something was, and the answer turned out to be neither
-                // hysteresis nor a dial: the load was simply wrong.
-                val knee = action.requiredMillivolts.toLong() * PowerFlow.CHARGE_PER_MILLIVOLT
-                val headroom = powerBefore[tile] - knee
-                if (headroom <= 0L) return m
-                val affordable = headroom * Electrolyzer.ELECTRONS_PER_CHARGE / action.electrons
-                limit = minOf(limit, affordable * action.consumedMass)
-            }
             if (limit <= 0L) return m
 
             val made = electrolyse(charge, action, limit) ?: return m
-
-            // Bill the bus for the electrons that actually moved.
-            if (onRun) {
-                val passes = made.consumed.total / action.consumedMass
-                val drawn = passes * action.electrons / Electrolyzer.ELECTRONS_PER_CHARGE
-                chargeDrawn[tile.index] += minOf(drawn, powerBefore[tile])
-            }
 
             // ⚠️ What the pass could not use whole goes back on the feed. `electrolyse` runs whole
             // passes only, so a charge that does not divide evenly leaves a remainder, and the
@@ -4761,52 +4738,94 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * One tick of the power network: panels collect, the wire relaxes, and what it dissipates
          * is banked as waste heat.
          *
-         * ⭐ **The whole of a solar panel is three lines**, because everything it needs already
+         * ⭐ **A panel needed almost nothing of its own**, because everything it uses already
          * existed: [StructureMap.openToSpace] to say which faces see sky, [Ambient.insolation] to
-         * say how bright it is, and [PowerFlow] to carry what it pushes.
+         * say how bright it is, and [circuitOf] plus [solveCircuit] to work out what its two
+         * terminals do to the rest of the ship.
          *
          * ⚠️ **Exposure is counted over the neighbours**, not the panel's own tile. A machine blocks
          * passage, so space never reaches the tile it stands on — the same reason `SolidHeat` counts
          * a casing's radiating faces the way it does. A panel walled in on all four sides has no sky
          * and makes nothing, which is the right answer and needs no rule of its own.
          */
-        fun collectAndRelax(
-            before: PowerCharge,
+        fun solvePower(
+            seedByTile: LongArray,
             structure: StructureMap,
             ambient: Ambient,
             signals: SignalField,
-        ): PowerCharge {
-            val power = layer(Conduit.Power)
-            var charge = before.copyOf()
+        ): LongArray {
+            val bodies = bodiesOf(grid, conduitsSnapshot(), deck, buffers, rail)
+            val circuit = circuitOf(grid, bodies, terminalTiles(grid, deck))
+            if (circuit.nodeCount == 0) return LongArray(grid.size)
 
+            // ── Panels, as two-terminal sources. A panel with no conductor on one of its ends
+            // drives nothing, which needs no rule: there is no node there to attach to.
+            val sources = ArrayList<Source>()
             for (tile in grid.tiles) {
                 val panel = deck[tile] as? SolarPanel ?: continue
                 if (deck.isGhost(tile)) continue
                 if (!panel.wiring.isOn(Action.Run, signals.at(tile))) continue
-                // Nothing to push onto: a panel needs a run under it, the way a gauge needs track.
-                if (power[tile.index] == null) continue
+                val positive = nodeUnder(bodies, circuit, terminalTile(grid, panel, tile, TerminalRole.Positive))
+                val negative = nodeUnder(bodies, circuit, terminalTile(grid, panel, tile, TerminalRole.Negative))
+                if (positive == Circuit.NOT_CONDUCTING || negative == Circuit.NOT_CONDUCTING) continue
 
                 var faces = 0
-                for (dir in Direction.entries) {
-                    val next = grid.neighbour(tile, dir)
-                    if (next == TileIndex.NONE || structure.openToSpace(next)) faces++
+                for (part in panel.tiles(grid)) {
+                    for (dir in Direction.entries) {
+                        val next = grid.neighbour(part, dir)
+                        if (next == TileIndex.NONE || structure.openToSpace(next)) faces++
+                    }
                 }
-                val made = SolarPanel.outputAt(faces, ambient)
-                if (made > 0L) charge = charge.plus(tile, made)
+                val g = SolarPanel.conductanceAt(faces, ambient)
+                if (g > 0L) {
+                    sources.add(Source(positive, negative, SolarPanel.OPEN_CIRCUIT_MICROVOLTS, g))
+                }
             }
 
-            // ⚠️ **Applied before the relaxation**, so a cell's draw shows up as a dip the run then
-            // fills from its neighbours — which is what a load on a bus looks like. Applied after,
-            // the dip would sit unserved for a tick and the bus would read as stiffer than it is.
-            for (tile in grid.tiles) {
-                val drawn = chargeDrawn[tile.index]
-                if (drawn > 0L) charge = charge.plus(tile, -minOf(drawn, charge[tile]))
+            // ⭐ **Seeded by tile, not by node.** Node ids are rebuilt with the bodies every tick, so
+            // an edit renumbers them; a tile index does not move. Same reasoning as the overlay's
+            // per-tile phase — see `PLAN_power_network.md` increment 3.
+            val seed = LongArray(circuit.nodeCount)
+            for (b in bodies.indices) {
+                val n = circuit.nodeOfBody(b)
+                if (n != Circuit.NOT_CONDUCTING) seed[n] = seedByTile[bodies[b].tile.index]
             }
 
-            val dissipated = LongArray(grid.size)
-            PowerFlow.relax(grid, power, { tracks.dominantAt(Conduit.Power, it) }, charge.q, dissipated)
-            for (tile in grid.tiles) heat(tile, dissipated[tile.index])
-            return charge
+            val solution = solveCircuit(circuit, sources, seed)
+
+            // ⭐ **Resistive heating, which nobody had to write.** Charge moving down a gradient
+            // dissipates I²R, and it lands in the same `heat()` every machine's waste heat goes
+            // through. A run of undersized wire warms up; a copper-cased machine cooks itself.
+            for (e in 0 until circuit.edgeCount) {
+                val power = solution.edgePower[e]
+                if (power <= 0L) continue
+                val half = power / 2L
+                heat(bodies[bodyOfNode(bodies, circuit, circuit.edgeA[e])].tile, half)
+                heat(bodies[bodyOfNode(bodies, circuit, circuit.edgeB[e])].tile, power - half)
+            }
+
+            val byTile = LongArray(grid.size)
+            for (b in bodies.indices) {
+                val n = circuit.nodeOfBody(b)
+                if (n != Circuit.NOT_CONDUCTING) byTile[bodies[b].tile.index] = solution.potential[n]
+            }
+            return byTile
+        }
+
+        /** The node of whatever conductor stands at [tile], or [Circuit.NOT_CONDUCTING]. */
+        private fun nodeUnder(bodies: List<Body>, circuit: Circuit, tile: TileIndex?): Int {
+            if (tile == null) return Circuit.NOT_CONDUCTING
+            for (b in bodies.indices) {
+                if (bodies[b].tile != tile) continue
+                val n = circuit.nodeOfBody(b)
+                if (n != Circuit.NOT_CONDUCTING) return n
+            }
+            return Circuit.NOT_CONDUCTING
+        }
+
+        private fun bodyOfNode(bodies: List<Body>, circuit: Circuit, node: Int): Int {
+            for (b in bodies.indices) if (circuit.nodeOfBody(b) == node) return b
+            return 0
         }
 
         fun readGauges() {
