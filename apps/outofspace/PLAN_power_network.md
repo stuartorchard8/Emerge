@@ -499,11 +499,41 @@ That reference does not exist in a unified network, and a gate compared against 
 is worse than no gate because it looks like it works. The cell reads `UNWIRED_MILLIVOLTS` until
 increment 4 replaces it with a difference across its own two terminals.
 
-### Increment 3b — the terminal machine, and seeing what you built
+### Increment 3b — seeing what you built ✅ BUILT (2026-09-08, the overlay half)
 
-⚠️ **Not started.** The standalone `Terminal` machine, its brush and the cut tool; and the overlay —
-tinted by component, with carriers animated along the conductor. See the design above, which is
-unchanged.
+`Overlay.Circuit`, `world/CircuitView.kt`, `VesselState.circuit`, `circuitColor`, `advanceCarriers`
+and `drawCarriers`; `agent-scripts/circuit.txt`. Screenshotted, as a panel must be.
+
+⭐ **Both readings work and both were needed.** The tint separates the cable loop from the rail
+crossing it, from each machine's casing, from the hull — which is one circuit, because casings
+face-bond. The carriers stream round the loop against the conventional current, because they are
+electrons.
+
+⚠️ **A coloured carrier is illegible.** Pale yellow over an orange circuit vanished entirely; the hue
+under a carrier is arbitrary, so only white reads over all of them.
+
+#### ⛔ What the build found: `scaledRatio` answers zero for a negative scale, and half of every chain was wrong
+
+`Fixed.kt:61` guards `scale <= 0L` and returns zero — deliberately, because that function is for
+quantities that are **consumed**, where a negative amount is a bug rather than a direction. A
+potential difference is not one of those: half of them point downhill.
+
+So `Chains.interpolate` wrote the *from* end's potential into every interior node of any chain that
+fell, which is half of all chains. **Every such run carried no current except across its last
+segment**, and the residual came to **ten times** the current the source was pushing. Fixing it
+dropped the residual by a factor of **100,000**, and both branches of a test ring then divided 2:1 by
+length, exactly as a parallel pair should.
+
+⭐ **The overlay is what found it**, on its first honest picture — one lit segment and a dead ring.
+⚠️ **And the ledger tests did not**, because the bug is *direction-dependent*: every fixture that
+happened to drive its run uphill passed. `SolarPanelTest :: every tile of the loop reports the same
+current` is the regression, and it asserts on the whole ring rather than on a total.
+
+### Increment 3c — the terminal machine
+
+⚠️ **Not started.** The standalone `Terminal` machine, its brush and the cut tool. Machine-borne
+terminals work (the panel and the cell declare theirs), so this is the piece that lets a player bond
+layers wherever they choose rather than only where a machine stands.
 
 #### The original increment 3, as scoped
 

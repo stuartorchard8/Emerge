@@ -333,14 +333,28 @@ internal class Chains(
     val edges: List<ReducedEdge>,
     private val interior: List<ChainRun>,
 ) {
-    /** Fill in every node the reduction removed, by where it sits along its own chain. */
+    /**
+     * Fill in every node the reduction removed, by where it sits along its own chain.
+     *
+     * ⛔ **The sign is carried by hand, and it has to be.** [scaledRatio] answers **zero** for a
+     * non-positive scale (`Fixed.kt:61`) — a deliberate guard, because it exists for quantities that
+     * are *consumed*, where a negative amount is a bug rather than a direction. A potential
+     * difference is not one of those: half of them point downhill.
+     *
+     * ⚠️ **Measured before this was fixed**: every interior node of a driven ring sat at exactly the
+     * potential of one end, so the entire loop carried no current except across its last segment,
+     * and the residual came to **ten times** the current the source was pushing. The overlay drew it
+     * faithfully — one lit segment and a dead ring — which is how it was found.
+     */
     fun interpolate(v: LongArray) {
         for (run in interior) {
             val from = v[run.from]
             val span = v[run.to] - from
+            val magnitude = if (span < 0L) -span else span
             for (k in run.nodes.indices) {
                 // `from + span · r/R`, formed as a ratio first so a long chain cannot wrap.
-                v[run.nodes[k]] = clampPotential(from + scaledRatio(run.upTo[k], run.total, span))
+                val step = scaledRatio(run.upTo[k], run.total, magnitude)
+                v[run.nodes[k]] = clampPotential(from + if (span < 0L) -step else step)
             }
         }
     }

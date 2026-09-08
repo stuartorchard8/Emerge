@@ -427,6 +427,16 @@ class OutofspaceRenderer {
             }
         }
 
+        // Carriers along the conductor, in the solved direction.
+        if (overlay == Overlay.Circuit) {
+            advanceCarriers(state, simTime)
+            for (y in minY..maxY) {
+                for (x in minX..maxX) {
+                    drawCarriers(state, grid.tile(x, y), x, y)
+                }
+            }
+        }
+
         // Flow vectors over backdrop.
         if (overlay == Overlay.Flow) {
             // Scaled to fastest tile on screen (not fixed — ordinary circulation needs variable scale).
@@ -1388,6 +1398,9 @@ class OutofspaceRenderer {
         // changes exactly when the air does. Its backdrop is a flat colour with nothing to fade; the
         // streaks drawn over it are what this span is really for. See [FlowFading].
         Overlay.Air, Overlay.Pressure, Overlay.Density, Overlay.Flow -> state.cadences.fluid
+        // ⚠️ The power solve runs every tick and holds no state, so its answer is never stale and
+        // there is no span to fade across — unlike heat, which is a pass the tick may skip.
+        Overlay.Circuit -> Cadence.SETTLED
         Overlay.None -> Cadence.SETTLED
     }
 
@@ -1405,7 +1418,37 @@ class OutofspaceRenderer {
             else divergingColor(it.toFloat() / Stuff.AMBIENT_AIR.total)
         }
         Overlay.Flow -> Colors.FLOW_BACKDROP
+        // ⚠️ A tile that conducts nothing is not "circuit zero" — it is not in the picture at all.
+        Overlay.Circuit -> state.circuit.component[tile.index].let {
+            if (it < 0) Colors.FLOW_BACKDROP else circuitColor(it)
+        }
         Overlay.None -> 0L
+    }
+
+    /**
+     * **A colour per circuit**, so two things that are one circuit are visibly one colour.
+     *
+     * ⭐ **The hue is the whole message.** What the player needs to see is not *which* number a
+     * circuit is but that two runs they believed were separate are wearing the same colour — so
+     * neighbouring ids must land far apart on the wheel. Stepping by the golden ratio does that for
+     * any number of circuits without a palette to run out of.
+     */
+    private fun circuitColor(component: Int): Long {
+        val hue = ((component * 0.618033988f) % 1f) * 6f
+        val sector = hue.toInt()
+        val f = hue - sector
+        val hi = 235
+        val lo = 70
+        val mid = (lo + (hi - lo) * f).toInt()
+        val down = (hi - (hi - lo) * f).toInt()
+        return when (sector) {
+            0 -> rgba(hi, mid, lo, Colors.CIRCUIT_ALPHA)
+            1 -> rgba(down, hi, lo, Colors.CIRCUIT_ALPHA)
+            2 -> rgba(lo, hi, mid, Colors.CIRCUIT_ALPHA)
+            3 -> rgba(lo, down, hi, Colors.CIRCUIT_ALPHA)
+            4 -> rgba(mid, lo, hi, Colors.CIRCUIT_ALPHA)
+            else -> rgba(hi, lo, down, Colors.CIRCUIT_ALPHA)
+        }
     }
 
     private fun temperatureColor(kelvin: Int): Long {
@@ -1554,6 +1597,78 @@ class OutofspaceRenderer {
                 size, size,
                 rgba(0xFF, 0xFF, 0xFF, (Colors.FLOW_ALPHA * taper).toLong()),
             )
+        }
+    }
+
+    /**
+     * **Where each tile's carriers have got to.** One phase per tile, advanced by what is flowing
+     * through it — a pure view artifact with nothing in the sim and nothing to serialise.
+     *
+     * ⚠️ **Per tile, not per edge.** `bodiesOf` is rebuilt every tick on purpose, so node and edge
+     * identity do not survive an edit; a tile index does.
+     */
+    private var carrierPhase = FloatArray(0)
+    private var carrierClock = 0.0
+
+    private fun advanceCarriers(state: VesselState, simTime: Double) {
+        if (carrierPhase.size != state.grid.size) carrierPhase = FloatArray(state.grid.size)
+        val dt = (simTime - carrierClock).coerceIn(0.0, 0.25).toFloat()
+        carrierClock = simTime
+        val peak = state.circuit.peak
+        if (peak <= 0L) return
+        for (i in carrierPhase.indices) {
+            var fastest = 0L
+            for (d in 0 until 4) {
+                val c = state.circuit.current[i * 4 + d]
+                val m = if (c < 0L) -c else c
+                if (m > fastest) fastest = m
+            }
+            if (fastest == 0L) continue
+            // ⭐ Speed and density carry the magnitude *jointly*, because a current's dynamic range
+            // is far wider than air flow's and speed alone leaves a busbar visible and the rest dead.
+            val fraction = (fastest.toDouble() / peak).toFloat()
+            carrierPhase[i] = (carrierPhase[i] + dt * Visual.CARRIER_SPEED * fraction) % 1f
+        }
+    }
+
+    /**
+     * ⛔ **The carriers are electrons, so they run against the conventional current.** A current
+     * stated as leaving this tile toward `dir` is electrons arriving from that neighbour, and drawing
+     * them along `I` would run the whole picture backwards through a plan that tells an electron
+     * story throughout. Trivial here and embarrassing to notice in a screenshot.
+     */
+    private fun drawCarriers(state: VesselState, tile: TileIndex, x: Int, y: Int) {
+        val peak = state.circuit.peak
+        if (peak <= 0L) return
+        val phase = carrierPhase[tile.index]
+        for (dir in Direction.ALL) {
+            // Each edge once, from the side the conventional current leaves.
+            val current = state.circuit.current[tile.index * 4 + dir.ordinal]
+            if (current <= 0L) continue
+            val fraction = (current.toDouble() / peak).toFloat()
+            if (fraction < Visual.CARRIER_MIN_FRACTION) continue
+
+            // From the neighbour's centre toward this one: the electron direction.
+            val fromX = (x + dir.dx + 0.5f) * tilePx
+            val fromY = (y + dir.dy + 0.5f) * tilePx
+            val toX = (x + 0.5f) * tilePx
+            val toY = (y + 0.5f) * tilePx
+
+            val count = 1 + (fraction * Visual.CARRIER_MAX_PER_EDGE).toInt()
+            for (k in 0 until count) {
+                val along = ((phase + k.toFloat() / count) % 1f)
+                val size = Visual.CARRIER_SIZE * tilePx
+                rect(
+                    fromX + (toX - fromX) * along,
+                    fromY + (toY - fromY) * along,
+                    size, size,
+                    // ⚠️ **White, not a warm yellow.** The tint underneath is an arbitrary hue per
+                    // circuit, so a coloured carrier is legible over some circuits and invisible
+                    // over others — measured on an orange loop, where pale yellow vanished entirely.
+                    // Only full white reads against every hue the wheel can hand out.
+                    rgba(0xFF, 0xFF, 0xFF, Colors.CARRIER_ALPHA),
+                )
+            }
         }
     }
 
@@ -1746,6 +1861,15 @@ class OutofspaceRenderer {
         const val FLOW_BACKDROP = 0x0A0D14E0L
         const val FLOW_ALPHA = 224f
 
+        /** How solid a carrier reads against the circuit tint under it. */
+        const val CARRIER_ALPHA = 235L
+
+        /**
+         * Tint enough to read the circuit through, not enough to hide the ship — and low enough
+         * that a white carrier is legible over any hue the wheel produces.
+         */
+        const val CIRCUIT_ALPHA = 120L
+
         // ── UI highlights ───────────────────────────────────────────────
         const val HOVER   = 0xFFFFFF1AL
 
@@ -1918,6 +2042,17 @@ class OutofspaceRenderer {
          * shrinks it to a dot. Still air is excluded by having no direction, not by being faint.
          */
         const val FLOW_MIN_FRACTION = 0.00f
+
+        /** Tile-lengths a second at the fastest current on screen. Slow enough to read a direction. */
+        const val CARRIER_SPEED = 1.6f
+
+        /** Below this share of the peak current an edge draws nothing, so a bus does not drown a stub. */
+        const val CARRIER_MIN_FRACTION = 0.02f
+
+        /** ⭐ Density carries magnitude alongside speed — see `advanceCarriers`. */
+        const val CARRIER_MAX_PER_EDGE = 4f
+
+        const val CARRIER_SIZE = 0.22f
         /** How far the tail of the fastest streak trails behind the tile centre, in tiles. */
         const val FLOW_MAX_REACH = 0.9f
         /** Squares behind the tile centre; the head leads by one more, so a streak is twice this. */

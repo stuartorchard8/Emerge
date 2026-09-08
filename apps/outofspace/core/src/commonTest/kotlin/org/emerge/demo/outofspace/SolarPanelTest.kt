@@ -140,9 +140,46 @@ class SolarPanelTest {
             "a loaded panel sat at its open-circuit voltage ($across), so no current flowed",
         )
         assertTrue(s.generatedEnergy > 0L, "the run carried a current and did not warm up")
+        // ⚠️ **What the overlay reads**, asserted here so a dead picture can be told from a dead
+        // circuit. `CircuitView` is a flattening of the same solve, and if it is empty the overlay
+        // has nothing to draw however well it draws it.
+        assertTrue(s.circuit.peak > 0L, "the solve carried a current the overlay could not see")
+        assertTrue(
+            s.circuit.current.any { it != 0L },
+            "no face of any tile reported a current",
+        )
     }
 
     // ── What stops it ────────────────────────────────────────────────────────
+
+    /**
+     * ⛔ **Every tile of a series loop carries the same current**, and the overlay has to be able to
+     * see it on every one of them. A loop is a chain: what goes in at one end comes out at the
+     * other, so a picture that lights one segment and not the rest is drawing a lie.
+     */
+    @Test
+    fun `every tile of the loop reports the same current`() {
+        val s = run(world(loop()))
+        val ring = listOf(
+            grid.tile(2, 4), grid.tile(2, 5), grid.tile(2, 6),
+            grid.tile(3, 6), grid.tile(4, 6), grid.tile(5, 6), grid.tile(6, 6),
+            grid.tile(6, 5), grid.tile(6, 4),
+        )
+        val carried = ring.map { tile ->
+            (0 until 4).maxOf {
+                val c = s.circuit.current[tile.index * 4 + it]
+                if (c < 0L) -c else c
+            }
+        }
+        assertTrue(carried.all { it > 0L }, "some of the loop carried nothing: $carried")
+        val most = carried.max()
+        val least = carried.min()
+        assertTrue(
+            least * 100L > most * 99L,
+            "a series loop carried different currents at different tiles: $carried",
+        )
+        assertEquals(most, s.circuit.peak, "the loop's own current was not the peak the view scales by")
+    }
 
     /** Bury one and it has no sky. Nothing forbids it; it simply makes nothing. */
     @Test

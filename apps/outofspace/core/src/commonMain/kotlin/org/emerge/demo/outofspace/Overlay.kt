@@ -25,6 +25,17 @@ enum class Overlay(val label: String) {
     Pressure("PRESSURE"),
     Density("DENSITY"),
     Flow("FLOW"),
+
+    /**
+     * **What is wired to what, and what is moving through it** — `PLAN_power_network.md` increment 3b.
+     *
+     * ⭐ **Two readings in one view, because a short is silent in either alone.** The conductor is
+     * *tinted by circuit*, which works on a dead ship and answers "these two things I believed were
+     * separate are one"; and carriers are *animated along it* in the solved direction, which works on
+     * a live one and answers "all of my current is going round the casing instead of through the
+     * element". The second is the only view in which §5's material mechanic is visible at all.
+     */
+    Circuit("CIRCUIT"),
     ;
 
     /** What `H` cycles to next. One key beats six, and the HUD has buttons for direct picks. */

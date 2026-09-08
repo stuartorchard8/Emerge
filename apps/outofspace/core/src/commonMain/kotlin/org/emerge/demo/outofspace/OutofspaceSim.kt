@@ -159,6 +159,7 @@ import org.emerge.demo.outofspace.world.thermalMassAt
 import org.emerge.demo.outofspace.world.thermalMass
 import org.emerge.demo.outofspace.world.machine.SolarPanel
 import org.emerge.demo.outofspace.world.Circuit
+import org.emerge.demo.outofspace.world.CircuitView
 import org.emerge.demo.outofspace.world.Source
 import org.emerge.demo.outofspace.world.TerminalRole
 import org.emerge.demo.outofspace.world.circuitOf
@@ -1111,6 +1112,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             structure = structure,
             occupancy = occupancy,
             potential = potential,
+            circuit = w.circuitView,
             generatedEnergy = w.generatedEnergy,
             radiatedEnergy = state.radiatedEnergy + conductedRadiated,
             insertedEnergy = w.insertedEnergy,
@@ -2117,6 +2119,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          */
 
         val heatAdded: LongArray = LongArray(state.grid.size)
+        /** What the power pass saw, flattened for the view — see [CircuitView]. */
+        var circuitView: CircuitView = CircuitView.empty(state.grid.size)
+
         var generatedEnergy: Long = state.generatedEnergy
         var insertedEnergy: Long = state.insertedEnergy
 
@@ -4793,22 +4798,49 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
             val solution = solveCircuit(circuit, sources, seed)
 
+            // One body per node, built once. ⚠️ Scanning for it per edge is `O(edges × bodies)`, and
+            // this pass runs every tick over every solid thing aboard.
+            val bodyOfNode = IntArray(circuit.nodeCount)
+            for (b in bodies.indices) {
+                val n = circuit.nodeOfBody(b)
+                if (n != Circuit.NOT_CONDUCTING) bodyOfNode[n] = b
+            }
+
+            val componentAt = IntArray(grid.size) { -1 }
+            val currentAt = LongArray(grid.size * 4)
+            var peak = 0L
+
             // ⭐ **Resistive heating, which nobody had to write.** Charge moving down a gradient
             // dissipates I²R, and it lands in the same `heat()` every machine's waste heat goes
             // through. A run of undersized wire warms up; a copper-cased machine cooks itself.
             for (e in 0 until circuit.edgeCount) {
+                val from = bodies[bodyOfNode[circuit.edgeA[e]]].tile
+                val to = bodies[bodyOfNode[circuit.edgeB[e]]].tile
                 val power = solution.edgePower[e]
-                if (power <= 0L) continue
-                val half = power / 2L
-                heat(bodies[bodyOfNode(bodies, circuit, circuit.edgeA[e])].tile, half)
-                heat(bodies[bodyOfNode(bodies, circuit, circuit.edgeB[e])].tile, power - half)
+                if (power > 0L) {
+                    val half = power / 2L
+                    heat(from, half)
+                    heat(to, power - half)
+                }
+                // What the overlay draws. ⚠️ An edge between two bodies of the *same* tile is a
+                // terminal bond and has no direction on the grid, so it lights no face.
+                val current = solution.edgeCurrent[e]
+                if (current == 0L || from == to) continue
+                val dir = Direction.entries.firstOrNull { grid.neighbour(from, it) == to } ?: continue
+                currentAt[from.index * 4 + dir.ordinal] += current
+                currentAt[to.index * 4 + dir.opposite.ordinal] -= current
+                val magnitude = if (current < 0L) -current else current
+                if (magnitude > peak) peak = magnitude
             }
 
             val byTile = LongArray(grid.size)
             for (b in bodies.indices) {
                 val n = circuit.nodeOfBody(b)
-                if (n != Circuit.NOT_CONDUCTING) byTile[bodies[b].tile.index] = solution.potential[n]
+                if (n == Circuit.NOT_CONDUCTING) continue
+                byTile[bodies[b].tile.index] = solution.potential[n]
+                componentAt[bodies[b].tile.index] = circuit.circuitOfNode(n)
             }
+            circuitView = CircuitView(componentAt, currentAt, peak)
             return byTile
         }
 
@@ -4823,10 +4855,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             return Circuit.NOT_CONDUCTING
         }
 
-        private fun bodyOfNode(bodies: List<Body>, circuit: Circuit, node: Int): Int {
-            for (b in bodies.indices) if (circuit.nodeOfBody(b) == node) return b
-            return 0
-        }
 
         fun readGauges() {
             for (tile in grid.tiles) {

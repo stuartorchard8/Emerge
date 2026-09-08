@@ -1,0 +1,56 @@
+# The circuit overlay: what is wired to what, and what is moving through it.
+#
+# `PLAN_power_network.md` increment 3b. Two readings in one view, because a short is silent in
+# either alone -- the conductor is TINTED BY CIRCUIT, which works on a dead ship, and carriers are
+# ANIMATED ALONG IT in the solved direction, which works on a live one.
+#
+# What to read in the shots:
+#   `circuit-plain` -- the panel and its loop of cable, with no overlay on;
+#   `circuit-tint`  -- the loop wearing ONE colour, because it is one circuit; a rail crossing it
+#                      keeps its own, because charge crosses layers only where a terminal stands;
+#   `circuit-live`  -- carriers streaming along the loop. ⚠️ They run against the conventional
+#                      current, because carriers are ELECTRONS.
+#
+# ⚠️ The panel is FORSTERITE. A conductive casing is a parallel path between a machine's own two
+# terminals, so a steel panel shorts itself and drives nothing -- `PLAN_power_network.md` §5.
+
+new
+creative 1
+
+# A panel needs sky, and the inside of a pressurised hull has none. Open the roof above it.
+brush HULL
+remove 24 4
+remove 25 4
+remove 26 4
+
+material FORSTERITE
+brush SOLAR
+place 25 6
+
+# Out of one terminal, the long way round, and back into the other.
+material COPPER
+brush POWER
+drag 24 6 22 6
+drag 22 6 22 9
+drag 22 9 28 9
+drag 28 9 28 6
+drag 28 6 26 6
+
+# A rail crossing the cable: it must NOT join the circuit, because no terminal stands there.
+material STEEL
+brush RAIL
+drag 25 8 25 11
+
+escape
+escape
+camera centre 25 8 44
+run 40
+shot circuit-plain
+
+overlay CIRCUIT
+shot circuit-tint
+run 60
+shot circuit-live live
+
+probe 24 6
+probe 26 6

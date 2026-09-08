@@ -107,6 +107,13 @@ data class VesselState(
      * tick and an edit renumbers them. A tile index does not move.
      */
     val potential: LongArray = LongArray(grid.size),
+    /**
+     * **What the circuit looked like last tick**, for the overlay — see [CircuitView].
+     *
+     * ⛔ **Derived and not saved**, like [potential]: it is a flattening of a solve that is redone
+     * every tick, and a world that arrives without it produces its own on the first one.
+     */
+    val circuit: CircuitView = CircuitView.empty(grid.size),
     /** Which way each fork last sent material — see [FlowCursors]. */
     val diverters: FlowCursors = FlowCursors(),
     /**
