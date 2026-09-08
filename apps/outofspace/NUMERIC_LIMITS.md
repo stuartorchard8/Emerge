@@ -664,3 +664,83 @@ Six tests fail with the knob turned, all in the free-body gravity and contact ar
 the ship feels the body and the momentum ledger closes` newly fails, while three others newly pass.
 The area is known-broken and is being carried separately; the count moving is not evidence either
 way about the rescale.
+
+
+---
+
+## 13. The potential scale — power network, 2026-09-08
+
+Added with `PLAN_power_network.md` increment 2, and **before** the solver rather than after it: the
+`MAX_CHARGE` hole in the network this replaced was exactly what happens when a bound is decided
+afterwards. Measured, like everything above.
+
+### What the table actually contains
+
+| | |
+|---|---|
+| Most conductive species | **Silver**, σ = 5.86e7 (derived by Wiedemann–Franz from 429 W/m/K) |
+| Most conductive *tile* | a silver hull plate at 60‰ fill: `electricalConductanceOf` = **3.52e6** |
+| Least conductive tile a cable can be | manganese at 2‰ fill: **2185** |
+| Species carrying any current at all | **64** of 170 |
+
+Dynamic range of a conductance is therefore about **1600:1**, which a `Long` holds with room to
+spare. The fill fraction matters as much as the metal: `Conduit.Rail` is 20‰ against `Conduit.Power`'s
+2‰, so **a steel rail is within a factor of two of a copper cable** and using track as a busbar is a
+real option nobody designed.
+
+### Why microvolts and not millivolts
+
+A node update floors a division, so the quantisation of the potential *is* the floor of the KCL
+residual. Measured on a seven-tile copper run driven at one volt:
+
+| potential unit | residual / current |
+|---|---|
+| millivolts | ~2% |
+| **microvolts** | **~1.6e-4** |
+
+Millivolt resolution would put the unaccounted charge at two per cent of the current — larger than
+most effects the network is meant to show. `Frac` is no use for this: it holds about [-2, 2].
+
+### The bound, and where it binds
+
+`MAX_MICROVOLTS = 1e9` — a thousand volts, against the only potential the game states (water's 1.23).
+
+The largest product formed is a node's `Σ G·V`. A node reaches **degree seven** where four layers
+meet at a terminal, so the worst case is `7 × 3.52e6 × 1e9 = 2.5e16` against a `Long`'s 9.2e18 — a
+margin of **375**.
+
+⛔ **A power is never formed as `I × ΔV`.** That product reaches 1.4e25 at these bounds and would
+wrap; it goes through `scaledRatio`, which is the same hazard `seriesConductance` documents one level
+down. `CircuitSolve.POWER_PER_UNIT` is the divisor, and it is **not anchored to a joule** — increment
+5 anchors it against `HEATER_POWER`.
+
+### ⭐ The measurement that changed the design
+
+Residual as a fraction of the driven current, cold and after 200 warm-started ticks, **before** the
+chain reduction existed:
+
+| run length | nodes | cold | warm ×200 | energy ledger error |
+|---|---|---|---|---|
+| 1 | 2 | 0.00001 | 0.00001 | 0.00000 |
+| 7 | 8 | 2.0 | 0.00035 | 0.00002 |
+| 14 | 15 | 2.0 | 0.0025 | 0.0003 |
+| **30** | **31** | **2.0** | **0.53** | **0.085** |
+
+A thirty-tile run was **53% out on its current balance after two hundred ticks**, and its energy
+ledger was 8.5% short. Jacobi on a chain of `N` nodes needs sweeps in proportion to `N²`, so solving
+per tick does *not* on its own escape the `L²` wall the capacitive model had — it escapes it only
+once a chain stops being `N` unknowns.
+
+With `reduceToJunctions` collapsing every run of degree-two nodes to one edge:
+
+| run length | nodes | cold | warm ×200 | energy ledger error |
+|---|---|---|---|---|
+| 1 | 2 | 0.00001 | 0.00001 | 0.0000002 |
+| 7 | 8 | 0.00016 | 0.00016 | 0.00001 |
+| 14 | 15 | 0.00046 | 0.00046 | 0.00004 |
+| 30 | 31 | 0.00004 | 0.00004 | 0.00001 |
+
+⭐ **Cold equals warm at every length**, because a run of any length is now a single edge. ⚠️ What
+remains scales with the number of **junctions**, squared — a bus with a dozen machines on it takes
+about a second of ticks to settle after a change. That is a better place for the cost to live: it
+scales with what the player built rather than with how far apart they built it.

@@ -404,7 +404,37 @@ with no source is *"entirely testable by injecting charge directly, and the rela
 carrying the design risk."* Same reasoning one level down: connectivity is the part carrying the
 design risk now, and it is testable with no electricity at all.
 
-### Increment 2 — the solve
+### Increment 2 — the solve ✅ BUILT (2026-09-08)
+
+`world/CircuitSolve.kt` and `CircuitSolveTest` — 10 tests. Ohm, series, a divider, parallel via a
+loop, a dead-ended spur, long-run-versus-short, copper-beats-iron, both ledgers, and an unpowered
+network sitting flat. `NUMERIC_LIMITS.md` §13 landed first, as this increment required.
+
+#### ⛔ What the build found: solving per tick does not on its own escape `L²`
+
+§6 argued the capacitive model's `L² × SETTLING_TICKS` lag went away with the capacitance. **It did
+not.** Jacobi on a chain of `N` nodes needs sweeps in proportion to `N²` whatever is being solved,
+and measured before the fix a **thirty-tile run was 53% out on its current balance after two hundred
+warm-started ticks**, with its energy ledger 8.5% short. The residual term is what made this visible
+rather than plausible — decision 8 earning itself back inside one increment.
+
+⭐ **The fix is a series reduction, and it is the domain's own shape.** Every tile of a run between
+two junctions has degree two and nothing injecting into it, which is exactly when a series collapse
+is *exact*: a whole run becomes one edge, and the interior potentials come back by interpolating on
+accumulated resistance rather than by being solved. **A run of wire with nothing attached to it is
+one resistor.** Cold and warm now agree at every length, at a residual of about 1e-4.
+
+⚠️ **What is left scales with junctions, not with distance.** A bus with a dozen machines hung off it
+takes about a second of ticks to settle after a change. That is a better place for the cost to live —
+it scales with what the player built rather than with how far apart they built it — but it is not
+zero, and a cold solve of a branched network is visibly unconverged: a spur trails the node it hangs
+off by one sweep.
+
+⚠️ **Banking `I²R` into the world moved to increment 3.** There is no source in the world until the
+panel exists, so there is nothing to bank; the per-edge power is computed and tested here and gets
+wired to `heat()` where it can be observed.
+
+#### What it was scoped to do, and did
 
 Integer Kirchhoff over the graph, seeded from the previous tick, with a reference pinned per
 component. Sources enter as EMF edges. `I²R` banked through the existing `heat()` path, apportioned
