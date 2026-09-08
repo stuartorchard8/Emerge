@@ -91,13 +91,21 @@ The kinds **are** interchangeable, because they are one machine at three sizes �
    yet is under no constraint at all. Legality in decision 3 governs `Edit.Rotate` and nothing else.
 5. **⛔ Orientation changes come *exclusively* from an explicit instruction to rotate.** A paste-over
    never changes the target's facing. Facing is a **placement property**, not a setting.
-6. **A machine is rotated by hovering it in build mode and pressing R**, by one increment — 90° or
-   180° according to its footprint. ⚠️ The precedence against today's `rotateBrush` is §7's open
-   question.
+6. **⛔ R turns the brush if you are holding one, and the machine under the pointer if you are not**
+   (Stu, 2026-09-09). Unambiguous in both directions, at the cost of having to put the brush down to
+   turn something already standing — which is the trade the alternative gets wrong, because while
+   laying a row of machines you are usually hovering a neighbour and R would silently turn *it*.
+   The increment is 90° or 180° according to the footprint.
 7. **⛔ A stamp pastes where the machine *class* matches, not the kind.** A warehouse's settings go
    onto a silo.
 8. **Rotation advances to the next representable orientation**, rather than refusing when the next
    quarter-turn is not representable. A 3×2 flips; it does not sit there declining.
+9. **⛔ A buffer is not rotatable 90° in place, and it is not coming back on a whim** (Stu,
+   2026-09-09) — *"it requires some more thinking before I'd be happy to bring it back."* ⭐ **If it
+   ever does, the pivot is the HOVERED TILE**, not the footprint centre: a tile is always a
+   representable pivot, so a 1×2 swung about the end you are pointing at lands on the grid every
+   time. Recorded as the shape the answer would take, not as an answer. See §3's note on
+   re-anchoring, which is what makes it cheap when it is wanted.
 
 ## 3. The model
 
@@ -157,6 +165,42 @@ already the answer `Edit.Rotate` gives a bridge with something in its swing.
 next representable orientation.** One quarter-turn for `Pivot.Anchor` and for same-parity blocks; two
 for a mixed-parity block. `Edit.Rotate` keeps `canStandWhereItWouldTurn`, because representable and
 *unobstructed* are different questions and the second one still has to be asked.
+
+### ⛔ A turn can move the anchor, and today nothing lets it
+
+⚠️ **This is the one thing in this plan that was not visible from the outside**, and it is not
+optional: it falls out of the 180° flip that decision 8 makes the *only* turn a mixed-parity machine
+has.
+
+A 180° turn about the block centre maps local tile `(x, y)` to `(w-1-x, h-1-y)`. A fixed tile needs
+`x = w-1-x` and `y = h-1-y`, which have integer solutions only when `w` and `h` are **both odd**. So:
+
+> ⛔ **No tile of a mixed-parity footprint survives its own 180° flip.** The block covers exactly the
+> same squares, and every one of them belongs to a different part of the machine afterwards — so the
+> **anchor moves**, even though nothing moved.
+
+That is true of the 3×2 cell and it is equally true of the 1×2 buffer, whose 180° flip is the one
+turn it keeps. Today it cannot happen: `rebuildInPlace(centre, before, turned)` takes **one** centre
+and uses it for both sides — `deck -= centre`, `deck.stand(turned)`, `originOf[t] = centre` — because
+under the current shapes the anchor is always a fixed point (a square's centre, a span's centre, a
+nose's tail). The assumption is invisible because it has never been false.
+
+⭐ **The expensive half is already built, and already commented as such.** `rebuildInPlace` demolishes
+and re-stands rather than assigning, precisely so a footprint whose tiles change carries its casing
+with it; it reads each store's contents **by role** before the turn and puts them back at that role's
+**new** tile afterwards; and it spreads the heat evenly with a note saying *"the tiles are not the
+same tiles, so there is no per-tile correspondence to preserve."* So a cell flipped end for end
+already takes its cathode bath with it, and the material and the heat come too. What is missing is
+only that the before and after anchors are the same parameter.
+
+⚠️ **So increment 1 splits that parameter in two**, and `canStandWhereItWouldTurn` grows the same
+split — its *"its own tiles do not count as in the way"* test still compares against the **old**
+anchor, which is what `originOf` holds at the time it is asked.
+
+⭐ **And that is what makes the hovered-tile pivot of decision 9 cheap when it is wanted.** A pivot
+that is a tile rather than a property is just another anchor to re-anchor from, and `Edit.Rotate`
+**already carries the hovered tile** — the reducer resolves it through `originAt` and throws the
+original away. The plumbing lands here whether or not the buffer ever uses it.
 
 ## 4. Paste, and what a stamp is for
 
@@ -222,8 +266,8 @@ concept that no longer means that.
 bounding box rather than off a diameter — the silo forced that — and `MAX_CACHED_FOOTPRINT` is 32, so
 a six-tile machine caches like any other. `canStand` reads `kind.footprint(...)` and needs no change.
 
-**⚠️ R is already bound**, to `rotateBrush`. Increment 2 is not "bind a key", it is "decide a
-precedence" — see §7.
+**⚠️ R is already bound**, to `rotateBrush`, so increment 2 overloads a key rather than binding a
+free one — decision 6 is the precedence.
 
 ## 6. Increments
 
@@ -240,17 +284,24 @@ waits for increment 1 so that a refactor and a decision are not in one commit.
 ⭐ **A 3×2 is expressible at the end of this and nothing is one**, which is the point: the shape is a
 value, so a test can state one without a machine kind existing to hold it.
 
-### Increment 1 — rotation turns about the pivot
+### Increment 1 — rotation turns about the pivot, and a turn may re-anchor
 
-`Pivot` starts being read. `rotated()` becomes "the next representable orientation". The buffer moves
-to `Pivot.Centre` and loses its 90°, which is the one behaviour change and gets its own note in the
-commit message. `Edit.Rotate`'s "footprints square" comment goes.
+`Pivot` starts being read. `rotated()` becomes "the next representable orientation". `rebuildInPlace`
+and `canStandWhereItWouldTurn` take a before-anchor and an after-anchor instead of one centre — see
+§3, and note this is **required by the buffer's own 180°**, not by anything hypothetical. The buffer
+moves to `Pivot.Centre` and loses its 90°, which is the one behaviour change and gets its own note in
+the commit message. `Edit.Rotate`'s "footprints square" comment goes.
+
+⚠️ **Its acceptance is a flip that conserves.** Turn a stocked, warm buffer end for end: the mass in
+its store, the metal in its casing and the energy in both come back on the other tile. The ledgers
+are the test — `rebuildInPlace` is booked through neither, so a bug here is matter appearing or
+vanishing rather than a machine looking wrong.
 
 ### Increment 2 — R turns the machine under the pointer
 
-The binding, the precedence rule §7 settles, and a refusal the player can see when
-`canStandWhereItWouldTurn` says no. ⚠️ First increment in which a player can turn a placed machine
-without going through the paste path.
+Decision 6: R turns the brush while one is held, and the machine under the pointer when none is. Plus
+a refusal the player can see when `canStandWhereItWouldTurn` says no. ⚠️ First increment in which a
+player can turn a placed machine without going through the paste path.
 
 ### Increment 3 — a stamp pastes by class
 
@@ -268,18 +319,12 @@ segment — see that plan's §"the ports become a T", which this supersedes.
 
 ## 7. Open questions
 
-1. ⛔ **R's precedence, and it needs an answer before increment 2.** R turns the brush today.
-   - (a) Hovering a machine turns *it*, else the brush. ⚠️ While laying a row you are often hovering
-     a neighbour, and R would turn that instead of your brush.
-   - (b) The machine only when the brush is empty; with a brush in hand, always the brush.
-     Unambiguous, but turning a machine means dropping what you are holding first.
-   - (c) Two keys.
-2. **Does a cross-family stamp apply to a *freshly placed* machine?** `OutofspaceSim.kt:2895` is the
+✅ **R's precedence** — decision 6. ✅ **The buffer's 90°** — decision 9. Both settled 2026-09-09.
+
+1. **Does a cross-family stamp apply to a *freshly placed* machine?** `OutofspaceSim.kt:2895` is the
    third guard, and relaxing it means grabbing a warehouse, switching the brush to silo and placing
    gets you a silo wearing the warehouse's filter. Probably wanted; stated because it is a different
    gesture from re-tuning something already standing.
-3. **Is the buffer losing its in-place 90° acceptable?** It follows from decision 2 and it is a
-   capability a shipped machine has today.
 
 ## 8. Explicitly not doing
 
