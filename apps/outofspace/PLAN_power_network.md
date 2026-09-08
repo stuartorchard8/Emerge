@@ -415,15 +415,59 @@ lands here because this is the first commit in which a player can build a short.
 ⛔ **The readout is an OVERLAY, not an inspector line (Stu, 2026-09-08)** — the shape `Overlay.kt`
 already has: `None/Heat/Air/Pressure/Density/Flow`, cycled on `H`, with HUD buttons for direct
 picks. A short is a fact about a *region*, not about a tile, so a per-tile readout answers the wrong
-question — the player needs to see two things they believed were separate wearing one colour.
+question.
 
-⚠️ **Colour by component, not by potential.** Potential is a scalar the inspector can print for one
-tile; which circuit a tile belongs to is the thing nothing else can answer, and it is what diagnoses
-a short. A second potential overlay is cheap to add later if the first one leaves a question.
+### ⭐ One overlay, two readings: tinted by circuit, animated by current
+
+⛔ **Carriers move along the conductor in the solved direction (Stu, 2026-09-08)** — packet-like
+marks travelling the wire, not a tint. ⭐ **This diagnoses the short better than colouring can**,
+and that is the argument for the work. A short is not really *"these two tiles are one component"*;
+it is *"all of my current is going around the casing instead of through the element"* — and carriers
+streaming around the outside of a machine say that in one glance. §5's whole mechanic becomes
+legible. So does an insulating segment: the carriers run up to it and stop.
+
+⚠️ **But motion alone goes blind exactly when the player is most stuck.** An unpowered circuit shows
+nothing moving, and *nothing moving* cannot tell "not connected" from "connected but no source" from
+"shorted, and no source". So the conductor is **tinted by component** underneath the animation: the
+static reading answers topology when the ship is dead, the moving one answers behaviour when it is
+live, and neither needs a mode switch.
+
+### ⚠️ What this costs, and the three things that are actually new
+
+⭐ **`Overlay.Flow` is most of the precedent already.** It is the one existing overlay that *"is not a
+scalar and so is the only one a tint cannot show"*, and `drawFlow` already builds a tapered streak of
+rects from a direction and a magnitude, normalised against the `peak` over the visible region with a
+`Visual.FLOW_MIN_FRACTION` floor beneath it. The drawing is an extension of that, not a new
+discipline. What is genuinely new:
+
+1. ⛔ **A carrier is a VIEW ARTIFACT and must never be an object.** No sim state, no list of
+   electrons, nothing to serialise or desync. Each conductive tile keeps one render-side **phase**,
+   advanced by `phase += current × dt × k`, and carriers are drawn at `(phase + i/N) mod 1` along
+   the tile's drawn links. Direction is the sign; speed is the magnitude; both fall out.
+   ⚠️ **Hang the phase off the TILE, not the edge.** `bodiesOf` is rebuilt every tick on purpose —
+   *"a cache with an invalidation rule is a bug waiting for an edit case nobody thought of"* — so
+   edge identity is not stable across ticks and a tile index is.
+2. ⚠️ **Current is a quantity on EDGES; flow is a vector field on TILES.** `drawFlow` draws one
+   streak per tile from a single direction. A tile of wire with three links carries three different
+   currents, so this draws *along each link* instead. That is the real geometric difference and it
+   is where the work is.
+3. ⚠️ **The dynamic range is far wider than air flow's**, so peak-normalisation alone would leave a
+   hull bus visible and everything else dead. ⭐ **Let speed and density carry it jointly** — more
+   current means faster *and* more carriers — which buys orders of magnitude of legible range that
+   speed alone cannot. The compression curve is a number to derive against the range the solve
+   actually produces, not one to fiddle until it looks nice.
+
+⚠️ **Electrons, not conventional current.** They move from the negative terminal toward the positive,
+which is *opposite* the conventional current vector the solve will most naturally produce. This whole
+plan tells an electron story — decision 1, and a panel that *"moves electrons from the P terminal to
+the N terminal"* — so drawing the carriers along `I` would run them backwards through it. Trivial to
+get right here and embarrassing to find later.
 
 ⚠️ A new overlay needs a cadence — `OutofspaceRenderer.kt:1386` maps each one to the pass that feeds
 it, and per `project_oos_interpolation_cadence` the pass stamps when it ran and the view never
-infers a schedule.
+infers a schedule. ⚠️ Perf: `drawFlow` already draws `2 × FLOW_SEGMENTS` rects per flowing tile, so
+per-tile multi-quad overlay work has precedent — but measure it, and `FLOW_MIN_FRACTION` is the
+pattern for the cheap fallback (draw nothing below a current threshold).
 
 ⚠️ **The readout is not deferrable to increment 4.** `Conduit.Power` was once kept out of the build
 menu on the grounds that *"a brush for it would lay cable that does nothing and looks like a bug
