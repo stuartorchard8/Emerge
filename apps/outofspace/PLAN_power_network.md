@@ -70,28 +70,41 @@ the rest of this plan is built on rather than a guard in front of it.
 4. **Terminals come in two forms.** Built into a machine at stated points — its +ve and -ve — and as
    a standalone **Terminal** machine whose only job is to bond the layers under it. So the player
    decides whether charge travels by wire, by rail, or through the building itself.
-5. **⭐ A machine's casing is a parallel path around its own element, so building material becomes a
+5. **⛔ Only casings and fittings conduct** (Stu, 2026-09-08). `bodiesOf` makes four kinds of body
+   and the other two — **cargo lumps and buffer stores** — are out of the charge walk entirely. ⚠️
+   **A stated exception to decision 2**, and worth naming as one: a warehouse full of copper does
+   not conduct. What it buys is that a circuit cannot change because a lump rode past it, which is
+   the alternative and is unplayable. ⚠️ This does **not** touch the cell: `R_electrolyte` is a
+   resistance the machine reads off its own bath and puts on its *internal* edge, which is a
+   different thing from the bath being a node.
+6. **⛔ A ghost conducts nothing**, because it holds no metal. ⚠️ `Body.conductance` falls back to a
+   site's *intended* material so the heat solver gets a cold node rather than a conductanceless one;
+   that fallback is right for heat and wrong here, and left alone it makes half-built track live.
+7. **Rigid bodies, debris and rocks are out.** They are not in `bodiesOf` at all. Stated so it is a
+   decision rather than a discovery.
+8. **⛔ Fixed sweeps, and the KCL residual is a named ledger term** (Stu, 2026-09-08). See §6.
+9. **⭐ A machine's casing is a parallel path around its own element, so building material becomes a
    power decision.** See §5. This is the sharpest consequence of decision 2 and the first time
    material selection has a functional rather than a structural cost.
-6. **Hull-as-ground comes back, as a wiring choice.** The hull is a large, low-resistance,
+10. **Hull-as-ground comes back, as a wiring choice.** The hull is a large, low-resistance,
    *finite* conductor holding real charge. Bond your circuit to it deliberately and it is a return
    path; do not, and it is not. ⚠️ The thing that was wrong was never *"the hull is the return"* —
    it was *"the return is unaccounted."*
-7. **⛔ Conductors have zero capacitance and the network is solved per tick.** Not an approximation:
+11. **⛔ Conductors have zero capacitance and the network is solved per tick.** Not an approximation:
    see §6 for the thirteen orders of magnitude. `SETTLING_TICKS`, `CHARGE_PER_MILLIVOLT` and
    `MAX_CHARGE` are deleted along with the stiffness they were compensating for. Capacitance belongs
-   to a **capacitor machine**, which holds it on purpose — which is exactly what the old decision 3
+   to a **capacitor machine**, which holds it on purpose — which is exactly what the old plan's decision 3
    predicted would come and revisit the fiction.
-8. **⛔ The signal layer stays out until power works end to end (Stu).** *"Signal as voltage seems
+12. **⛔ The signal layer stays out until power works end to end (Stu).** *"Signal as voltage seems
    like the right choice, but let's leave this alone until we get power working properly end to
    end. No point building more scope before we have the foundations laid."* ⚠️ Note this is a
    deferral, not the old prohibition: signals becoming a real voltage is now the expected direction,
    and §10 records what it would cost.
-9. **⛔ The photovoltaic effect is not simulated (Stu).** A panel could be 1×2 with P- and N-type
+13. **⛔ The photovoltaic effect is not simulated (Stu).** A panel could be 1×2 with P- and N-type
    silicon at either end and no special implementation at all, and that is *"too much extra physics
    for one machine's functionality."* The panel keeps an internal rule. It is the only machine in
    this plan that gets one, and this is the argument for it.
-10. **Billing the existing machines is its own increment, and it is last.** See §9.
+14. **Billing the existing machines is its own increment, and it is last.** See §9.
 
 ## 3. The model
 
@@ -221,6 +234,30 @@ is what `Saturation.kt` warned it would have to be, and it carried a cost the ol
 honestly: a run settles in `L² × SETTLING_TICKS`, so a fifteen-tile trunk takes some 1800 ticks. On
 a unified graph that is far worse — a sixty-tile hull is 3600 × 8 ≈ **29,000 ticks** — which is the
 arithmetic that closes the question rather than an opinion about it.
+
+### ⛔ Fixed sweeps, and the residual is a term rather than a rounding error
+
+⚠️ **Convergence is not a perf knob here; it is what decides whether the ledgers are identities.** A
+*fully converged* solve conserves charge exactly — KCL is what was solved — and its energy ledger
+closes analytically by **Tellegen's theorem**: `Σ I²R` over the edges equals `Σ I×EMF` over the
+sources, with no apportionment anywhere. An *unconverged* solve does neither, and the KCL residual
+**is** charge appearing and vanishing.
+
+So: **a bounded number of sweeps, and the residual is accounted as its own named ledger term** (Stu,
+2026-09-08). ⭐ **This codebase has done exactly this once already** — `reconciledMass` is why the
+mass balance has four terms instead of three, and it exists so that drift is *visible* rather than
+absorbed. The charge ledger takes the same shape: conserved to the unit, **plus a residual you can
+read**.
+
+⛔ **A residual nobody watches is a leak with a name on it**, so the term ships with a tripwire: the
+residual must stay under a stated bound, and breaching it is a test failure rather than a log line.
+⚠️ That bound is the number to derive rather than choose — it is a function of the sweep count and
+the worst-case component, and `HEATER_POWER`'s idiom applies.
+
+⭐ **A useful consequence: the apportionment problem does not recur.** Increment 1a's cross-term bug
+came from summing per-edge figures taken from a shared snapshot. Here each edge has an exact current
+out of the solve, so `I²R` per edge is exact and sums correctly on its own. §8's warning is kept
+because it is about *simultaneous* solves in general, not because this pass needs the correction.
 
 ### Both, and they are not in tension
 
@@ -353,10 +390,21 @@ Integer Kirchhoff over the graph, seeded from the previous tick, with a referenc
 component. Sources enter as EMF edges. `I²R` banked through the existing `heat()` path, apportioned
 per §8.
 
-Two ledgers as **identities**: current sums to zero at every node to the unit, and every joule the
-network gives up becomes heat. Plus the tests that finally prove the claims the old doc only made —
-series resistors, parallel resistors, a divider, and a long thin run of the wrong metal failing to
-deliver what a short fat one can.
+Two ledgers, per decision 8 and §6: current sums to zero at every node **to the unit plus a named
+residual**, with a tripwire on the residual's bound; and every joule the network gives up becomes
+heat. Plus the tests that finally prove the claims the old doc only made — series resistors,
+parallel resistors, a divider, and a long thin run of the wrong metal failing to deliver what a
+short fat one can.
+
+⛔ **Write the `NUMERIC_LIMITS.md` entry before the code, not after.** Potentials need a scale of
+their own — `Frac` holds about [-2, 2], conductance is already a `Long`, and a current is
+conductance × millivolts. Deciding this afterwards is precisely how the `MAX_CHARGE` hole in §1
+happened, and that file exists so a bound is a number somebody chose rather than one a save
+discovers.
+
+⚠️ **Sources are synthetic here.** The panel is increment 3, so this commit drives the solve with
+EMFs stated by the test — the same argument the old increment 1a split was made on: the solver is
+the part carrying the design risk and it is testable with nothing else built.
 
 ### Increment 3 — the panel, the terminal, and seeing what you built
 
