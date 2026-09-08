@@ -269,8 +269,15 @@ private const val SPACE = -1
 private fun withinBudget(conductance: Long, capacity: Long, asked: Long): Long =
     if (asked <= capacity) conductance else scaledRatio(capacity, asked, conductance)
 
-/** Bodies-per-tile, compressed row format: counts, prefix sum, ids. */
-private class TileBodies(tileCount: Int, bodies: List<Body>) {
+/**
+ * Bodies-per-tile, compressed row format: counts, prefix sum, ids.
+ *
+ * ⚠️ **Internal rather than private because the charge pass walks the same bodies** — see
+ * [circuitOf]. Two structures indexing one body list is two chances for the electrical graph and the
+ * thermal one to disagree about what touches what, and they are meant to differ in exactly one
+ * stated place.
+ */
+internal class TileBodies(tileCount: Int, bodies: List<Body>) {
     private val start = IntArray(tileCount + 1)
     private val ids: IntArray
     private val tileCount = tileCount

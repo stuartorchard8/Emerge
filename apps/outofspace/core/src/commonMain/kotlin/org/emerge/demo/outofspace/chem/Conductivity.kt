@@ -100,3 +100,20 @@ fun conductsElectrically(species: Species): Boolean =
 fun electricalConductivityOf(species: Species): Long =
     if (!conductsElectrically(species)) 0L
     else species.milliWattsPerMetreKelvin.toLong() * 1_000_000L / LORENZ_TIMES_KELVIN_NANO
+
+/**
+ * **What one tile of [species] at [fillPermille] conducts electrically** — the electrical twin of
+ * `conductanceOf`, and scaled the same way for the same reason.
+ *
+ * ⚠️ **A tile is mostly empty and its cross-section is its fill.** A hull plate is a few
+ * centimetres of steel over a metre of face and a cable is two parts in a thousand of one, so the
+ * geometry belongs here exactly as it does in the thermal figure — otherwise a cable would carry a
+ * hull plate's current and material selection would stop meaning anything.
+ *
+ * ⭐ **A consequence worth knowing before it surprises somebody**: `Conduit.Rail` fills 20‰ against
+ * `Conduit.Power`'s 2‰, so a *steel rail* has ten times a cable's cross-section and lands within a
+ * factor of two of a copper run. Using track as a busbar is a real option and nobody designed it to
+ * be — see `PLAN_power_network.md` §3.
+ */
+fun electricalConductanceOf(species: Species, fillPermille: Int): Long =
+    electricalConductivityOf(species) * fillPermille / 1_000L

@@ -368,7 +368,27 @@ one alloy — which is a fact about chemistry rather than a threshold that drift
 ⚠️ **This is still a live defect in `roughnessOf`.** That function reads the same threshold, so today
 hematite and pyrite grip like metals and mercury grips like rock. See §10.
 
-### Increment 1 — the graph: what is bonded to what
+### Increment 1 — the graph: what is bonded to what ✅ BUILT (2026-09-08)
+
+`world/Circuit.kt`, `world/Terminal.kt`, `Body.electricalConductance`,
+`chem/electricalConductanceOf`, and `CircuitTest` — 7 tests, all three the plan named plus the
+insulating segment, the ghost and the hopper.
+
+⭐ **`TileBodies` went from `private` to `internal` rather than being copied.** Two structures
+indexing one body list is two chances for the electrical graph and the thermal one to disagree about
+what touches what, and they are meant to differ in exactly one stated place.
+
+⭐ **All four exclusions fell out of one field.** Insulator, ghost, cargo and buffer store are zero
+in `Body.electricalConductance` — three of them because it reads the matter *actually present* with
+no fallback, and the fourth because those two construction sites simply do not set it. None of them
+needed a test in the graph pass, which is where they would have drifted.
+
+⚠️ **`circuitOf` takes the terminal tiles rather than the deck**, so a test can state a circuit
+without standing a machine up to make one. That is what let the crossing tests be four lines.
+
+⚠️ **The suite has three pre-existing failures** — two in `ConcentratorBankTest`, one in `HeatTest`,
+all three from `98fc5579` and all three failing identically with this increment stashed. Not touched
+here.
 
 The electrical contact graph as a sibling of the thermal one, and **nothing on it yet**. Same bodies,
 same intra-layer rules, inter-layer edges gated on terminals, air and insulators excluded. Terminals

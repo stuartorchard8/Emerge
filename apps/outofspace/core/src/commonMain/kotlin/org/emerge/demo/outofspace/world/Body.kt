@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.chem.electricalConductanceOf
 import org.emerge.demo.outofspace.world.machine.DeckArray
 
 /**
@@ -111,6 +112,27 @@ class Body(
      * pass no longer has to be told which list the body came out of in order to ask it anything.
      */
     val links: Int = 0,
+    /**
+     * **What a current crosses this body at**, or zero for anything a current cannot cross.
+     *
+     * ⛔ **Not [conductance] scaled, and the difference carries three of `PLAN_power_network.md`'s
+     * decisions.** Wiedemann–Franz relates the two numbers, but only for a metal and only for matter
+     * that is actually there, so this is derived separately at each construction site rather than
+     * from the thermal figure:
+     *
+     *  - **An insulator is zero** — `conductsElectrically` is a statement about chemistry, and a
+     *    firebrick casing conducts heat perfectly well while carrying no current at all. That is the
+     *    whole of decision 9: a machine's casing is a parallel path around its own element, so a
+     *    copper one shorts the work and a firebrick one does not.
+     *  - **A ghost is zero.** [conductance] falls back to a site's *intended* material so the heat
+     *    solver gets a cold node rather than a conductanceless one; this reads the matter actually
+     *    present and answers zero when there is none. Decision 6 — a site that holds no metal is not
+     *    wire yet, and left alone the fallback would make half-built track live.
+     *  - **Cargo and buffer stores are zero**, by taking the default. Decision 5, and a stated
+     *    exception to conduction being a fact about matter: a warehouse full of copper does not
+     *    conduct. What it buys is that a circuit cannot change because a lump rode past it.
+     */
+    val electricalConductance: Long = 0L,
 ) {
     /**
      * Guarded the same way [RigidBody.kelvin] is, and for the same reason.
@@ -176,6 +198,10 @@ fun bodiesOf(
                         deck.stuff.dominantAt(part) ?: deck.materialOf(m),
                         m.kind.fillPermille,
                     ),
+                    // ⚠️ No fallback, deliberately — see [Body.electricalConductance]. A ghost
+                    // holds nothing and therefore conducts nothing.
+                    electricalConductance = deck.stuff.dominantAt(part)
+                        ?.let { electricalConductanceOf(it, m.kind.fillPermille) } ?: 0L,
                 )
             )
         }
@@ -240,6 +266,9 @@ fun bodiesOf(
                     conduits.dominantAt(conduit, tile) ?: s.material,
                     conduit.fillPermille,
                 ),
+                // ⚠️ No fallback here either: unpaid track carries no current.
+                electricalConductance = conduits.dominantAt(conduit, tile)
+                    ?.let { electricalConductanceOf(it, conduit.fillPermille) } ?: 0L,
                 conduit = conduit,
                 links = s.links,
             )
