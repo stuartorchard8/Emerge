@@ -380,6 +380,34 @@ battery, with no battery machine: panels charge the bus by day, the cell banks i
 the cell holds the ship up when the panels go dark. The old plan listed a battery under *"explicitly
 not doing"* and then under *"it is §2 of the model"*; it is neither. It is this increment.
 
+### ⚠️ The ports become a T, and a terminal shares a tile with a rail
+
+Pointing up: **feed at the bottom of the stem, terminal A + output A middle-left, terminal B +
+output B middle-right** (Stu, 2026-09-08). Today's offsets are `Input (-1,0)`, `Product (+1,0)`,
+`Waste (0,+1)` (`BufferRole.kt:176`), so this is a three-way rotation of a table that already exists
+— and `BufferRoleTest` holds `localBufferOffset` and `portsOf` in agreement, so both move together.
+
+⭐ **The arms are what §5 needs.** Two terminals on opposite tiles with the machine's casing between
+them is exactly the parallel path: a copper-cased cell shorts around its own electrolyte and does
+nothing but warm up. The old layout put *input* and *product* on the opposite pair, which is the
+wrong pair to hang terminals from.
+
+⛔ **A terminal sharing a tile with an output port makes that output's rail a conductor**, because a
+terminal bonds the layers present at its tile (§3) and a rail is one of them. So the hydrogen belt
+sits at the cathode's potential and the oxygen belt at the anode's — and **if both belts belong to
+one connected rail network, the cell is shorted through its own logistics and stops.**
+
+⭐ **That is the right answer twice over, which is why it stays.** The two gases already must not
+meet, because `2 H₂ + O₂ → H₂O` lights at 773 K and a store reacts with itself — the whole reason
+`Electrolyzer` has a second output port at all. Now the two *rails* must not meet either, for an
+entirely independent electrical reason, and a real plant separates them for both. ⚠️ But a player
+who runs both belts into one warehouse network kills their cell and has no way to see why. This is
+the increment-3 connectivity readout earning its place, not a hazard to design away.
+
+⚠️ **Whether the bath is the input store or a fourth `Inside` store is open.** A 3×3 has nine tiles
+and `BufferRole` costs one apiece, so both fit; `PLAN_electrochemistry.md` §5.5 wants a standing
+electrolyte and the feed is a throughput, which argues they are different stores. Stu's call.
+
 ⭐ **The electrolyte ceiling lands here too.** `chem/Cell.kt` has `electrolyteStrength` and pure
 water scores zero — seven orders of magnitude below brine — so **a cell full of pure water fails
 because the network cannot push current through it**, not because anything forbids it. That needs

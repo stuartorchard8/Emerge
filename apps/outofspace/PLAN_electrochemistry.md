@@ -191,9 +191,23 @@ un-modelled, and it stops working the moment the cell is a load on a real circui
 
 ### ⭐ 5.5 The cell has three compartments, and they are buffer tiles
 
-**A cell is a 1×3 machine: feed in the middle, anode at one end, cathode at the other**, each with
-its own store and its own rail port. It is not an internal grid anybody has to build —
-`BufferRole.kt` already says what this costs:
+**A cell is a 3×3 machine whose ports make a T** (Stu, 2026-09-08): pointing up, the feed enters at
+the bottom of the stem, and the two electrode compartments sit on the arms — **middle-left and
+middle-right** — each with its own store and its own rail port.
+
+⚠️ **This replaced a 1×3, and the 1×3 had a hole.** It put the feed in `Inside` at the centre, and
+`Inside` is *"the one role with no port — nothing outside the machine ever touches it"*
+(`BufferRole.kt:44`). A cell whose feed cannot be delivered to is a cell that never runs, and the
+only machine that gets away with an `Inside` mouth is [Storage], which is special-cased. The T gives
+the feed a real port on a real tile and needs no exception.
+
+⭐ **The arms are opposite each other with the machine's body between them, which is what the power
+model needs** — `PLAN_power_network.md` §5: a machine's two terminals must span its casing so that
+the casing is a *parallel path* around the work. The old 1×3 satisfied that too; what it could not
+satisfy was the feed. Terminal A shares the left arm with output A, terminal B the right arm with
+output B.
+
+It is not an internal grid anybody has to build — `BufferRole.kt` already says what this costs:
 
 > ⚠️ **Adding one is cheap and stays cheap** … a role costs a distinct tile of the machine's own
 > footprint and nothing else. A 3×3 has nine and the rocket uses three.
@@ -226,6 +240,61 @@ cathode compartment and anions toward the anode, at a rate set by the current. E
 inside *one* of them becomes reachable **with the power off**. Copper cementing onto zinc is a
 legitimate `Reaction` row needing no voltage at all. That is not a bug, but the cell stops being
 inert when unpowered, which today's electrolyzer is.
+
+### ⭐ 5.6 An output ships a **sample** of its compartment, not a product the machine chose
+
+⭐ **This is the change that closes the electrolyzer's stated departure from the house rule.**
+`Electrolyzer.kt` admits it is *"a deliberate departure from the principle [Furnace] is built on —
+machines control conditions, chemistry does the work"*, because it performs its reaction and sorts
+the results into two clean stores. Under sampled outputs it stops sorting: the machine creates
+conditions in two compartments and each port ships **what is actually standing in the compartment
+behind it**. For water at the cathode that is hydrogen, water, hydroxide and whatever salt is in the
+bath. Nobody writes down what comes out of which mouth; the chemistry and the geometry do.
+
+⛔ **The sample is GAS PHASE ONLY, and that is narrower than it first looks.** The obvious rule —
+*take gas and undissolved solid, leave the water and the dissolved ions* — cannot be written, because
+**nothing in the game knows what "dissolved" means.** `Cell.kt:105` states it: telling deposited
+copper from dissolved copper is *"a charge this game does not store. That is `dissolvedFraction` and
+it is increment 3's."* `AQUEOUS_ELECTROLYTES` is a set of two species and `electrolyteStrength` a
+mass fraction of the whole charge — neither is a per-gram distinction. So a solid-phase rule cannot
+tell brine from salt crystals, and it would ship the bath's own halite out of the machine, which is
+the exact opposite of leaving the bath alone.
+
+⭐ **Gas-only is also the more physical rule.** Electroplated copper belongs *on the electrode* until
+something scrapes it off; it has no business riding out on a gas belt. So the narrower rule loses
+nothing that should have been shipped, needs no new concept, and leaves `dissolvedFraction` where the
+increment table already has it — **3c, after this**.
+
+⚠️ **The gas question needs a volume, and a buffer has none.** `FluidPhase` is derived from reduced
+density and temperature (`StateEquation.kt:672`), so it is a question about matter in a *volume* —
+`Scavenge.kt:39` notes a tile answers `Solid` only when *"packed to the solid branch, some four and a
+half tonnes of water."* A `BufferLayer` store is a `Mixture`: mass and energy, no volume. So a
+compartment must state what volume it is before its contents have a phase. ⛔ Derive it from the
+tile and the machine's `fillPermille` as `Body.capacity` already does — do not invent a constant.
+
+⚠️ **Draw it with `Mixture.take`'s discipline.** A phase split is a partition, not a per-species
+scaling, but the heat must leave in proportion with the matter it belongs to — see
+`reference_oos_microgram_deadlock`, and `Mixture.take` is the only exact draw.
+
+### ⛔ 5.7 Sampled outputs make the products BLENDS, and that is a regression until a separator exists
+
+Today the electrolyzer ships `made.cathode` and `made.anode` — **pure** hydrogen and **pure** oxygen.
+A sampled gas port ships hydrogen *and the water vapour standing above a warm bath with it*. That is
+a blend, and the size of the contamination is not the point:
+
+- ⛔ **Packets never merge across that line.** Pure and pure of one species merge; blend and blend
+  merge; **pure and blend never do.** So a blend arriving at a tank holding pure hydrogen does not
+  join it, and a packet that cannot be placed stands where it is.
+- ⚠️ **`PLAN_chemical_rockets.md` is built and complete, and its exhaust velocity comes off molar
+  mass.** Water vapour in the hydrogen raises the mean molar mass and drops `v_e`. That is a correct
+  and rather good consequence — and it is a silent downgrade of working content if it arrives before
+  the player has any way to undo it.
+
+So: **the phase separator lands in the same commit as the sampled outputs, or the outputs stay pure
+until it does.** Stu named the separator as probably-needed; this is the argument that it is not
+optional and not orderable afterwards. ⚠️ It is the one piece of new scope this section adds, and
+sizing it is 3b's first question rather than a thing to discover halfway through.
+
 
 ## 6. ✅ DECIDED (Stu, 2026-09-06) — the species budget
 
@@ -423,7 +492,7 @@ abundance to be made by a `REACTIONS` row. Everything else below is separable an
 | | Piece | Touches |
 |---|---|---|
 | 3a | the three species + host-crystal constants + ion-only declaration + the leach row | the species table, five guard tests, `MINERALS`, `Prices` |
-| 3b | `Cathode`/`Anode` buffer roles, the 1×3 cell | machine geometry, ports, save, renderer |
+| 3b | `Cathode`/`Anode` buffer roles, the 3×3 T, sampled outputs (gas only) | machine geometry, ports, save, renderer |
 | 3c | `dissolvedFraction`, and the electrolyte gate power increment 2 left unwired | `Saturation`-shaped derivation |
 | 3d | ion migration and the membrane | one new mechanism |
 
