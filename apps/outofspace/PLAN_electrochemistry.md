@@ -207,6 +207,40 @@ the casing is a *parallel path* around the work. The old 1×3 satisfied that too
 satisfy was the feed. Terminal A shares the left arm with output A, terminal B the right arm with
 output B.
 
+#### ⛔ Three baths, and the middle one is where deliveries land
+
+**Each of the three is a bath** (Stu, 2026-09-08) — one at each electrode, and one **directly
+between them** at the centre tile. The input port at the bottom of the stem delivers into the middle
+bath, *if there is room in it*.
+
+⭐ **"Directly between them" is what makes ion migration a spatial statement.** The one new mechanism
+this section asks for is cations drifting toward the cathode and anions toward the anode; with the
+three baths in a line, that is a movement from the middle to each end rather than a bookkeeping
+entry between two stores that happen to belong to the same machine.
+
+⚠️ **This generalises `Storage`'s exception rather than adding a second special case.**
+`BufferRole.kt` states that *"a store sits on the port it serves"* and that `Inside` is *"the one
+role with no port — nothing outside the machine ever touches it."* A [Storage] already breaks both:
+`inputBufferRole` answers `Inside` for it by name, and `inputBufferRoleAt` carries a fallback for
+*"a door that is not on a store's tile."* The cell is the second machine to want this, which is the
+point at which it stops being an exception and becomes a rule — **a machine declares which store its
+input port fills**, defaulting to the one under the port. ⛔ Do not add `is Electrolyzer ->` beside
+`is Storage ->`; that is the shape this codebase deleted `MachineKind` to avoid.
+
+#### ⛔ A bath states a volume, and the volume does two jobs
+
+Agreed (Stu, 2026-09-08). §5.6 needs it so the contents have a **phase** — `FluidPhase` comes off
+reduced density and temperature (`StateEquation.kt:672`), which is a question about matter in a
+volume, and a `BufferLayer` store is a `Mixture` with none. And the input port needs it to know when
+there is *"enough space"* to accept a delivery, which is `sinkAdmits` and nothing new: ⛔ **demand is
+acceptance, one door** — see `project_oos_economy`.
+
+⭐ **One number answering both is the test that it is the right number.** A bath that is full refuses
+deliveries *and* holds its gas at a density that decides the phase, and neither reading is free to
+drift from the other. ⛔ Derive it from the tile and the machine's `fillPermille` as `Body.capacity`
+already does — a stated litres-per-bath constant is the version of this that quietly becomes a
+fudge.
+
 It is not an internal grid anybody has to build — `BufferRole.kt` already says what this costs:
 
 > ⚠️ **Adding one is cheap and stays cheap** … a role costs a distinct tile of the machine's own

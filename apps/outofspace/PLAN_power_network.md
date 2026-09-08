@@ -364,6 +364,19 @@ deliver what a short fat one can.
 standalone **Terminal** machine, its brush, and the cut tool. And the connectivity readout, which
 lands here because this is the first commit in which a player can build a short.
 
+⛔ **The readout is an OVERLAY, not an inspector line (Stu, 2026-09-08)** — the shape `Overlay.kt`
+already has: `None/Heat/Air/Pressure/Density/Flow`, cycled on `H`, with HUD buttons for direct
+picks. A short is a fact about a *region*, not about a tile, so a per-tile readout answers the wrong
+question — the player needs to see two things they believed were separate wearing one colour.
+
+⚠️ **Colour by component, not by potential.** Potential is a scalar the inspector can print for one
+tile; which circuit a tile belongs to is the thing nothing else can answer, and it is what diagnoses
+a short. A second potential overlay is cheap to add later if the first one leaves a question.
+
+⚠️ A new overlay needs a cadence — `OutofspaceRenderer.kt:1386` maps each one to the pass that feeds
+it, and per `project_oos_interpolation_cadence` the pass stamps when it ran and the view never
+infers a schedule.
+
 ⚠️ **The readout is not deferrable to increment 4.** `Conduit.Power` was once kept out of the build
 menu on the grounds that *"a brush for it would lay cable that does nothing and looks like a bug
 rather than like a feature that has not arrived"* — the same judgement applies to shipping shorts
@@ -394,15 +407,34 @@ wrong pair to hang terminals from.
 
 ⛔ **A terminal sharing a tile with an output port makes that output's rail a conductor**, because a
 terminal bonds the layers present at its tile (§3) and a rail is one of them. So the hydrogen belt
-sits at the cathode's potential and the oxygen belt at the anode's — and **if both belts belong to
-one connected rail network, the cell is shorted through its own logistics and stops.**
+sits at the cathode's potential and the oxygen belt at the anode's — and if both belts belong to one
+connected rail network **made of metal**, the cell is shorted through its own logistics and stops.
 
-⭐ **That is the right answer twice over, which is why it stays.** The two gases already must not
-meet, because `2 H₂ + O₂ → H₂O` lights at 773 K and a store reacts with itself — the whole reason
-`Electrolyzer` has a second output port at all. Now the two *rails* must not meet either, for an
-entirely independent electrical reason, and a real plant separates them for both. ⚠️ But a player
-who runs both belts into one warehouse network kills their cell and has no way to see why. This is
-the increment-3 connectivity readout earning its place, not a hazard to design away.
+⭐ **And the answer is a material, not a rule (Stu, 2026-09-08).** A rail conducts only if it is made
+of something that conducts, and `Segment.material` is per **tile**. So:
+
+> ⭐ **One insulating segment in a metal run is a galvanic isolator made of track.** Packets cross it;
+> charge does not.
+
+Nothing has to be built for this. `electricalConductivityOf` already returns `0L` for a non-metal
+(`Conductivity.kt:101`), `seriesConductance(0, b)` is zero, and the walk already skips a segment that
+conducts nothing. `Stockpile.buildableSpecies` puts no structural constraint on what a run is drawn
+from, and creative mode's standing allowance is *"a structural metal, a conductor, and a rock"* —
+**Forsterite is already in the list**, described in its own doc as *"one that is not a metal at
+all."* ⭐ That comment was written to say the three choices should let a player *"feel the difference
+between the choices"*, at a time when the difference was mass and strength. This is what it turns
+into.
+
+⚠️ **So the isolation is a build decision with a visible cost**: an insulating segment is a segment
+that is not metal, and a run's material is already a strength and mass decision. The player trades
+one against the other.
+
+⭐ **It is also the right answer twice over.** The two gases already must not meet, because
+`2 H₂ + O₂ → H₂O` lights at 773 K and a store reacts with itself — the whole reason `Electrolyzer`
+has a second output port at all. Now the two *rails* must not conduct to each other either, for an
+entirely independent electrical reason, and a real plant separates them for both. ⚠️ But a player who
+runs both metal belts into one network kills their cell and has no way to see why, which is what the
+increment-3 overlay is for.
 
 ⚠️ **Whether the bath is the input store or a fourth `Inside` store is open.** A 3×3 has nine tiles
 and `BufferRole` costs one apiece, so both fit; `PLAN_electrochemistry.md` §5.5 wants a standing
