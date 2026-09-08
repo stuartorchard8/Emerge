@@ -436,9 +436,9 @@ entirely independent electrical reason, and a real plant separates them for both
 runs both metal belts into one network kills their cell and has no way to see why, which is what the
 increment-3 overlay is for.
 
-⚠️ **Whether the bath is the input store or a fourth `Inside` store is open.** A 3×3 has nine tiles
-and `BufferRole` costs one apiece, so both fit; `PLAN_electrochemistry.md` §5.5 wants a standing
-electrolyte and the feed is a throughput, which argues they are different stores. Stu's call.
+✅ **Three stores, and the input port has none of its own** (Stu, 2026-09-08): a bath at each
+electrode and a third **directly between them** at the centre, which is where deliveries land when
+there is room. The stem is a door, not a store. See `PLAN_electrochemistry.md` §5.5.
 
 ⭐ **The electrolyte ceiling lands here too.** `chem/Cell.kt` has `electrolyteStrength` and pure
 water scores zero — seven orders of magnitude below brine — so **a cell full of pure water fails
