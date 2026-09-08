@@ -529,6 +529,35 @@ length, exactly as a parallel pair should.
 happened to drive its run uphill passed. `SolarPanelTest :: every tile of the loop reports the same
 current` is the regression, and it asserts on the whole ring rather than on a total.
 
+#### ⛔ What 3c found in it: the overlay was a photograph, not a window
+
+Both readings went stale, in two different ways, and neither could be seen by a picture of a world
+that was finished before the overlay was switched on — which is what `circuit.txt` is.
+
+⭐ **The tint was sampled once and held for ever.** `cadenceOf` answered `Cadence.SETTLED` for the
+circuit, on the reasoning that the solve runs every tick and so has no span to fade across — which is
+true and is not what `SETTLED` means. A view fades *from what the stamp last said*, so a stamp that
+never advances reads as **nothing has happened since**: `Span.advance` returned `Hold` on every frame
+after the first and the snapshot was never re-read. A player with the overlay open who built anything
+saw the circuit they had before they built it. The fix is a **live stamp with a zero span** — new
+every tick, nothing to ease — which is `Cadences.circuit`, stamped by the power pass like every other
+one. ⚠️ **Not stamped on a frozen tick**: the solve still runs while paused, but a paused world
+cannot have changed, and a stamp that moved during a pause is what stops a half-finished
+interpolation running on to rest (`FrozenTickTest`).
+
+⭐ **And one still killed the carriers for good.** `OutofspaceRenderer.SETTLED` is
+`Double.POSITIVE_INFINITY`, so the *second* settled frame in a row computed `∞ − ∞` for its elapsed
+time — **NaN**, added into every tile's carrier phase, where it stayed: NaN plus anything is NaN, and
+a carrier at a NaN coordinate is not drawn at all. ⚠️ **It survived going live**, because a real time
+minus infinity is `-∞` and clamps to zero rather than clearing anything — so a single still
+screenshot blinded every shot taken after it, which is exactly how an agent-driven script uses this.
+A non-finite step is now *no time passed*: a still does not advance an animation.
+
+⚠️ **The lesson is about the harness as much as the code.** A script that photographs a finished
+world sees neither bug; both need a picture taken **before** a change and another after. `terminal.txt`
+is that shape by construction, and `probe` gained a `circuit` line — the component id and the
+per-face currents — because an overlay is a picture and a script needs a number to assert on.
+
 ### Increment 3c — the terminal machine
 
 ⚠️ **Not started.** The standalone `Terminal` machine, its brush and the cut tool. Machine-borne

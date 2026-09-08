@@ -1071,6 +1071,17 @@ object OutofspaceAgentHarness {
             state.rail.resourceAt(tile)?.let {
                 println("[agent]   load      ${fmt(grams(it.total))}g  ${composition(it)}")
             }
+            // ⚠️ **The circuit, which nothing else here can answer.** The connectivity readout is an
+            // overlay (`PLAN_power_network.md` increment 3b) and an overlay is a picture — so a
+            // script that wants to *assert* on a bond has nothing to read. This is the number the
+            // tint is drawn from: two tiles wearing one component id are one circuit, and the
+            // per-face currents are what the carriers are drawn along.
+            state.circuit.component[tile.index].let { c ->
+                val faces = Direction.entries.joinToString(" ") {
+                    "${it.name.first()}${state.circuit.current[tile.index * 4 + it.ordinal]}"
+                }
+                println("[agent]   circuit   ${if (c < 0) "-" else "#$c"}  current $faces")
+            }
             println("[agent]   heat      ${state.kelvinAt(tile)}K  air ${state.airKelvinAt(tile)}K")
             println("[agent]   pressure  ${state.air.pressureAt(tile)} mmol")
             println("[agent]   density   ${state.air.densityAt(tile)}")

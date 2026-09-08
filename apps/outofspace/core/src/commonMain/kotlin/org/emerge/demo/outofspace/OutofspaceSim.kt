@@ -576,15 +576,25 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // banks it into `heatAdded`, which the heat pass is about to conduct away. Running after it
         // would hold every joule the wire made for a whole tick.
         val potential = w.solvePower(state.potential, structure, state.ambient, state.signals)
+        // Carried forward on a tick a pass skips, so each stamp keeps saying when *that* pass last
+        // ran — which is the question the overlay is asking. See [Cadences]. It is declared here
+        // rather than beside the heat pass below because the power solve is the first pass to stamp
+        // it, and every later one starts from what this leaves.
+        //
+        // ⚠️ **The circuit is stamped every tick the game is running, because the solve runs every
+        // one of them** — see [Cadences.circuit].
+        //
+        // ⛔ **Not while frozen.** The solve still runs on a paused tick, but a paused world cannot
+        // have changed, so there is nothing new for the view to read — and a stamp that moved during
+        // a pause is exactly what stops a half-finished interpolation running on to rest.
+        var cadences =
+            if (frozen) state.cadences else state.cadences.copy(circuit = Cadence(state.tick, 0))
 
         // ── Heat ──────────────────────────────────────────────────────────────────
         val _h0 = _prof0; val _h = if (_h0) TimeSource.Monotonic.markNow() else null
         // When skipped, heat state is carried forward from the previous tick.
         var conductedRadiated = 0L
         var conductedToAir = 0L
-        // Carried forward on a tick the pass skips, so it keeps saying when the pass last ran —
-        // which is the question the overlay is asking. See [Cadences].
-        var cadences = state.cadences
         if (shouldRun(state.tick, HEAT_PERIOD, HEAT_OFFSET, frozen)) {
             cadences = cadences.copy(heat = Cadence(state.tick, HEAT_PERIOD))
             val bodies = bodiesOf(state.grid, w.conduitsSnapshot(), w.deck, w.buffers, w.rail)

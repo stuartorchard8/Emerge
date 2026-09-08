@@ -1399,8 +1399,10 @@ class OutofspaceRenderer {
         // streaks drawn over it are what this span is really for. See [FlowFading].
         Overlay.Air, Overlay.Pressure, Overlay.Density, Overlay.Flow -> state.cadences.fluid
         // ⚠️ The power solve runs every tick and holds no state, so its answer is never stale and
-        // there is no span to fade across — unlike heat, which is a pass the tick may skip.
-        Overlay.Circuit -> Cadence.SETTLED
+        // there is no span to fade across — unlike heat, which is a pass the tick may skip. ⛔ That
+        // is a **zero span on a live stamp**, not [Cadence.SETTLED]: a stamp that never advances is
+        // read as "nothing has happened since", so the tint was sampled once and held for ever.
+        Overlay.Circuit -> state.cadences.circuit
         Overlay.None -> Cadence.SETTLED
     }
 
@@ -1612,7 +1614,19 @@ class OutofspaceRenderer {
 
     private fun advanceCarriers(state: VesselState, simTime: Double) {
         if (carrierPhase.size != state.grid.size) carrierPhase = FloatArray(state.grid.size)
-        val dt = (simTime - carrierClock).coerceIn(0.0, 0.25).toFloat()
+        // ⛔ **A settled clock is infinite, and infinity minus infinity is NaN.**
+        // [OutofspaceRenderer.SETTLED] is `POSITIVE_INFINITY` — a capture that must show where
+        // things *are* rather than where they are going — so the second settled frame in a row
+        // subtracts one infinity from another, and one NaN written into [carrierPhase] stays there
+        // for the rest of the session: every later frame adds to NaN and every carrier is drawn at
+        // a NaN coordinate, which is to say not drawn at all. ⚠️ **It survives going live**, because
+        // a real time minus infinity is negative infinity and clamps to zero rather than clearing
+        // anything, so one settled screenshot killed the carriers for every shot after it.
+        //
+        // A non-finite step is *no time passed*: a settled frame is a still, and a still does not
+        // advance an animation.
+        val step = simTime - carrierClock
+        val dt = if (step.isFinite()) step.coerceIn(0.0, 0.25).toFloat() else 0f
         carrierClock = simTime
         val peak = state.circuit.peak
         if (peak <= 0L) return

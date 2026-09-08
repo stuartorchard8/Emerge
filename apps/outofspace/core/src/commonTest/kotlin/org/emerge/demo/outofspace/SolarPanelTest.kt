@@ -3,6 +3,7 @@ package org.emerge.demo.outofspace
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Ambient
 import org.emerge.demo.outofspace.world.BufferLayer
+import org.emerge.demo.outofspace.world.Cadence
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.Direction
@@ -110,6 +111,36 @@ class SolarPanelTest {
             grid.tile(6, 5), grid.tile(6, 4), negative(),
         )
     )
+
+    // ── What the overlay is hung off ─────────────────────────────────────────
+
+    /**
+     * ⛔ **The solve stamps a live tick, and a zero span — never [Cadence.SETTLED].**
+     *
+     * The circuit overlay fades from *what the stamp last said*, so a stamp that never advances is
+     * read as "nothing has happened since": the tint was sampled on the first frame the overlay was
+     * drawn and held for ever after, and a circuit the player changed while looking at it did not
+     * change on screen. Found by increment 3c's terminal, whose whole picture is a circuit changing.
+     *
+     * ⚠️ **The span is zero and that is the other half.** A pass that runs every tick has nothing to
+     * ease across; what it needs is to be re-read, which is what a live stamp buys.
+     */
+    @Test
+    fun `the circuit is stamped fresh on every tick`() {
+        val one = run(world(loop()), ticks = 1)
+        val eight = run(world(loop()), ticks = 8)
+        assertEquals(
+            one.tick - 1,
+            one.cadences.circuit.writtenAtTick,
+            "the power solve did not stamp the tick it ran on",
+        )
+        assertEquals(
+            eight.tick - 1,
+            eight.cadences.circuit.writtenAtTick,
+            "the circuit stamp stopped advancing, so the overlay would freeze",
+        )
+        assertEquals(0, eight.cadences.circuit.spanTicks, "a pass that runs every tick has a span to fade across")
+    }
 
     // ── The stall ────────────────────────────────────────────────────────────
 

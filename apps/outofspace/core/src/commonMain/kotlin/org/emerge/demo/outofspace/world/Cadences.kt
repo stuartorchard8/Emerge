@@ -32,4 +32,17 @@ data class Cadences(
      * whose span it fades across. A stamp for the pressure pass would be a stamp nothing reads.
      */
     val fluid: Cadence = Cadence.SETTLED,
+
+    /**
+     * The power solve — what the circuit overlay is a picture of.
+     *
+     * ⛔ **A span of zero, and it is not [Cadence.SETTLED].** The solve runs every tick and holds no
+     * state, so its answer is never stale and there is nothing to fade across — which is why the
+     * overlay first read `SETTLED` and why that was wrong. `SETTLED` is a stamp that never advances,
+     * and a view fades *from what the stamp last said*: with a frozen stamp the snapshot is taken
+     * once and held for ever, so a circuit that changed after the overlay was first drawn stayed
+     * invisible. A real tick with a zero span says both true things at once — **new every tick, and
+     * nothing to ease**.
+     */
+    val circuit: Cadence = Cadence.SETTLED,
 )
