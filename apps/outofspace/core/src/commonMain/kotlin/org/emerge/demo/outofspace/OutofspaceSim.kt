@@ -4,6 +4,8 @@ import org.emerge.demo.outofspace.world.Whitelist
 import org.emerge.demo.outofspace.world.Acceptance
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Fluid
+import org.emerge.demo.outofspace.chem.electrolyteStrength
+import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.chem.CELL_FEED
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.MachineSettings
@@ -3122,6 +3124,23 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * and hands back whichever couples win; a charge of water splits because water is the only
          * thing in it. Increment 1 of `PLAN_electrochemistry.md`.
          */
+        /**
+         * **What is across [m]'s own two terminals**, in millivolts, or zero where either end is not
+         * on a conductor.
+         *
+         * ⛔ **A difference and never an absolute.** The unified network has no vessel-wide zero —
+         * `PLAN_power_network.md` §1 — so "the potential at this machine" is not a question with an
+         * answer. What a device runs on is the drop across its own ends, which is also what makes
+         * series wiring mean something without anybody writing series wiring down.
+         */
+        private fun terminalVolts(m: Electrolyzer, tile: TileIndex): Int {
+            val positive = terminalTile(grid, m, tile, TerminalRole.Positive) ?: return 0
+            val negative = terminalTile(grid, m, tile, TerminalRole.Negative) ?: return 0
+            // Microvolts on the field, millivolts in the chemistry — see `HalfReaction`.
+            val drop = before.potential[positive.index] - before.potential[negative.index]
+            return (drop / 1000L).toInt()
+        }
+
         fun split(m: Electrolyzer, on: Boolean, tile: TileIndex): Electrolyzer {
             if (!on) return m
             // ⚠️ **The bath, not the gas.** Hydrogen is what stands at the cathode *today*; the
@@ -3135,21 +3154,27 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if ((oxygenHeld?.total ?: 0L) >= Electrolyzer.BUFFER_CAP) return m
 
             val feed = store(m, tile, BufferRole.Input) ?: return m
+            // ⚠️ **The strength of the STANDING bath, not of the slice about to be worked.** An
+            // electrolyte is what sits in the cell and is drawn on — see `PLAN_electrochemistry.md`
+            // §5.5 — so the salt that carries the current is the salt in the bath, whether or not
+            // this tick's charge happens to contain any of it.
+            val bath = feed
             // ⚠️ Through [Mixture.take], the only exact draw: the complement sums back to the feed to
             // the microgram, and the heat goes with the water rather than staying behind.
-            // ⭐ **What the bus is sitting at**, or the unwired fallback where no run passes under
-            // the machine. A cell short of volts does nothing at all; a cell short of *current* runs
-            // slowly, which is the difference between a threshold and a cliff.
-            // ⛔ **The cell runs free again, and this is a stated regression.** Increment 2 of the
-            // old power model gated it on the potential of its own tile; that model is gone —
-            // `PLAN_power_network.md` §1 — and the knee it compared against was an *absolute*
-            // potential measured against a vessel-wide zero, which the unified network does not
-            // have. The replacement reads a difference across the cell's own two terminals and is
-            // increment 4's, together with the electrolyte that sets its internal resistance.
+            // ⭐ **What is actually across the cell's own two terminals** — `PLAN_power_network.md`
+            // increment 4. A difference, never an absolute: the unified network has no vessel-wide
+            // zero to measure against, which is what made the old model's gate wrong rather than
+            // merely imprecise.
             //
-            // ⚠️ **Not left reading a stale field in the meantime.** A gate that compares against
-            // the wrong reference is worse than no gate: it would look like it worked.
-            val volts = Electrolyzer.UNWIRED_MILLIVOLTS
+            // ⛔ **A cell with no circuit does nothing at all.** No terminal on a conductor, no
+            // panel, or a bus below water's 1230 mV, and `cellAction` refuses — which is the whole
+            // of the threshold and needs no rule of its own. `UNWIRED_MILLIVOLTS` is retired: it was
+            // *"a kindness, not a model"* and the kindness is what stopped wiring from meaning
+            // anything.
+            //
+            // ⚠️ **Read from `before`, per `PLAN_one_tick_causality.md`.** The solve runs later in
+            // this same tick; a pass decides from the world as it stood when the tick began.
+            val volts = terminalVolts(m, tile)
 
             val charge = feed.take(minOf(Electrolyzer.MASS_PER_TICK, feed.total))
             if (charge.total <= 0L) return m
@@ -3159,6 +3184,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Three ceilings, and the smallest governs. ⚠️ None of them is a special case for water:
             // an electrolyte that cannot carry a current and a bus that cannot supply one are the
             // same kind of shortage, and both read as a slower cell rather than a stopped one.
+            //
+            // ⭐ **The electrolyte ceiling, at last.** [electrolyteStrength] has existed unused since
+            // increment 1 and says exactly this: *"what share of a cell's throughput its solution can
+            // actually carry"*, stated as a fraction of the charge because the game has no ion
+            // concentrations to make a conductance out of. Pure water scores **zero**, so a cell of
+            // clean water is inert — not forbidden, just unable to pass a current.
             // ⛔ **The electrolyte ceiling is NOT here yet, and the reason has changed.** A cell needs
             // dissolved ions to carry its current — see [electrolyteStrength] — and an electrolyte is
             // a *standing bath* rather than a throughput. ✅ **That bath now exists**: increment 1b
@@ -3170,7 +3201,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // What is still missing is the *current*, which is `PLAN_power_network.md` increment 4:
             // `I = (ΔV − E) / R_internal`, with `R_internal` read off the standing bath. The gate
             // lands there, against a bath that is already here to be read.
-            var limit = charge.total
+            var limit = scaledRatio(electrolyteStrength(bath).toLong(), 1000L, charge.total)
             if (limit <= 0L) return m
 
             val made = electrolyse(charge, action, limit) ?: return m
@@ -4893,6 +4924,43 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 if (g > 0L) {
                     sources.add(Source(positive, negative, SolarPanel.OPEN_CIRCUIT_MICROVOLTS, g))
                 }
+            }
+
+            // ── Cells, as two-terminal LOADS. ⭐ **`I = (ΔV − E) / R_internal` is not written
+            // anywhere: it is what a `Source` with a back-EMF already is.** The cell opposes the bus
+            // with the potential its reaction needs and conducts through its own electrolyte, so the
+            // current falls to zero as the bus approaches the knee — which is the property increment
+            // 2's chatter finding said the load had to have, arrived at by using the solver's own
+            // shape rather than by adding hysteresis or a dial.
+            //
+            // ⛔ **The sign is what decides forward from reverse**, and nothing branches on it here.
+            // Above the knee the current runs the reaction and the cell is a load; below it the same
+            // edge pushes the other way and the cell drives the bus. Only the *chemistry* of the
+            // reverse direction is missing — `PLAN_power_network.md` increment 4's fuel-cell half —
+            // and the electrical half is already this object.
+            //
+            // ⚠️ **An inert cell is not a short.** Pure water scores zero on `electrolyteStrength`,
+            // so its conductance is zero and it neither draws nor drives — the same sentence as
+            // "a panel with no conductor on one of its ends drives nothing", and it needs no rule.
+            for (tile in grid.tiles) {
+                val cell = deck[tile] as? Electrolyzer ?: continue
+                if (deck.isGhost(tile)) continue
+                if (!cell.wiring.isOn(Action.Run, signals.at(tile))) continue
+                val bath = bufferTile(grid, cell, tile, BufferRole.Input)?.let { buffers.resourceAt(it) }
+                    ?: continue
+                val strength = electrolyteStrength(bath)
+                if (strength <= 0) continue
+                val positive = nodeUnder(bodies, circuit, terminalTile(grid, cell, tile, TerminalRole.Positive))
+                val negative = nodeUnder(bodies, circuit, terminalTile(grid, cell, tile, TerminalRole.Negative))
+                if (positive == Circuit.NOT_CONDUCTING || negative == Circuit.NOT_CONDUCTING) continue
+                // What this bath's chemistry would need, asked of the couples that are actually
+                // available in it rather than of a constant. `Int.MAX_VALUE` because the question
+                // here is "what does the reaction cost", not "may it run" — the running is `split`'s.
+                val knee = cellAction(bath, Int.MAX_VALUE)?.requiredMillivolts ?: continue
+                val g = Electrolyzer.ELECTROLYTE_CONDUCTANCE * strength / 1000L
+                if (g <= 0L) continue
+                // ⚠️ Negative EMF: it opposes, from + to −, which is what makes it a load.
+                sources.add(Source(positive, negative, -knee.toLong() * 1000L, g))
             }
 
             // ⭐ **Seeded by tile, not by node.** Node ids are rebuilt with the bodies every tick, so

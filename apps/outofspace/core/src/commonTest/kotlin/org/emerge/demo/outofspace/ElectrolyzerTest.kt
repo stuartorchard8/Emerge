@@ -9,6 +9,9 @@ import org.emerge.demo.outofspace.chem.electrolyse
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.BufferRole
+import org.emerge.demo.outofspace.world.machine.SolarPanel
+import org.emerge.demo.outofspace.world.materialBefore
+import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
@@ -45,17 +48,39 @@ class ElectrolyzerTest {
 
     /**
      * The machine, at (5,3) facing right — **three baths along one edge**, so all three mouths are on
-     * row 3: hydrogen out at (4,3), the feed in at (5,3), oxygen out at (6,3). Its two terminals
-     * stand above them at (4,2) and (6,2), on casing with no port.
+     * row 3: hydrogen out at (4,5), the feed in at (5,5), oxygen out at (6,5). Its two terminals
+     * stand above them at (4,4) and (6,4), on casing with no port.
      *
-     * ⚠️ **It was a 3×3 whose ports made a T** until `PLAN_electrochemistry.md` §5.5 — feed at (4,3),
-     * hydrogen at (6,3), oxygen at (5,4). Every belt in this fixture moved with the doors; not one
+     * ⚠️ **It was a 3×3 whose ports made a T** until `PLAN_electrochemistry.md` §5.5. Every belt in this fixture moved with the doors; not one
      * assertion about what the machine *does* changed.
      */
-    private val plantAt = grid.tile(5, 3)
-    private val hydrogenTank = grid.tile(1, 3)
-    private val oxygenTank = grid.tile(9, 3)
-    private val feedTank = grid.tile(5, 7)
+    /**
+     * The cell at (5,5) **facing Left**, so its three baths are on row 5 and its two terminals on
+     * row 6, directly under their own electrodes: anode (oxygen) at (4,5) over positive (4,6), and
+     * cathode (hydrogen) at (6,5) over negative (6,6). The feed enters between them at (5,5).
+     *
+     * ⚠️ **Facing Left is not arbitrary — it is what makes the wiring short.** A [SolarPanel] is not
+     * a [org.emerge.demo.outofspace.world.machine.DirectedDeckMachine], so its ends are fixed with
+     * positive on its left; a cell facing Right has positive on its *right*, so the two would have to
+     * be cross-wired and one leg would go the long way round. Turned about, they face each other and
+     * every leg is three tiles.
+     */
+    private val plantAt = grid.tile(5, 5)
+    private val hydrogenTank = grid.tile(9, 5)
+    private val oxygenTank = grid.tile(1, 5)
+    private val feedTank = grid.tile(5, 2)
+
+    /**
+     * Directly below the cell — and **the distance is the point**.
+     *
+     * ⚠️ **A long run does not drive a cell**, which two earlier versions of this fixture found the
+     * hard way: with the panel across the grid the cell saw **128 mV** of the panel's 2.36 V, and
+     * cross-wired it saw **−480 mV** and was being back-driven. `SolarPanel.CONDUCTANCE_PER_FACE` is
+     * anchored at *"about ten tiles of copper cable"*, so a long loop is most of the circuit's
+     * resistance and the wire gets the volts. That is `PLAN_power_network.md` §5 working exactly as
+     * written, and it is a thing a player will meet.
+     */
+    private val panelAt = grid.tile(5, 8)      // covers x 4..6, y 7..9; ends at (4,8) and (6,8)
 
     private fun run(state: VesselState, ticks: Int): VesselState {
         var s = state
@@ -76,18 +101,55 @@ class ElectrolyzerTest {
      * became affordable. ⛔ **If the dial ever comes back down, that test is the one that will start
      * timing out, and its charge is the thing to grow — not its patience.**
      */
+    /** Cable laid along [path], each tile joined to the next — `SolarPanelTest`'s helper. */
+    private fun cable(layer: Array<Segment?>, path: List<TileIndex>) {
+        for (t in path) layer[t.index] = Segment(Conduit.Power, material = Species.Copper)
+        for (i in 0 until path.size - 1) {
+            val a = path[i]
+            val b = path[i + 1]
+            val dir = Direction.entries.first { grid.neighbour(a, it) == b }
+            layer[a.index] = layer[a.index]!!.joinedTo(dir)
+            layer[b.index] = layer[b.index]!!.joinedTo(dir.opposite)
+        }
+    }
+
+    /**
+     * An electrolyzer with a charge in its feed, two belts leading away from it, **and a panel wired
+     * across its two terminals**.
+     *
+     * ⛔ **The wiring is not scenery** — `PLAN_power_network.md` increment 4. A cell reads what is
+     * across its own two ends, so a cell with no circuit does nothing at all and `UNWIRED_MILLIVOLTS`
+     * is gone. The panel is silicon for [SolarPanelTest]'s reason: a conductive casing is a parallel
+     * path around a machine's own work, so a copper panel shorts itself.
+     *
+     * ⚠️ **Two runs that must never touch**, one per terminal — they are the two sides of a circuit,
+     * and a tile shared between them is a dead short across both machines. The cell's ends are at
+     * (4,4) and (6,4); the panel's are at (4,1) and (6,1).
+     */
     private fun plant(feed: Mixture): VesselState {
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
-        deck += Electrolyzer(plantAt, Direction.Right)          // covers x 4..6, y 2..3
-        // Facing Left, so its input port is on its right at (2,3), under the end of the hydrogen run.
-        deck += fixtureStorage(hydrogenTank, Direction.Left)
-        deck += fixtureStorage(oxygenTank, Direction.Right)     // input port at (8,3)
-        joinRow(grid, rails, 2, 4, 3)   // hydrogen run, leaving to the left
-        joinRow(grid, rails, 6, 8, 3)   // oxygen run, leaving to the right
+        val power = arrayOfNulls<Segment>(grid.size)
+        // ⛔ **Firebrick, and it is `PLAN_power_network.md` §5 rather than decoration.** A machine's
+        // casing is a *parallel path* between its own two terminals, so a cell cased in metal shorts
+        // around its own electrolyte and does nothing but warm up. Built from `materialBefore`'s
+        // metal this fixture measured **556 mV** across a cell that needed 1230, with the current
+        // going round the outside — which is the mechanic working, not a wiring fault.
+        deck.stand(Electrolyzer(plantAt, Direction.Left), withCasing = true, material = Species.Firebrick)
+        deck += fixtureStorage(hydrogenTank, Direction.Right)    // input port at (8,5)
+        deck += fixtureStorage(oxygenTank, Direction.Left)       // input port at (2,5)
+        deck.stand(SolarPanel(panelAt), withCasing = true, material = Species.Silicon)
+        joinRow(grid, rails, 6, 8, 5)   // hydrogen run, leaving the cathode to the right
+        joinRow(grid, rails, 2, 4, 5)   // oxygen run, leaving the anode to the left
+
+        // ⭐ Positive to positive and negative to negative, three tiles a leg. The two runs share no
+        // tile: they are the two sides of one circuit, and a tile in common is a dead short.
+        cable(power, (6..8).map { grid.tile(4, it) })
+        cable(power, (6..8).map { grid.tile(6, it) })
+
         return VesselState(
             grid, deck,
-            conduits = Conduits.ofRails(rails.toList()),
+            conduits = Conduits.of(grid.size, Conduit.Rail to rails.toList(), Conduit.Power to power.toList()),
             buffers = BufferLayer.forDeck(grid, deck),
             rail = RailLayer.empty(grid.size),
         ).stocked(plantAt, feed)
@@ -102,11 +164,10 @@ class ElectrolyzerTest {
     private fun fedFrom(cargo: Mixture): VesselState {
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
-        deck += Electrolyzer(plantAt, Direction.Right)      // covers x 4..6, y 2..3
-        // ⚠️ **The feed comes from BELOW now**, because the feed port is the middle of the bath edge
-        // and the two gas mouths have the ends of it. Facing Up, so the tank pours upward from (5,6).
-        deck += fixtureStorage(feedTank, Direction.Up)
-        joinCol(grid, rails, 5, 3, 6)                       // tank → the plant's input port
+        deck += Electrolyzer(plantAt, Direction.Left)       // covers x 4..6, y 5..6
+        // Facing Down, so the tank pours downward from (5,3) into the cell's feed at (5,5).
+        deck += fixtureStorage(feedTank, Direction.Down)
+        joinCol(grid, rails, 5, 3, 5)                       // tank → the plant's input port
         return VesselState(
             grid, deck,
             conduits = Conduits.ofRails(rails.toList()),
@@ -115,8 +176,101 @@ class ElectrolyzerTest {
         ).stocked(feedTank, cargo)
     }
 
+    /** The same plant with a chosen casing and, optionally, no cable at all. */
+    private fun plant(feed: Mixture, casing: Species, wired: Boolean = true): VesselState {
+        val whole = plant(feed)
+        if (wired && casing == Species.Firebrick) return whole
+        val deck = DeckArray(grid)
+        for (m in listOf(hydrogenTank, oxygenTank).mapNotNull { whole.deck[it] }) {
+            deck.stand(m, withCasing = true, material = materialBefore(m.kind))
+        }
+        deck.stand(Electrolyzer(plantAt, Direction.Left), withCasing = true, material = casing)
+        deck.stand(SolarPanel(panelAt), withCasing = true, material = Species.Silicon)
+        val power = arrayOfNulls<Segment>(grid.size)
+        if (wired) {
+            cable(power, (6..8).map { grid.tile(4, it) })
+            cable(power, (6..8).map { grid.tile(6, it) })
+        }
+        val rails = arrayOfNulls<Segment>(grid.size)
+        joinRow(grid, rails, 6, 8, 5)
+        joinRow(grid, rails, 2, 4, 5)
+        return VesselState(
+            grid, deck,
+            conduits = Conduits.of(grid.size, Conduit.Rail to rails.toList(), Conduit.Power to power.toList()),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+        ).stocked(plantAt, feed)
+    }
+
+    private fun madeAnything(s: VesselState): Long =
+        (s.inStore(plantAt, BufferRole.Cathode)?.total ?: 0L) +
+            (s.inStore(plantAt, BufferRole.Anode)?.total ?: 0L)
+
+    // ── What a cell needs before it will run at all ───────────────────────────
+
+    /**
+     * ⛔ **A cell with no circuit does nothing**, and no rule says so — `cellAction` simply refuses a
+     * bus that cannot clear water's 1230 mV.
+     *
+     * ⚠️ **`UNWIRED_MILLIVOLTS` is retired and this is what replaced it.** That constant's own doc
+     * called it *"a kindness, not a model"* and *"the first thing to delete when power is billed
+     * for"*: it handed every unwired cell 1500 mV so that a machine placed without wiring still did
+     * something. What it actually did was stop wiring from meaning anything.
+     */
+    @Test
+    fun `a cell with nothing wired to it does nothing`() {
+        val after = run(plant(brine(), Species.Firebrick, wired = false), 200)
+        assertEquals(0L, madeAnything(after), "an unwired cell split water")
+    }
+
+    /**
+     * ⛔ **And a cell of clean water does nothing either**, for a different reason and with no rule
+     * either. [org.emerge.demo.outofspace.chem.electrolyteStrength] scores pure water at **zero**, so
+     * there are no ions to carry a current: the cell is not forbidden, it is open-circuit.
+     *
+     * ⭐ **This is the electrolyte ceiling `chem/Cell.kt` was written for**, unused since increment 1
+     * and asked for the first time here.
+     */
+    @Test
+    fun `a cell of clean water does nothing, because clean water carries no current`() {
+        val after = run(plant(water()), 200)
+        assertEquals(0L, madeAnything(after), "pure water carried a current")
+    }
+
+    /**
+     * ⛔ **A metal-cased cell shorts around its own chemistry** — `PLAN_power_network.md` §5, and the
+     * strongest thing in that plan: a machine's casing is a **parallel path** between its two
+     * terminals, so the current takes the low road and the work does not happen.
+     *
+     * ⚠️ **Found the hard way, which is why it is pinned.** This fixture was built out of
+     * `materialBefore`'s metal and measured **556 mV** across a cell that needed 1230 — the same
+     * plant, the same panel, the same cable, and nothing wrong with any of it. `PLAN_material_selection.md`
+     * deleted the `Material` enum on the grounds that nothing is normally made of anything; this is
+     * what made that choice *functional*.
+     */
+    @Test
+    fun `a steel cell shorts itself and splits nothing`() {
+        val after = run(plant(brine(), Species.Steel), 200)
+        assertEquals(0L, madeAnything(after), "a steel-cased cell drove current through its electrolyte")
+    }
+
     private fun water(packets: Long = 8L): Mixture =
         Mixture.of(Species.Water to packets * Capacity.PACKET_MASS, energy = 0L).atAmbient()
+
+    /**
+     * The same water with salt standing in it — **what a working cell is actually full of**.
+     *
+     * ⛔ **A cell of clean water is inert and that is the physics, not a gate.**
+     * [org.emerge.demo.outofspace.chem.electrolyteStrength] scores pure water at zero, so there is
+     * nothing to carry a current. The salt is **not consumed** — no half-reaction names halite — so
+     * it stands in the bath exactly as an electrolyte should, and the water still yields the same
+     * hydrogen and oxygen it always did.
+     */
+    private fun brine(packets: Long = 8L, salt: Long = 2L): Mixture = Mixture.of(
+        Species.Water to packets * Capacity.PACKET_MASS,
+        Species.Halite to salt * Capacity.PACKET_MASS,
+        energy = 0L,
+    ).atAmbient()
 
     /**
      * One pass of the cell over [charge], the way the machine runs it.
@@ -157,7 +311,7 @@ class ElectrolyzerTest {
 
     @Test
     fun `hydrogen and oxygen land in stores that never meet`() {
-        val after = run(plant(water()), 200)
+        val after = run(plant(brine()), 200)
 
         val hydrogen = after.inStore(plantAt, BufferRole.Cathode)
         val oxygen = after.inStore(plantAt, BufferRole.Anode)
@@ -181,7 +335,7 @@ class ElectrolyzerTest {
         // which is what a player sees. A hydrogen packet is nine hundred kilograms of water away, so
         // the charge is twenty belt-loads — enough for two of them, and enough that the run spends
         // most of its length gated by the oxygen belt rather than by the dial.
-        val after = run(plant(water(20)), 300)
+        val after = run(plant(brine(20, 5)), 1200)
 
         val hydrogen = tank(after, hydrogenTank)
         val oxygen = tank(after, oxygenTank)
@@ -207,15 +361,15 @@ class ElectrolyzerTest {
         // dialled, so a player can lay a belt without inspecting the machine first.
         val s = plant(water())
         assertEquals(
-            s.grid.tile(4, 3), bufferTileOf(s, BufferRole.Cathode),
+            s.grid.tile(6, 5), bufferTileOf(s, BufferRole.Cathode),
             "the cathode bath is not on the cathode-end port",
         )
         assertEquals(
-            s.grid.tile(5, 3), bufferTileOf(s, BufferRole.Input),
+            s.grid.tile(5, 5), bufferTileOf(s, BufferRole.Input),
             "the feed store is not on the middle port, between the two electrodes",
         )
         assertEquals(
-            s.grid.tile(6, 3), bufferTileOf(s, BufferRole.Anode),
+            s.grid.tile(4, 5), bufferTileOf(s, BufferRole.Anode),
             "the anode bath is not on the anode-end port",
         )
     }
@@ -233,7 +387,7 @@ class ElectrolyzerTest {
      */
     @Test
     fun `the reduction product lands in the bath under the negative terminal`() {
-        val after = run(plant(water()), 30)
+        val after = run(plant(brine()), 60)
         val cell = after.deck[plantAt]!!
 
         val cathodeBath = bufferTileOf(after, BufferRole.Cathode)
@@ -242,8 +396,8 @@ class ElectrolyzerTest {
         val positive = terminalTile(after.grid, cell, plantAt, TerminalRole.Positive)
 
         // Directly above each bath, on casing that carries no port at all — see the fixture's note.
-        assertEquals(after.grid.tile(4, 2), negative, "the negative terminal is not over the cathode bath")
-        assertEquals(after.grid.tile(6, 2), positive, "the positive terminal is not over the anode bath")
+        assertEquals(after.grid.tile(6, 6), negative, "the negative terminal is not over the cathode bath")
+        assertEquals(after.grid.tile(4, 6), positive, "the positive terminal is not over the anode bath")
 
         val cathode = after.buffers.resourceAt(cathodeBath!!)
         val anode = after.buffers.resourceAt(anodeBath!!)
@@ -264,7 +418,10 @@ class ElectrolyzerTest {
         val feed = s.grid.xOf(bufferTileOf(s, BufferRole.Input)!!)
         val anode = s.grid.xOf(bufferTileOf(s, BufferRole.Anode)!!)
 
-        assertTrue(cathode < feed && feed < anode, "the three baths are not in a line, in that order")
+        assertTrue(
+            feed > minOf(cathode, anode) && feed < maxOf(cathode, anode),
+            "the feed does not stand between the two electrodes",
+        )
         assertEquals(
             s.grid.yOf(bufferTileOf(s, BufferRole.Cathode)!!),
             s.grid.yOf(bufferTileOf(s, BufferRole.Anode)!!),

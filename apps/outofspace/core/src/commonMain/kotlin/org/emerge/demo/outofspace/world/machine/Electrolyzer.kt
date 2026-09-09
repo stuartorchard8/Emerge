@@ -91,6 +91,28 @@ data class Electrolyzer(
         const val UNWIRED_MILLIVOLTS: Int = 1500
 
         /**
+         * **What a cell's electrolyte conducts at full strength**, in the units [SolarPanel] states
+         * its own conductance in.
+         *
+         * ⭐ **Anchored against a panel, so that a plant is a thing a player sizes.** One fully lit
+         * panel's internal conductance is [SolarPanel.CONDUCTANCE_PER_FACE] times its exposed faces;
+         * a cell at full electrolyte strength is set to about the same, so **one panel drives one
+         * cell at roughly half its open-circuit voltage** and a second cell on the same bus visibly
+         * sags it. That is the length scale at which a player can *see* that another panel helped,
+         * which is the argument `CONDUCTANCE_PER_FACE` itself is derived by.
+         *
+         * ⚠️ **A lever, not a derivation**, and it is the same lever the panel's is: nothing here is
+         * anchored to a joule yet. `PLAN_power_network.md` increment 5 is where a cell's draw becomes
+         * worth something definite against `HEATER_POWER`, and where this number gets an argument
+         * instead of a calibration.
+         *
+         * ⛔ **Scaled by [org.emerge.demo.outofspace.chem.electrolyteStrength], so pure water
+         * conducts nothing** — which is what makes a cell of clean water inert without any rule
+         * forbidding it.
+         */
+        const val ELECTROLYTE_CONDUCTANCE: Long = 117_213L / 10L
+
+        /**
          * **The dial.** How much water it takes apart in a tick, at full activation: one belt-load.
          *
          * ⛔ **Chosen, not derived — and knowingly overpowered.** It used to be [HEATER_POWER]'s

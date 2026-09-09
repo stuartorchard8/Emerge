@@ -655,7 +655,36 @@ menu on the grounds that *"a brush for it would lay cable that does nothing and 
 rather than like a feature that has not arrived"* — the same judgement applies to shipping shorts
 the player cannot see. ⛔ **A panel is not done until screenshotted.**
 
-### Increment 4 — the cell, forward and reverse
+### Increment 4 — the cell, forward and reverse ✅ **FORWARD BUILT** (2026-09-09)
+
+`9aa861b5` the brine appetite · the load and the ceiling below. ⏸ **The reverse half is not built** —
+see the note at the foot of this section.
+
+**Where it landed differently:**
+
+- ⛔ **The cell's appetite had to widen first, and the plan did not see it.** The electrolyte ceiling
+  makes a pure-water cell inert *by design*, but the feed port accepted `SpeciesFilter(Water,
+  pure = true)` — so nothing could ever deliver the thing that makes the machine run. The plan
+  anticipated the test *fixture* gaining salt, but `plant()` stocks by hand and bypasses the route, so
+  the fixture would have worked while the machine did not. A cell takes **brine** now, which is what
+  chlor-alkali is.
+- ⭐ **`I = (ΔV − E)/R_internal` is not written anywhere.** It is what a `Source` with a **back-EMF**
+  already is: the cell opposes the bus with its own reaction potential and conducts through its
+  electrolyte, so the current falls to zero as the bus approaches the knee. Increment 2's chatter
+  finding is answered by the solver's own shape rather than by hysteresis or a dial — and the same
+  object is the reverse direction, waiting only on the chemistry.
+- ⚠️ **The rate is the electrolyte's share of the throughput, not a current-to-mass conversion.**
+  `electrolyteStrength` says exactly that and has been unused since increment 1. Anchoring grams to
+  amps is increment 5's, where power gets billed against `HEATER_POWER`.
+- ⭐ **§5's casing argument bit immediately, and it was found the hard way.** The test fixture built
+  its cell out of `materialBefore`'s metal and measured **556 mV** across a cell needing 1230, the
+  current going round the outside. Firebrick fixed it. Pinned as `a steel cell shorts itself and
+  splits nothing`, along with the two other ways a cell does nothing: no circuit, and no electrolyte.
+- ⚠️ **And §5's *wire* argument bit too.** Twenty tiles of cable each way left the cell at **128 mV**
+  of the panel's 2.36 V. `CONDUCTANCE_PER_FACE` is anchored at "about ten tiles of copper cable", so a
+  long loop is most of the circuit's resistance. A player will meet this.
+
+
 
 `I = (ΔV − E) / R_internal`, where `E` is the reaction potential across the cell's own terminals and
 `R_internal` is its electrolyte. **One equation; the sign decides.** Above the knee it splits water
@@ -714,6 +743,15 @@ water scores zero — seven orders of magnitude below brine — so **a cell full
 because the network cannot push current through it**, not because anything forbids it. That needs
 the standing bath `PLAN_electrochemistry.md` §5.5 adds, and it is the load model's `R_internal`
 rather than a gate bolted on beside it.
+
+### ⏸ The reverse half, not built
+
+Above the knee the cell splits water; **below it, it should burn hydrogen and oxygen back and drive
+the bus**. The electrical half of that is already here — a back-EMF source conducts both ways and the
+sign of the current decides — so what is missing is only the *chemistry* of running a `CellAction`
+backwards, and somewhere for a fuel cell's water to go. ⚠️ It is a regenerative fuel cell and it is
+the battery this plan says is neither a machine nor §2 of the model, so it deserves its own increment
+rather than being tacked onto the end of this one.
 
 ⚠️ **Keep increment 2's chatter finding.** A cell allowed to spend its whole tile drained itself
 below its knee and limit-cycled on five ticks in forty *with power to spare*. The answer was neither
