@@ -2377,24 +2377,24 @@ class OutofspaceHud {
                     0x9A9A9AFFL,
                     0xE0864AFFL,
                 )
-                speciesChips(controller, "IN", reaction.inputs)
-                speciesChips(controller, "OUT", reaction.products)
+                speciesColumn(controller, "IN", reaction.inputs)
+                speciesColumn(controller, "OUT", reaction.products)
                 gap()
             }
         }
     }
 
     /** One side of a reaction: an inert label, then a chip per species that opens its article. */
-    private fun PanelBuilder.speciesChips(
+    private fun PanelBuilder.speciesColumn(
         controller: OutofspaceController,
         side: String,
         entries: List<Pair<Species, Int>>,
-    ) = actionRow(
-        listOf(Triple(side, 0x00000000L) { }) +
-            entries.map { (species, units) ->
-                Triple("$units ${species.name.uppercase()}", 0x1E2634FFL) { controller.openWiki(species) }
-            },
-    )
+    ) {
+        row { button(side, 0x00000000L) {} }
+        entries.forEach { (species, units) ->
+            row { button("$units ${species.name.uppercase()}", 0x1E2634FFL) { controller.openWiki(species) } }
+        }
+    }
 
     /**
      * The lock on a warehouse: what it is holding, and the threshold to hold it to.
