@@ -3158,11 +3158,17 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Three ceilings, and the smallest governs. ⚠️ None of them is a special case for water:
             // an electrolyte that cannot carry a current and a bus that cannot supply one are the
             // same kind of shortage, and both read as a slower cell rather than a stopped one.
-            // ⛔ **The electrolyte ceiling is NOT here yet, and the reason is an ordering problem
-            // rather than an omission.** A cell needs dissolved ions to carry its current — see
-            // [electrolyteStrength] — but this machine's appetite is for *pure* water, stated at the
-            // route, so salt cannot ride the feed. An electrolyte is a standing bath and the bath is
-            // the `Inside` store that `PLAN_electrochemistry.md` §5.5 adds. The gate lands with it.
+            // ⛔ **The electrolyte ceiling is NOT here yet, and the reason has changed.** A cell needs
+            // dissolved ions to carry its current — see [electrolyteStrength] — and an electrolyte is
+            // a *standing bath* rather than a throughput. ✅ **That bath now exists**: increment 1b
+            // made the feed a bath of its own, directly between the two electrodes, and what a pass
+            // does not consume stays standing in it. ⚠️ It is [BufferRole.Input] and not `Inside` —
+            // the 3×2 gave every store its own port, so the cell needs no `Inside` and none of the
+            // machinery that would have gone with one.
+            //
+            // What is still missing is the *current*, which is `PLAN_power_network.md` increment 4:
+            // `I = (ΔV − E) / R_internal`, with `R_internal` read off the standing bath. The gate
+            // lands there, against a bath that is already here to be read.
             var limit = charge.total
             if (limit <= 0L) return m
 

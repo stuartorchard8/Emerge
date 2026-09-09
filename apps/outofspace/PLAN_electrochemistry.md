@@ -584,7 +584,30 @@ has its own gotchas; a machine kind called `Cell` would collide with it.
 ⭐ **So the rename waits on the battery decision, not on appetite.** Renaming twice would be worse
 than renaming late, and thirteen compiler-checked sites is a cost that stays affordable.
 
-### Increment 1b — the cell gains its shape and its three baths
+### Increment 1b — the cell gains its shape and its three baths ✅ BUILT (2026-09-09)
+
+| | landed as | |
+|---|---|---|
+| 1b.1 the shape | `92cf6675` | `FootprintTest`, `ElectrolyzerTest` |
+| 1b.2 the three baths | `952901f0` | `BufferRoleTest`, `ElectrolyzerTest` |
+| 1b.3 a bath states a volume | `0eadc889` | `BathTest` |
+| 1b.4 electrodes write into their own baths | below | `ElectrolyzerTest` |
+
+**Where it landed differently:**
+
+- ⛔ **The volume does ONE job, not two** — see the correction banner in §5.5. Measured, not argued.
+- ⭐ **1b.4 was substantially delivered by 1b.2**, and that is a fact about the code rather than a
+  shortcut: `electrolyse` has always handed back `cathode` and `anode`, so the chemistry already
+  spoke in electrodes and the machine was only ever *sorting them into stores named for something
+  else*. Renaming the stores was the whole of "each electrode writes into its own". What 1b.4 added
+  is the pin nothing had: that the bath a reduction product lands in is the one under the **negative**
+  terminal, and that the feed bath stands **between** the two — the spatial claim increment 3's ion
+  migration will rest on.
+- ✅ **The standing bath exists now**, which retires a comment in `Work.split` that pointed at an
+  `Inside` store the 3×2 deleted. `PLAN_power_network.md` increment 4's `R_internal` has a bath to
+  read.
+
+
 
 ⚠️ **This is unbuilt work sitting under a heading marked ✅ BUILT, and that is a documentation bug
 this increment exists to correct.** Increment 1 shipped on 2026-09-06: it landed the competition rule

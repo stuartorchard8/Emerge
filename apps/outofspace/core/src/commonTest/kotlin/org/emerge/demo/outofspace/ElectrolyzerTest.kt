@@ -14,6 +14,8 @@ import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.Segment
+import org.emerge.demo.outofspace.world.TerminalRole
+import org.emerge.demo.outofspace.world.terminalTile
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
@@ -215,6 +217,58 @@ class ElectrolyzerTest {
         assertEquals(
             s.grid.tile(6, 3), bufferTileOf(s, BufferRole.Anode),
             "the anode bath is not on the anode-end port",
+        )
+    }
+
+    /**
+     * ⭐ **The chemistry and the geometry agree about which end is which**, and nothing else in the
+     * suite says so.
+     *
+     * `electrolyse` hands back `cathode` and `anode` — it has always spoken in electrodes — and the
+     * baths are named for electrodes too, so the reducer's job is to put one in the other. What this
+     * pins is the *third* leg: that the bath a reduction product lands in is the one standing under
+     * the **negative** terminal. Get that backwards and a cell would look entirely plausible while
+     * being wired inside out, which is the mistake `TerminalRole`'s own doc warns about for the
+     * panel.
+     */
+    @Test
+    fun `the reduction product lands in the bath under the negative terminal`() {
+        val after = run(plant(water()), 30)
+        val cell = after.deck[plantAt]!!
+
+        val cathodeBath = bufferTileOf(after, BufferRole.Cathode)
+        val anodeBath = bufferTileOf(after, BufferRole.Anode)
+        val negative = terminalTile(after.grid, cell, plantAt, TerminalRole.Negative)
+        val positive = terminalTile(after.grid, cell, plantAt, TerminalRole.Positive)
+
+        // Directly above each bath, on casing that carries no port at all — see the fixture's note.
+        assertEquals(after.grid.tile(4, 2), negative, "the negative terminal is not over the cathode bath")
+        assertEquals(after.grid.tile(6, 2), positive, "the positive terminal is not over the anode bath")
+
+        val cathode = after.buffers.resourceAt(cathodeBath!!)
+        val anode = after.buffers.resourceAt(anodeBath!!)
+        assertTrue((cathode?.get(Species.Hydrogen) ?: 0L) > 0L, "no hydrogen at the cathode")
+        assertTrue((anode?.get(Species.Oxygen) ?: 0L) > 0L, "no oxygen at the anode")
+    }
+
+    /**
+     * ⭐ **The feed bath stands directly between the two electrode baths**, which is the claim
+     * increment 3's ion migration is going to need: cations drifting to the cathode and anions to the
+     * anode is a movement from the middle to each end, rather than a bookkeeping entry between two
+     * stores that happen to share an owner.
+     */
+    @Test
+    fun `the feed bath stands between the two electrodes`() {
+        val s = plant(water())
+        val cathode = s.grid.xOf(bufferTileOf(s, BufferRole.Cathode)!!)
+        val feed = s.grid.xOf(bufferTileOf(s, BufferRole.Input)!!)
+        val anode = s.grid.xOf(bufferTileOf(s, BufferRole.Anode)!!)
+
+        assertTrue(cathode < feed && feed < anode, "the three baths are not in a line, in that order")
+        assertEquals(
+            s.grid.yOf(bufferTileOf(s, BufferRole.Cathode)!!),
+            s.grid.yOf(bufferTileOf(s, BufferRole.Anode)!!),
+            "the two electrodes are not on the same edge",
         )
     }
 
