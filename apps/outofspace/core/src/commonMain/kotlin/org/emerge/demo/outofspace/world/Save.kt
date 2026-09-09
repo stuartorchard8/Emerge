@@ -1975,7 +1975,7 @@ object Save {
 
         val machine: DeckMachine = when (kind) {
             DeckMachineKind.Hull -> Hull(tile)
-            DeckMachineKind.SolarPanel -> SolarPanel(tile)
+            DeckMachineKind.SolarPanel -> SolarPanel(tile, facing())
             DeckMachineKind.Terminal -> Terminal(tile)
             DeckMachineKind.Airlock -> Airlock(tile)
             DeckMachineKind.Vent -> Vent(tile, ventedMass = massNum("vented", 0L))

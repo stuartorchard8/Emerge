@@ -272,7 +272,13 @@ fun DeckMachine.withSettings(settings: MachineSettings): DeckMachine {
         }
         // Nothing to configure but the wire: what a panel makes is set by where it stands and how
         // bright it is out there, neither of which is a setting.
-        DeckMachineKind.SolarPanel -> settings.wiring.let { if (it is Setting.Present) withWiring(it.value) else base }
+        DeckMachineKind.SolarPanel -> {
+            base as SolarPanel
+            var result = base
+            if (settings.wiring is Setting.Present) result = result.copy(wiring = settings.wiring.value)
+            if (settings.facing is Setting.Present) result = result.copy(facing = settings.facing.value)
+            result
+        }
         // Nothing to configure at all: a rod bonds what stands on its tile whatever the wire says.
         // Its wiring is carried for the same reason a hull's is — every machine has one — and read
         // by nothing.

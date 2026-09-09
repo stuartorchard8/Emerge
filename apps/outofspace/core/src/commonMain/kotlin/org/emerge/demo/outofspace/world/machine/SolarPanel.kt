@@ -2,6 +2,7 @@ package org.emerge.demo.outofspace.world.machine
 
 import org.emerge.demo.outofspace.world.Ambient
 import org.emerge.demo.outofspace.world.Source
+import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
 
@@ -42,9 +43,25 @@ import org.emerge.demo.outofspace.world.Wiring
  */
 data class SolarPanel(
     override val center: TileIndex,
+    /**
+     * **Which way round its two ends are** — and that is the whole of what it decides.
+     *
+     * ⛔ **It had none, and a machine with two electrical ends and no way to swap them is one a
+     * player cannot wire** (Stu, 2026-09-09). A panel's positive terminal sits at one end of its
+     * centre line and its negative at the other; a cell's do too, so a panel and a cell facing the
+     * same way have to be cross-wired, and one leg goes the long way round. `R` did nothing, because
+     * there was no facing to turn.
+     *
+     * ⚠️ **Nothing else reads it, deliberately.** What a panel collects is
+     * [org.emerge.demo.outofspace.world.StructureMap.openToSpace] over its own faces, which is the
+     * same set of faces whichever way it is pointed — see [conductanceAt]. So turning one is purely
+     * about where its wires go, which is what the terminal marks now show.
+     */
+    override val facing: Direction = Direction.Right,
     override val wiring: Wiring = Wiring.RUNNING,
-) : DeckMachine {
+) : DirectedDeckMachine {
     override val kind: DeckMachineKind get() = DeckMachineKind.SolarPanel
+    override fun rotated(): DeckMachine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
     override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
 

@@ -15,10 +15,12 @@ import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.DirectedDeckMachine
 import org.emerge.demo.outofspace.world.machine.SolarPanel
 import org.emerge.demo.outofspace.world.terminalTile
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 /**
@@ -35,8 +37,45 @@ class SolarPanelTest {
     private val panelAt = grid.tile(4, 4)
 
     private fun panel() = SolarPanel(panelAt)
+
+    /**
+     * ⭐ **A panel turns, and turning it swaps its ends** (Stu, 2026-09-09).
+     *
+     * ⛔ **It had no facing at all**, so `R` did nothing to one and its positive terminal was
+     * permanently on its left. That is a machine a player cannot wire: a cell's ends are on *its*
+     * centre line too, so a panel and a cell pointed the same way have to be cross-wired and one leg
+     * goes the long way round — which costs volts, because
+     * [SolarPanel.CONDUCTANCE_PER_FACE] is anchored at about ten tiles of cable.
+     *
+     * ⚠️ **What it does NOT change is what the panel collects.** Exposure is `openToSpace` over its
+     * own faces, and those are the same faces whichever way it points — pinned below so that a future
+     * reading of the facing has to argue for itself.
+     */
     private fun positive(): TileIndex = terminalTile(grid, panel(), panelAt, TerminalRole.Positive)!!
     private fun negative(): TileIndex = terminalTile(grid, panel(), panelAt, TerminalRole.Negative)!!
+
+    @Test
+    fun `turning a panel moves its terminals, and turning it about swaps them`() {
+        val right = SolarPanel(panelAt)
+        fun turn(p: SolarPanel) = (p as DirectedDeckMachine).rotated() as SolarPanel
+        fun ends(p: SolarPanel) = Pair(
+            terminalTile(grid, p, panelAt, TerminalRole.Positive),
+            terminalTile(grid, p, panelAt, TerminalRole.Negative),
+        )
+
+        val down = turn(right)
+        assertEquals(Direction.Down, down.facing, "R did not turn it")
+        // ⚠️ A QUARTER turn puts both ends on the other axis — it does not swap them. Half a turn is
+        // what swaps them, and that is the one a player reaches for when their wiring is crossed.
+        assertNotEquals(ends(right), ends(down), "a quarter turn left the terminals where they were")
+
+        val (posRight, negRight) = ends(right)
+        val (posLeft, negLeft) = ends(turn(down))
+        assertEquals(negRight, posLeft, "turned about, its plus is not where its minus was")
+        assertEquals(posRight, negLeft, "turned about, its minus is not where its plus was")
+
+        assertEquals(right.tiles(grid).toSet(), down.tiles(grid).toSet(), "turning moved it")
+    }
 
     /** Cable laid along [path], each tile joined to the next. */
     private fun cable(path: List<TileIndex>): List<Segment?> {
