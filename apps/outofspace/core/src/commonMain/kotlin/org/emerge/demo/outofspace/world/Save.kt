@@ -597,6 +597,12 @@ object Save {
         role == BufferRole.Inside -> "inside"
         role == BufferRole.Product -> "out"
         role == BufferRole.Waste -> "waste"
+        // ⚠️ **Written under their own names from version 29 on.** A cell's baths were `out` and
+        // `waste` while it was a 3×3, and no file that used those keys for a cell can be read any
+        // more — see [ELECTROLYZER_3X2_VERSION], which drops the machine and its stores together. So
+        // there is no old spelling to recognise here, only a new one to write.
+        role == BufferRole.Cathode -> "cathode"
+        role == BufferRole.Anode -> "anode"
         // The one key that was named after its role rather than before it, because it arrived after
         // them — see [BufferRole.Oxidiser].
         else -> "oxid"

@@ -3123,8 +3123,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          */
         fun split(m: Electrolyzer, on: Boolean, tile: TileIndex): Electrolyzer {
             if (!on) return m
-            val hydrogenTile = bufferTile(grid, m, tile, BufferRole.Product)!!
-            val oxygenTile = bufferTile(grid, m, tile, BufferRole.Waste)!!
+            // ⚠️ **The bath, not the gas.** Hydrogen is what stands at the cathode *today*; the
+            // moment increment 3's acid/base split lands it is hydrogen and caustic. The role names
+            // the electrode, so this line does not have to be revisited when that happens.
+            val hydrogenTile = bufferTile(grid, m, tile, BufferRole.Cathode)!!
+            val oxygenTile = bufferTile(grid, m, tile, BufferRole.Anode)!!
             val hydrogenHeld = buffers.resourceAt(hydrogenTile)
             val oxygenHeld = buffers.resourceAt(oxygenTile)
             if ((hydrogenHeld?.total ?: 0L) >= Electrolyzer.BUFFER_CAP) return m

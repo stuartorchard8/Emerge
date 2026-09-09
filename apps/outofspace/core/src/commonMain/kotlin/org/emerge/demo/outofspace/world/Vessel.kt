@@ -1301,10 +1301,14 @@ private fun labelOf(machine: DeckMachine, role: BufferRole): String = when (mach
     // than flat, it would be misleading: OUTPUT and WASTE on a machine whose two products are
     // equally the point, and whose whole reason for having two mouths is that they are different
     // gases. The names are what a belt has to be routed by.
+    // ⚠️ **Named for the ELECTRODE, not for the gas standing at it.** A cathode bath is hydrogen
+    // today and hydrogen plus caustic the moment increment 3 lands; the anode's is oxygen and acid.
+    // The gas is what is in there now, the electrode is what the bath *is*, and a belt is routed by
+    // the mouth rather than by this week's contents.
     is Electrolyzer -> when (role) {
-        BufferRole.Product -> "HYDROGEN"
-        BufferRole.Waste -> "OXYGEN"
-        else -> "INPUT"
+        BufferRole.Cathode -> "CATHODE"
+        BufferRole.Anode -> "ANODE"
+        else -> "FEED"
     }
 
     // ⚠️ **Neutral on purpose, and it must stay neutral.** This is what a machine with no entry of
@@ -1318,6 +1322,9 @@ private fun labelOf(machine: DeckMachine, role: BufferRole): String = when (mach
         // A second input on a machine that never said it had one: whatever it turns out to mean,
         // "input" is true of it. Nothing but the rocket reaches here.
         BufferRole.Input, BufferRole.Oxidiser -> "INPUT"
+        // Nothing but a cell has these, and a cell says its own words above.
+        BufferRole.Cathode -> "CATHODE"
+        BufferRole.Anode -> "ANODE"
     }
 }
 

@@ -157,8 +157,8 @@ class ElectrolyzerTest {
     fun `hydrogen and oxygen land in stores that never meet`() {
         val after = run(plant(water()), 200)
 
-        val hydrogen = after.inStore(plantAt, BufferRole.Product)
-        val oxygen = after.inStore(plantAt, BufferRole.Waste)
+        val hydrogen = after.inStore(plantAt, BufferRole.Cathode)
+        val oxygen = after.inStore(plantAt, BufferRole.Anode)
 
         assertTrue(hydrogen != null && hydrogen.total > 0L, "nothing reached the hydrogen store")
         assertTrue(oxygen != null && oxygen.total > 0L, "nothing reached the oxygen store")
@@ -205,16 +205,16 @@ class ElectrolyzerTest {
         // dialled, so a player can lay a belt without inspecting the machine first.
         val s = plant(water())
         assertEquals(
-            s.grid.tile(4, 3), bufferTileOf(s, BufferRole.Product),
-            "the hydrogen store is not on the cathode-end port",
+            s.grid.tile(4, 3), bufferTileOf(s, BufferRole.Cathode),
+            "the cathode bath is not on the cathode-end port",
         )
         assertEquals(
             s.grid.tile(5, 3), bufferTileOf(s, BufferRole.Input),
             "the feed store is not on the middle port, between the two electrodes",
         )
         assertEquals(
-            s.grid.tile(6, 3), bufferTileOf(s, BufferRole.Waste),
-            "the oxygen store is not on the anode-end port",
+            s.grid.tile(6, 3), bufferTileOf(s, BufferRole.Anode),
+            "the anode bath is not on the anode-end port",
         )
     }
 

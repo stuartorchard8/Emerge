@@ -33,7 +33,32 @@ import org.emerge.demo.outofspace.world.machine.Thruster
  * keyed by *tile*, not by (machine, role), so a role costs a distinct tile of the machine's own
  * footprint and nothing else. A 3×3 has nine and the rocket uses three.
  */
-enum class BufferRole { Input, Oxidiser, Inside, Product, Waste }
+enum class BufferRole {
+    Input,
+    Oxidiser,
+    Inside,
+    Product,
+    Waste,
+
+    /**
+     * ⭐ **The two ends of a cell** — `PLAN_electrochemistry.md` §5.5, and named for the same reason
+     * [Oxidiser] is.
+     *
+     * That role exists because a rocket's oxidiser tank reading WASTE *"would be a lie in the one
+     * place a reader looks"*. These are the same case twice over. An electrolytic cell's two baths
+     * are not a product and a waste — the anode's is oxygen **and the acid the anode reaction makes**,
+     * the cathode's is hydrogen **and the caustic**, and increment 3 turns draining either one into
+     * a reason to build the machine. Calling one of them WASTE would be wrong before the chemistry
+     * that makes it wrong even lands.
+     *
+     * ⚠️ **The sign is the chemistry, not a convention to be dialled.** Reduction happens at the
+     * [Cathode], which is the bath under the negative terminal; oxidation at the [Anode], under the
+     * positive one. `localTerminalOffset` and `localBufferOffset` put them over each other on
+     * purpose, so the two cannot drift apart.
+     */
+    Cathode,
+    Anode,
+}
 
 /**
  * Where the [role] store of the machine at [centre] stands, or null if it keeps no such store.
@@ -125,6 +150,14 @@ private val INPUT_ROLES: List<BufferRole> = listOf(BufferRole.Input, BufferRole.
 fun outputBufferRole(machine: DeckMachine, stream: Stream): BufferRole? {
     val role = when {
         machine is Storage -> BufferRole.Inside
+        // ⚠️ **Naming, not a second `Storage` exception.** §5.5 forbade `is Electrolyzer ->` beside
+        // `is Storage ->` in [inputBufferRole], where it would have meant "this machine's input port
+        // fills a store that is not under it" — the mechanism the 3×2 shape deletes. This is the
+        // other question: a cell's two output stores are called [BufferRole.Cathode] and
+        // [BufferRole.Anode] rather than product and waste, so the stream each mouth carries has to
+        // be told which of them it drains. Every store here still sits on its own port.
+        machine is Electrolyzer ->
+            if (stream == Stream.Waste) BufferRole.Anode else BufferRole.Cathode
         stream == Stream.Waste -> BufferRole.Waste
         else -> BufferRole.Product
     }
@@ -161,7 +194,7 @@ internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
             BufferRole.Inside -> pack(0, 0)
             BufferRole.Product -> pack(fp.ahead, 0)
             BufferRole.Waste -> pack(0, fp.below)
-            BufferRole.Oxidiser -> NO_OFFSET
+            BufferRole.Oxidiser, BufferRole.Cathode, BufferRole.Anode -> NO_OFFSET
         }
 
         // Fuel in at one back corner, oxidiser in at the other, and the chamber between them at the
@@ -171,7 +204,7 @@ internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
             BufferRole.Input -> pack(-fp.behind, -fp.above)
             BufferRole.Oxidiser -> pack(-fp.behind, fp.below)
             BufferRole.Inside -> pack(0, 0)
-            BufferRole.Product, BufferRole.Waste -> NO_OFFSET
+            BufferRole.Product, BufferRole.Waste, BufferRole.Cathode, BufferRole.Anode -> NO_OFFSET
         }
         // ⛔ **No [BufferRole.Inside], and that is the machine rather than an omission.** An
         // electrolyzer works at a rate straight out of its feed into its two hoppers; there is no
@@ -188,16 +221,16 @@ internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
         // Here every store sits on the port it serves, exactly as this file's own rule says, and
         // `Inside` goes on meaning "the one role with no port".
         is Electrolyzer -> when (role) {
-            BufferRole.Product -> pack(-fp.behind, 0)
+            BufferRole.Cathode -> pack(-fp.behind, 0)
             BufferRole.Input -> pack(0, 0)
-            BufferRole.Waste -> pack(fp.ahead, 0)
-            BufferRole.Inside, BufferRole.Oxidiser -> NO_OFFSET
+            BufferRole.Anode -> pack(fp.ahead, 0)
+            BufferRole.Inside, BufferRole.Oxidiser, BufferRole.Product, BufferRole.Waste, BufferRole.Cathode, BufferRole.Anode -> NO_OFFSET
         }
         is Furnace -> when (role) {
             BufferRole.Input -> pack(-fp.behind, 0)
             BufferRole.Inside -> pack(0, 0)
             BufferRole.Product -> pack(fp.ahead, 0)
-            BufferRole.Waste, BufferRole.Oxidiser -> NO_OFFSET
+            BufferRole.Waste, BufferRole.Oxidiser, BufferRole.Cathode, BufferRole.Anode -> NO_OFFSET
         }
         // One store, on the one port it has — a pump is one tile, so both are its anchor. What it
         // banks is what it has drawn out of the room and not yet handed to a belt.
@@ -224,7 +257,7 @@ internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
             BufferRole.Input -> pack(-fp.behind, 0)
             BufferRole.Inside -> pack(0, 0)
             BufferRole.Product -> pack(fp.ahead, 0)
-            BufferRole.Waste, BufferRole.Oxidiser -> NO_OFFSET
+            BufferRole.Waste, BufferRole.Oxidiser, BufferRole.Cathode, BufferRole.Anode -> NO_OFFSET
         }
         else -> NO_OFFSET
     }
