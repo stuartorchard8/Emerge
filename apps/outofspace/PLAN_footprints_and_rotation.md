@@ -17,10 +17,18 @@
 > - **§3's "a turn can move the anchor"** — the finding that no tile of a mixed-parity footprint
 >   survives its own 180° flip, so `rebuildInPlace`'s single `centre` has to become two. The argument
 >   that demanded it is retired; the change it demanded is the core of the new plan's increment 1.
-> - **§4 and increment 3 unchanged** — facing is a placement property, and a stamp pastes by class.
+> - **§4's facing half** — facing is a placement property, so `aimed()` leaves the re-tune path. It
+>   is downstream of the move tool, because paste-over is the only way to turn a machine until that
+>   tool exists.
 >
-> **What did not:** `Pivot`, the parity rule, decisions 3, 6, 8 and 9, and increment 2's overloading
-> of `R`.
+> **And into `PLAN_stamp_by_class.md`:** §1's *"paste-over matches on kind where it means class"* and
+> §4's guard table. ⚠️ Increment 3 bundled these two under one heading and they are **not** the same
+> change — the class guard touches no footprint, orientation or location, and is independent of
+> everything else here.
+>
+> **What did not carry:** `Pivot`, the parity rule, decisions 3, 6, 8 and 9, and increment 2's
+> overloading of `R` — which needs no precedence rule once a carried machine is what is on the
+> cursor.
 
 Status: **superseded** (2026-09-09). Was: prerequisite for `PLAN_power_network.md` increment 4, which
 wants a 3×2 cell and cannot have one. Replaced three stated designs rather than adding to them:

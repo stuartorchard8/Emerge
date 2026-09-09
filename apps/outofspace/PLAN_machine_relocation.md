@@ -92,8 +92,6 @@ of the rest.
 10. **⛔ Orientation changes come exclusively from this tool.** A paste-over never changes the
     target's facing. Facing is a **placement property**, not a setting. Carried from the superseded
     plan, and stronger now that there is a real gesture to carry it.
-11. **⛔ A stamp pastes where the machine *class* matches, not the kind.** A warehouse's settings go
-    onto a silo. Also carried; also unchanged.
 
 ## 3. The model
 
@@ -318,25 +316,25 @@ a bug here is matter appearing or vanishing rather than a machine looking wrong.
 can move or turn a machine at all**, so it is also the first in which the paste path is not the only
 way to change a facing.
 
-### Increment 3 — a stamp pastes by class, and stops carrying a facing
+### Increment 3 — a stamp stops carrying a facing
 
 *Carried from the superseded plan.* `MachineSettings.aimed()` leaves the re-tune path
-(`OutofspaceController.stampOnto:312`) and stays on the placement path (`OutofspaceSim.kt:2900`). The
-three same-kind guards become same-class, so a warehouse's filter pastes onto a silo — they are one
-`Storage` at three sizes, see `project_oos_storage_sizes`.
+(`OutofspaceController.stampOnto:312`) and stays on the placement path (`OutofspaceSim.kt:2900`), so
+pasting a capture onto a machine already standing re-tunes it without turning it. Decision 10, made
+reachable.
 
-⚠️ **After increment 2, deliberately.** Paste-over is the only way to turn a machine today, so taking
-the facing out of it before the move tool exists would leave a gap with no gesture in it.
+⚠️ **After increment 2, deliberately, and this is the only reason this increment is in this plan at
+all.** Paste-over is the only way to change a standing machine's orientation today. Taking the facing
+out of it before the move tool exists would leave a gap with no gesture in it — so this is genuinely
+downstream of the tool, unlike the *other* half of what the superseded plan called increment 3. See
+§8.
 
 ## 7. Open questions
 
 1. ✅ **The carry is press-and-drag-release, and `R` turns the ghost** (Stu, 2026-09-09). Releasing
    over a destination that will not take it cancels the move — settled, see §4.
-2. **Does a cross-family stamp apply to a *freshly placed* machine?** `OutofspaceSim.kt:2900` is the
-   third guard of increment 3, and relaxing it means grabbing a warehouse, switching the brush to silo
-   and placing gets a silo wearing the warehouse's filter. Probably wanted; stated because it is a
-   different gesture from re-tuning something already standing. *(Carried from the superseded plan,
-   still open.)*
+
+None outstanding.
 
 ## 8. Explicitly not doing
 
@@ -359,6 +357,13 @@ the facing out of it before the move tool exists would leave a gap with no gestu
   a move that happens not to change address.
 - **⛔ Any port-connectivity preview.** Decision 5. A moved machine leaves its belts behind and the
   player deals with it.
+- **⛔ Making a stamp paste by class.** It was carried in here for one draft and taken back out (Stu,
+  2026-09-09) as *"totally independent of machine moving"*, which it is — it touches no footprint, no
+  orientation and no location. `PLAN_stamp_by_class.md`, along with the open question about whether a
+  cross-family stamp applies to a freshly placed machine. ⚠️ **Not to be confused with increment 3
+  above**, which is the other half of what the superseded plan bundled under one heading: taking the
+  *facing* out of a paste **is** downstream of this tool, because paste-over is the only way to turn a
+  machine until the tool exists.
 - **⛔ Charging anything for a move.** Not asked for. If a cost is ever wanted, the spin lurch of §3 is
   already a soft one.
 - **The 3×2 cell.** `PLAN_power_network.md` increment 4, and what increment 0 is *for* — but a
