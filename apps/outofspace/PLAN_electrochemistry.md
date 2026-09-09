@@ -280,7 +280,24 @@ inside *one* of them becomes reachable **with the power off**. Copper cementing 
 legitimate `Reaction` row needing no voltage at all. That is not a bug, but the cell stops being
 inert when unpowered, which today's electrolyzer is.
 
-#### ⛔ A bath states a volume, and the volume does two jobs
+#### ⛔ A bath states a volume, and the volume does ONE job
+
+> ⚠️ **CORRECTED 2026-09-09, by measurement.** This section argued for two jobs and called the pairing
+> *"the test that it is the right number"*. **The second job does not exist.**
+> `condensedDensityAt(293 K, …)` returns **null** for hydrogen and for oxygen: both are above their
+> critical temperature at room temperature and cannot be liquid at any pressure. So "the bath is full
+> of it" is undefined for exactly the two species a cell exists to make, and a supercritical gas in a
+> fixed volume has no capacity short of close packing — the pressure simply rises.
+>
+> ⛔ **So the appetite stays on a mass cap** (`Electrolyzer.BUFFER_CAP`) and the volume answers the
+> **phase** and nothing else (Stu, 2026-09-09). A gas bath that ever wants a capacity wants a
+> *pressure ceiling*, which is a mechanism and a balance dial rather than a derivation, and it is not
+> in increment 1b. Pinned by `a cell's two gases have no liquid density to be full of` in `BathTest`,
+> so the day one of them gains a condensed density at ambient, this argument reopens loudly.
+>
+> What survives below unchanged: **derive the volume, never state it.**
+
+#### The argument as it was written
 
 Agreed (Stu, 2026-09-08). §5.6 needs it so the contents have a **phase** — `FluidPhase` comes off
 reduced density and temperature (`StateEquation.kt:672`), which is a question about matter in a
