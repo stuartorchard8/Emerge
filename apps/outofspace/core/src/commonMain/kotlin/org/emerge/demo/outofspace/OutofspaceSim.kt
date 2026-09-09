@@ -1413,7 +1413,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val (actionProgress, carry) = throttled(1, if (on) SignalField.FULL else 0, m.carry)
         if (m.progress + actionProgress >= m.ticksPerAction) {
             val r = process(inProgress)
-            val input = store(m, tile, BufferRole.Input) ?: Mixture.EMPTY
             val banked = store(m, tile, BufferRole.Product) ?: Mixture.EMPTY
             val tailings = store(m, tile, BufferRole.Waste) ?: Mixture.EMPTY
             if (banked.total >= MACHINE_OUTPUT_CAP ||
@@ -1422,22 +1421,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 return m.copy(progress = m.ticksPerAction, carry = carry)
             }
 
-            // Only take exactly 1 packet of product, and mix the rest back in with the input
+            // Only take exactly 1 packet of product, and leave the rest inside
             val output = r.product.takeAtLeast(Capacity.PACKET_MASS)
             val remaining = if (output == null) r.product else r.product - output
             if (output != null) {
                 putStore(m, tile, BufferRole.Product, banked + output)
+                // Leave everything else in the input store for the next packet to add to
+                putStore(m, tile, BufferRole.Inside, remaining + r.tailings)
+            } else {
+                putStore(m, tile, BufferRole.Waste, tailings + r.tailings)
+                putStore(m, tile, BufferRole.Inside, remaining)
             }
 
-            if (input.isEmpty || input.dominant == remaining.dominant) {
-                // Merge the remaining part with the input if they match in dominant species
-                putStore(m, tile, BufferRole.Input, input + remaining)
-                putStore(m, tile, BufferRole.Waste, tailings + r.tailings)
-            } else {
-                // Otherwise dump it all to tailings
-                putStore(m, tile, BufferRole.Waste, tailings + r.tailings + remaining)
-            }
-            putStore(m, tile, BufferRole.Inside, null)
+
             return m.copy(progress = 0, carry = carry)
         }
         return m.copy(progress = m.progress + actionProgress.toInt(), carry = carry)

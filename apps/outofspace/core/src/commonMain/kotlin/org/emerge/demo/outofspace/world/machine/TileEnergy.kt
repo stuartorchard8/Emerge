@@ -127,7 +127,7 @@ val MACHINE_BUFFER_CAP = 2L * PACKET_MASS
  * **Derivation**: the same two belt-loads as [MACHINE_BUFFER_CAP], and deliberately equal to it — a
  * machine that can hoard more output than input would drain its feed before it stalled.
  */
-val MACHINE_OUTPUT_CAP = 2L * PACKET_MASS
+val MACHINE_OUTPUT_CAP = PACKET_MASS
 
 /**
  * How much energy a [org.emerge.demo.outofspace.world.machine.Furnace]'s element puts into
