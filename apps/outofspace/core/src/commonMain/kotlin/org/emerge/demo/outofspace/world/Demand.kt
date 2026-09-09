@@ -99,8 +99,17 @@ class Acceptance private constructor(
      *
      * ⚠️ **Not the same as [isUnlimited]**, and the distinction is load-bearing: a locked warehouse
      * is endless *and* picky, so a tile that can reach one may not be marked as taking anything.
+     *
+     * ⛔ **[only] has to be named here, and for a while it was not.** It was added for the
+     * electrolytic cell after this predicate was written, and a predicate that lists the ways a sink
+     * can be fussy is exactly the kind that rots when a fourth way is added — every `onlyOf` sink
+     * read as unfussy, so [Whitelist.of] marked its tile "welcome anywhere" and the network routed a
+     * belt of gravel at a cell that would refuse every gram of it at the door. That is the belt
+     * filling solid against a mouth that will never take what is on it, which is the failure the
+     * whole demand design exists to prevent — and it was live for the electrolyzer and the cell
+     * until an ejector, whose *empty* list refuses everything, made it impossible to miss.
      */
-    val takesAnything: Boolean get() = bill == null && filter == null
+    val takesAnything: Boolean get() = bill == null && filter == null && only == null
 
     /** True when this sink is finite and will never take anything again. */
     val isSatisfied: Boolean get() = !isUnlimited && wanted <= 0L
