@@ -1,7 +1,30 @@
 # Moving a machine
 
-Status: **proposed** (2026-09-09). Replaces `PLAN_footprints_and_rotation.md`, which is superseded
-in full — what carried forward is named in its banner and absorbed below.
+Status: ✅ **BUILT** (2026-09-09), all four increments. Replaces `PLAN_footprints_and_rotation.md`,
+which is superseded in full — what carried forward is named in its banner and absorbed below.
+
+| | landed as | |
+|---|---|---|
+| Increment 0 — the footprint model | `4a71d6c8` | `FootprintTest`, exact-tiles table |
+| Increment 1 — a move is a rebuild with two anchors | `34c78b03` | `MachineMoveTest` |
+| Increment 2 — the tool | `ef90bbda` | `MoveToolTest`, `agent-scripts/move.txt` |
+| Increment 3 — a stamp stops carrying a facing | `6192ff6f` | `GrabAndEscapeTest` |
+
+**Where it landed differently from the scope**, corrected in place below and noted here:
+
+- ⭐ **`reach` came apart into four numbers, not into stated literals.** §5 said the offset tables
+  would state their offsets; what they do instead is name a *direction* — `ahead`, `behind`, `below`,
+  `above` — which reproduces every current value exactly and lets an oblong kind state its doors
+  without a branch. Better than the plan, and the reason is in [Footprint.ahead]'s own doc.
+- ⚠️ **A fourth non-footprint caller turned up**, and it read `diameter` rather than `reach`, so the
+  §5 list of two had missed it and a grep would not have found it: `OutofspaceRenderer.kt:790`, the
+  readouts drawn inside a square body.
+- ⚠️ **The round-trip acceptance had to be a differential**, not a before-and-after. Heat conducts
+  between casing and room every tick, so the first version read ten megajoules of ordinary conduction
+  and called it a leak. See §5.
+- ⭐ **`V` rather than an overloaded key**, and `R` needed no precedence rule at all — see §4.
+- ⚠️ **Ghost and weld refusals moved to the pick-up**, not the drop, so a carry never starts on
+  something that cannot land. The reducer keeps its own copies as a backstop for the agent harness.
 
 > A machine that is standing in the wrong place has to be emptied, condemned, deconstructed onto a
 > belt, carried to a stockpile, and built again from a bill. That cycle exists to answer two
