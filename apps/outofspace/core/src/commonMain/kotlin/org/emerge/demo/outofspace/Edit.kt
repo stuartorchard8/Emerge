@@ -49,6 +49,24 @@ sealed interface Edit {
         val settings: org.emerge.demo.outofspace.world.MachineSettings? = null,
     ) : Edit
     data class Rotate(val tile: TileIndex) : Edit
+
+    /**
+     * **Picks a machine up and puts it down somewhere else, facing some other way.**
+     *
+     * `PLAN_machine_relocation.md`. One edit rather than a deconstruction and a construction, because
+     * the two questions the rail loop exists to answer — which stockpile sources this, and where does
+     * the material land — are not asked by a relocation. The metal is already assembled, the stores
+     * are already full, the heat is already in the casing, and all of it stays that way.
+     *
+     * [from] is any tile of the machine; the reducer resolves it to the anchor through `originAt`, the
+     * same way a click on a warehouse's corner edits the warehouse. [to] is where the **anchor** lands,
+     * which for a thruster is the tile you feed and not the middle of the block.
+     *
+     * ⛔ **Nothing is booked through any ledger**, because nothing crosses the vessel's boundary: the
+     * casing stays in the deck's matter, the stores stay in the buffers, and both stay inside
+     * `builtMass` and `inTransitMass`. Refused moves change nothing at all.
+     */
+    data class Move(val from: TileIndex, val to: TileIndex, val facing: Direction) : Edit
     /**
      * Takes something off a tile — one layer of it, or a named one, or all of it.
      *

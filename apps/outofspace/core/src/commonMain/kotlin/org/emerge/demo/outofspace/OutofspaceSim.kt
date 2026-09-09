@@ -2341,8 +2341,47 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     val dm = deck[tile]
                     if (dm is DirectedDeckMachine) {
                         val turned = dm.rotated() as DirectedDeckMachine
-                        if (canStandWhereItWouldTurn(turned, tile)) rebuildInPlace(tile, dm, turned)
+                        if (canStandWhereItWouldTurn(turned, tile)) rebuildInPlace(tile, tile, dm, turned)
                     }
+                }
+                is Edit.Move -> {
+                    // Any tile of it, resolved to the anchor — a click on a warehouse's corner means
+                    // the warehouse, here as everywhere else.
+                    val from = originAt(edit.from) ?: return
+                    val before = deck[from] ?: return
+
+                    // ⛔ **A ghost does not move**, whether it is building itself up or coming apart.
+                    // `rebuildInPlace` does `deck -=` then `stand(withCasing = true)`, which releases
+                    // what a half-built machine is holding and stands a whole one in its place —
+                    // matter from nowhere. Reasonable limitation (Stu, 2026-09-09), and it keeps that
+                    // hazard out of this path entirely rather than teaching it to count.
+                    if (deck.isGhost(from) || from in scrapping) return
+
+                    // ⛔ **And neither does a docking port with something welded to it.** It is a
+                    // member of an assembly — `Weld.portTile` names it by its centre tile — and moving
+                    // the mouth would carry a station with it or tear the joint, neither of which is
+                    // what this gesture is for. Undock first.
+                    if (assembly.welds.any { it.portTile == from }) return
+
+                    val after = before.movedTo(edit.to).let { moved ->
+                        // ⚠️ **Turned by re-applying `rotated()`, not rebuilt from the kind.**
+                        // `newDeckMachine` would mint a fresh machine and silently drop the settings,
+                        // the wiring and the carry — which is the whole of what "it is the same
+                        // machine" means. Four is a full turn, so this always terminates.
+                        var m = moved
+                        if (m is DirectedDeckMachine) {
+                            var turns = 0
+                            while ((m as DirectedDeckMachine).facing != edit.facing && turns < 4) {
+                                m = m.rotated()
+                                turns++
+                            }
+                            if ((m as DirectedDeckMachine).facing != edit.facing) return
+                        }
+                        m
+                    }
+
+                    if (!canStandAfterMoving(after, from, edit.to)) return
+                    rebuildInPlace(from, edit.to, before, after)
                 }
                 is Edit.ReplaceDeckMachine -> {
                     // Hands a standing machine a new set of settings: same tile, same position, same
@@ -2362,7 +2401,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         // In-place `deck.set` swaps the machine while leaving matter/energy untouched.
                         deck.set(tile, edit.machine)
                     } else {
-                        rebuildInPlace(tile, oldMachine, edit.machine)
+                        rebuildInPlace(tile, tile, oldMachine, edit.machine)
                     }
                 }
                 is Edit.Remove -> when (edit.layer) {
@@ -2737,39 +2776,77 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         /**
-         * Swaps the machine at [centre] for [turned], moving its casing and its stores with it.
+         * Swaps the machine anchored at [from] for [after] anchored at [to], moving its casing and
+         * its stores with it. The two anchors are equal for a turn in place and differ for a move.
          *
-         * A demolish-and-rebuild rather than `deck[tile] = turned`, because a span's tiles change:
-         * `set` deliberately leaves the matter alone, which is right for a machine that stays where
+         * A demolish-and-rebuild rather than `deck[tile] = after`, because the tiles change: `set`
+         * deliberately leaves the matter alone, which is right for a machine that stays exactly where
          * it is and would strand a bridge's casing on the tiles it just swung off. Booked through
-         * neither ledger — no metal arrives and none is scrapped, it is the same bridge — so the
+         * neither ledger — no metal arrives and none is scrapped, it is the same machine — so the
          * energy is carried across by hand.
+         *
+         * ⛔ **It took one anchor and used it for both sides until `PLAN_machine_relocation.md`**, and
+         * the assumption was invisible because it had never been false: under the shapes aboard, a
+         * turn's anchor is always a fixed point of the turn. A machine that is *moved* breaks it on
+         * every use. ⚠️ Everything else here was already written for a footprint whose tiles change,
+         * which is why the split is the whole of the change: the material is read before the demolish,
+         * the stores are read **by role** rather than by tile, and the heat is spread rather than
+         * corresponded.
          */
-        private fun rebuildInPlace(centre: TileIndex, before: DeckMachine, turned: DeckMachine) {
+        private fun rebuildInPlace(from: TileIndex, to: TileIndex, before: DeckMachine, after: DeckMachine) {
             val carried = before.tiles(grid).sumOf { deck.stuff.energyAt(it) }
-            // ⚠️ **Read before the demolish**, which clears it: turning a bridge round does not
-            // change what it is made of, and `-=` then `stand` is the one shape in the game that
-            // could lose that. It is the same bridge — see this function's own header.
+            // ⚠️ **Read before the demolish**, which clears it: moving a bridge does not change what
+            // it is made of, and `-=` then `stand` is the one shape in the game that could lose that.
+            // It is the same bridge — see this function's own header.
             val madeOf = deck.materialOf(before)
             for (t in before.tiles(grid)) originOf[t] = TileIndex.NONE
             val held = BufferRole.entries.mapNotNull { role ->
-                val tile = bufferTile(grid, before, centre, role) ?: return@mapNotNull null
+                val tile = bufferTile(grid, before, from, role) ?: return@mapNotNull null
                 buffers.resourceAt(tile)?.let { role to it }
             }
-            buffers.releaseRoles(grid, before, centre)
-            deck -= centre
-            deck.stand(turned, withCasing = true, material = madeOf)
-            buffers.claimRoles(grid, turned, centre)
-            for (t in turned.tiles(grid)) originOf[t] = centre
+            buffers.releaseRoles(grid, before, from)
+            deck -= from
+            deck.stand(after, withCasing = true, material = madeOf)
+            buffers.claimRoles(grid, after, to)
+            for (t in after.tiles(grid)) originOf[t] = to
             for ((role, held1) in held) {
-                bufferTile(grid, turned, centre, role)?.let { buffers.put(it, held1) }
+                bufferTile(grid, after, to, role)?.let { buffers.put(it, held1) }
             }
             // Put the heat back where the metal went. Spread evenly: the tiles are not the same
-            // tiles, so there is no per-tile correspondence to preserve, and a bridge is one object.
-            val tiles = turned.tiles(grid)
+            // tiles, so there is no per-tile correspondence to preserve, and a machine is one object.
+            val tiles = after.tiles(grid)
             val each = carried / tiles.size
             for (t in tiles) deck.stuff.setEnergy(t, each)
-            deck.stuff.addEnergy(centre, carried % tiles.size)
+            deck.stuff.addEnergy(to, carried % tiles.size)
+        }
+
+        /**
+         * Whether [after] may stand at [to] given that it is standing at [from] right now.
+         *
+         * ⛔ **A machine's own tiles and its own ports do not count as in the way**, and that is not a
+         * nicety: nudging one tile and turning in place are the two commonest things the move tool is
+         * for, and both overlap what the machine is already standing on. Asked without the exemption
+         * the cursor reads red for the ordinary case.
+         *
+         * ⚠️ **Every refusal is [canStand]'s.** The build cursor previews off the same rule, so a
+         * condition stated separately here is a preview that eventually promises something the
+         * reducer will not do — see [placeDeckMachine], which says the same thing from the other side.
+         */
+        private fun canStandAfterMoving(after: DeckMachine, from: TileIndex, to: TileIndex): Boolean {
+            val standingPorts: Map<TileIndex, List<Port>> by lazy { portsByTile(Conduit.Rail) }
+            return canStand(
+                grid = grid,
+                kind = after.kind,
+                tile = to,
+                facing = (after as? DirectedDeckMachine)?.facing ?: Direction.Right,
+                occupied = { originOf[it] != TileIndex.NONE && originOf[it] != from },
+                portsOn = { t -> standingPorts[t].orEmpty().filter { it.owner != from } },
+                displaceAir = { area ->
+                    tryDisplaceAir(grid, masses, airEnergy, area, commit = creative) {
+                        deck.isPermeableToAir(it)
+                    }
+                },
+            )
         }
 
         /**
