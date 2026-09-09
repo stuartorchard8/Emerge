@@ -50,6 +50,7 @@ import org.emerge.render.torus.ui.PanelBuilder
 import org.emerge.render.torus.ui.Ui
 import org.emerge.render.torus.ui.UiBuilder
 import org.emerge.demo.outofspace.world.Stockpile
+import org.emerge.demo.outofspace.world.machine.Ejector
 import org.emerge.render.torus.ui.ActionButton
 import kotlin.math.absoluteValue
 import org.emerge.demo.outofspace.world.Market
@@ -59,7 +60,7 @@ import org.emerge.demo.outofspace.world.BodyKind
 import kotlin.math.sqrt
 
 /** A full-screen overlay: the game's own controls, or the sim's readouts. One at a time. */
-enum class Sheet { None, Menu, Readouts, SaveLoad, Trade }
+enum class Sheet { None, Menu, Readouts, SaveLoad, Trade, Ejector }
 
 /**
  * How many buildable species the stockpile panel names before it stops counting.
@@ -286,9 +287,97 @@ class OutofspaceHud {
             // The save dialog is holding the keyboard as well as the screen, so it gets shut down
             // rather than merely hidden.
             Sheet.SaveLoad -> closeSaveLoadDialog()
-            Sheet.Readouts, Sheet.Trade -> openSheet = Sheet.None
+            Sheet.Readouts, Sheet.Trade, Sheet.Ejector -> openSheet = Sheet.None
             Sheet.None -> if (!controller.escape()) openMenu(controller)
         }
+    }
+
+    /**
+     * Which ejector the whitelist sheet is showing, or [TileIndex.NONE].
+     *
+     * ⚠️ **A tile and not the machine.** A machine is a value that is replaced wholesale every time
+     * anything about it changes — every button press in the sheet makes a new one — so a held
+     * reference would be a snapshot of the ejector as it was when the sheet opened, and the switches
+     * would stop lighting up the moment they were used.
+     */
+    private var ejectorTile: TileIndex = TileIndex.NONE
+
+    /**
+     * The rows the whitelist sheet was **opened** with, in the order it drew them — and it keeps
+     * drawing them in that order until the player asks for a new list.
+     *
+     * ⛔ **The list must not move under a finger that is reaching for it.** This sheet is ranked by
+     * mass, and mass aboard changes every tick: a live sort would have a row slide out from under
+     * the cursor between the look and the click, and the machine on the other end of that click
+     * throws cargo overboard for ever. So the order is a snapshot, and re-taking it is a *gesture*
+     * the player makes — see [refreshEjectorRows], which is what REFRESH and opening the sheet both
+     * do.
+     *
+     * ⚠️ **Rows survive here after their reason to exist has gone.** A species that leaves the ship
+     * and is not on the list keeps its row until a refresh, which is deliberate: it is exactly the
+     * row a player has just finished un-ticking, and taking it away in the same breath would look
+     * like the game had undone the press.
+     */
+    var ejectorRows: List<Species> = emptyList()
+        // ⚠️ Readable for [openSheet]'s reason: the freeze is a *rule*, it can be asked and answered
+        // without a screen, and a test that could not see the list could only assert on the pixels
+        // it happens to produce. Written only through [refreshEjectorRows], which is what keeps
+        // "the list was re-taken" and "the player asked for it" from drifting apart.
+        private set
+
+    /**
+     * Open the whitelist sheet on the ejector at [tile], with a freshly taken list.
+     *
+     * ⚠️ **Freshly taken every time, including on the same machine.** Closing and reopening is the
+     * player's other way of saying REFRESH, and a sheet that reopened onto a stale list would make
+     * that gesture do nothing.
+     */
+    fun openEjectorSheet(tile: TileIndex, ejector: Ejector, stock: Stockpile) {
+        ejectorTile = tile
+        refreshEjectorRows(ejector, stock)
+        openSheet = Sheet.Ejector
+    }
+
+    /**
+     * Re-take the frozen list: everything aboard and everything on the whitelist, heaviest first.
+     *
+     * What REFRESH does, and it is the whole of what it does — which is why the button's effect can
+     * be described as "as though you had shut the sheet and opened it again". Anything in the NEW
+     * section joins the list in its rightful place by mass; anything that is neither aboard nor
+     * whitelisted stops having a row.
+     */
+    fun refreshEjectorRows(ejector: Ejector, stock: Stockpile) {
+        ejectorRows = ejectorSpecies(ejector, stock)
+    }
+
+    /**
+     * Which species deserve a row **right now**: everything with mass aboard, plus everything the
+     * player has already ticked. Heaviest first.
+     *
+     * ⛔ **The second half is not a nicety**, and it is the docking counter's argument exactly: a
+     * species whitelisted and then used up would otherwise vanish off the list, taking the only
+     * control that could untick it with it — leaving a standing permission to throw that species
+     * overboard which the player can neither see nor reach.
+     *
+     * ⚠️ **Ties keep [Species.ALL]'s order**, because `sortedByDescending` is stable. Two species
+     * with nothing aboard — both on the list, both spent — would otherwise be free to swap places
+     * between one refresh and the next for no reason the player could see.
+     */
+    private fun ejectorSpecies(ejector: Ejector, stock: Stockpile): List<Species> =
+        Species.ALL.filter { stock.aboard(it) > 0L || ejector.ejects(it) }
+            .sortedByDescending { stock.aboard(it) }
+
+    /**
+     * What has come aboard since the list was taken — the NEW section, and nothing else.
+     *
+     * ⛔ **Below the main list rather than folded into it**, which is the whole point of the
+     * freeze: a species arriving mid-read must not push the row under the player's finger down by
+     * one. It gets its own heading at the bottom, where nothing is above it to move.
+     */
+    fun newEjectorSpecies(ejector: Ejector, stock: Stockpile): List<Species> {
+        if (ejectorRows.isEmpty()) return emptyList()
+        val shown = ejectorRows.toHashSet()
+        return ejectorSpecies(ejector, stock).filter { it !in shown }
     }
 
     private val collapsed = mutableSetOf<String>()
@@ -562,6 +651,7 @@ class OutofspaceHud {
                 Sheet.Readouts -> readoutsSheet(controller, fps, stock)
                 Sheet.SaveLoad -> saveLoadSheet(controller)
                 Sheet.Trade -> tradeSheet(controller)
+                Sheet.Ejector -> ejectorSheet(controller, stock)
             }
         }
         // Clear one-shot status messages after they've been displayed.
@@ -948,6 +1038,129 @@ class OutofspaceHud {
             )
         } else {
             sheet("oos-trade", "TRADE", onDismiss = dismiss, heightFraction = 0.85f, rowHeight = 34f, textSize = 15f, body = body)
+        }
+    }
+
+    /**
+     * An ejector's own panel: what it has thrown away, how many species it may throw, and the door
+     * to the list.
+     *
+     * ⛔ **The list is a sheet and not a section here**, which the docking port settled: a control
+     * with one row per species in the game is a list whose length is the world's, and the inspector
+     * is a narrow column with the wiki hanging off the bottom of it. The port carries the door to
+     * its counter for the same reason, and so does this.
+     *
+     * ⚠️ **An empty list is called out in words.** "0 species" is a number a player reads past;
+     * "throws nothing away" is the sentence that explains why the belt behind the machine is solid.
+     */
+    private fun PanelBuilder.ejectorControls(controller: OutofspaceController, tile: TileIndex, ejector: Ejector) {
+        keyValue("THROWN AWAY", mass(ejector.ventedMass), 0x9A9A9AFFL, 0xE0864AFFL)
+        if (ejector.whitelist.isEmpty()) {
+            keyValue("EJECTING", "nothing", 0x9A9A9AFFL, 0x9A9A9AFFL)
+            text("name a species and the belts will feed it", 0x5A5A5AFFL)
+        } else {
+            keyValue("EJECTING", "${ejector.whitelist.size} species", 0x9A9A9AFFL, 0xE05A4AFFL)
+        }
+        // ⚠️ **The stockpile is read HERE, in the press, and not once a frame like the panels'.** It
+        // is a sweep of every buffer, every belt and the whole deck — see [build] — and this needs
+        // it exactly once per opening rather than once per frame the inspector happens to be up.
+        button("WHITELIST", 0x2E5A6BFFL) {
+            openEjectorSheet(tile, ejector, controller.state.stockpile)
+        }
+    }
+
+    /**
+     * The whitelist: one row per species, what there is of it aboard, and the switch.
+     *
+     * ### The list is FROZEN, and that is the feature
+     *
+     * ⛔ **Nothing in this sheet moves on its own.** The rows are ranked by mass aboard, which is a
+     * number that changes every tick — so a live list would re-rank under the player's hand, and the
+     * control they were reaching for would be a different species by the time they hit it. The rows
+     * are taken once, when the sheet opens ([ejectorRows]); species that arrive while it is open get
+     * their own section at the bottom where nothing above them can shift; and the only thing that
+     * re-ranks anything is the player pressing REFRESH. See [refreshEjectorRows].
+     *
+     * ⚠️ **Two buttons and not one toggle.** A single button whose label changed would be a control
+     * that says what it will *become*, which is exactly the ambiguity that gets cargo thrown away by
+     * accident. A pair reads as a switch: one of the two is lit, and pressing the lit one is a
+     * no-op rather than a reversal.
+     *
+     * ⚠️ EJECT lights **red**. Every other lit control in this HUD is green because every other one
+     * is safe; this one destroys the ship's cargo, and it should not look like an approval.
+     */
+    private fun UiBuilder.ejectorSheet(controller: OutofspaceController, stock: Stockpile) {
+        val s = controller.state
+        val ejector = s.machineCovering(ejectorTile) as? Ejector
+
+        val body: PanelBuilder.() -> Unit = {
+            if (ejector == null) {
+                // The machine was taken apart, or moved, while its list was open. Said rather than
+                // dismissed: a sheet that vanished mid-read would look like a misclick.
+                text("that ejector is no longer there", 0x9A9A9AFFL)
+            } else {
+                row(gapPx = 6f) {
+                    button("REFRESH", 0x2E5A6BFFL) { refreshEjectorRows(ejector, stock) }
+                    // ⚠️ **Short enough to fit beside the button**, which a screenshot decided and no
+                    // test could have: the sheet clips at its own edge rather than wrapping, and the
+                    // first wording ran off it mid-word. See the counter's note about padding.
+                    text("re-rank · drop spent rows", 0x7A7A7AFFL)
+                }
+                keyValue("THROWN AWAY", mass(ejector.ventedMass), 0x9A9A9AFFL, 0xE0864AFFL)
+                gap()
+                row(gapPx = 2f) {
+                    text(EJECT_NAME_W.named("SPECIES"), 0x7A7A7AFFL)
+                    text(EJECT_MASS_W.cell("ABOARD"), 0x7A7A7AFFL)
+                }
+                for (species in ejectorRows) ejectorRow(controller, ejector, stock, species)
+
+                // ── What has come aboard since the list was taken ────────────
+                val arrived = newEjectorSpecies(ejector, stock)
+                if (arrived.isNotEmpty()) {
+                    gap()
+                    text("NEW ABOARD  ·  REFRESH to file them", 0xE0C060FFL)
+                    for (species in arrived) ejectorRow(controller, ejector, stock, species)
+                }
+                if (ejectorRows.isEmpty() && arrived.isEmpty()) {
+                    text("(nothing aboard, and nothing on the list)", 0x9A9A9AFFL)
+                }
+            }
+        }
+        val dismiss = { openSheet = Sheet.None }
+        // A centred popover where there is room and a bottom sheet where there is not — the trade
+        // counter's rule, and see its note. Narrower than the counter: four columns rather than ten.
+        if (screenW > NARROW_MAX_DP * density) {
+            val w = minOf(EJECT_WIDTH_DP * density, screenW * 0.92f)
+            val h = screenH * 0.85f
+            sheet(
+                "oos-eject", "OVERBOARD", onDismiss = dismiss,
+                boxX = (screenW - w) * 0.5f, boxY = (screenH - h) * 0.5f, boxW = w, boxH = h,
+                rowHeight = SHEET_ROW_DP, textSize = 14f, body = body,
+            )
+        } else {
+            sheet("oos-eject", "OVERBOARD", onDismiss = dismiss, heightFraction = 0.85f, rowHeight = 34f, textSize = 15f, body = body)
+        }
+    }
+
+    /** One species: its article, what there is of it aboard, and the two-position switch. */
+    private fun PanelBuilder.ejectorRow(
+        controller: OutofspaceController,
+        ejector: Ejector,
+        stock: Stockpile,
+        species: Species,
+    ) {
+        val on = ejector.ejects(species)
+        row(gapPx = 2f) {
+            button(EJECT_NAME_W.named(species.name.uppercase()), 0x00000000L) { controller.openWiki(species) }
+            text(EJECT_MASS_W.cell(mass(stock.aboard(species))), speciesColor(species) or 0xFFL)
+            // ⛔ **Each button SETS its side rather than flipping.** Pressing the lit one has to be a
+            // no-op, or a double tap on EJECT would quietly take the species back off the list.
+            button("EJECT", if (on) EJECT_ON else EJECT_OFF, widthEm = EJECT_SWITCH_EM) {
+                controller.setEject(ejector, species, true)
+            }
+            button("KEEP", if (on) EJECT_OFF else KEEP_ON, widthEm = EJECT_SWITCH_EM) {
+                controller.setEject(ejector, species, false)
+            }
         }
     }
 
@@ -1548,6 +1761,10 @@ class OutofspaceHud {
         val dockingPort = machine as? DockingPort
         if (dockingPort != null) {
             section("dock", "BERTH", open = true) { dockControls(controller, dockingPort) }
+        }
+        val ejector = machine as? Ejector
+        if (ejector != null) {
+            section("ejector", "OVERBOARD", open = true) { ejectorControls(controller, tile, ejector) }
         }
         // Wiring is the one section that starts shut. Every machine has some, most machines never
         // need theirs touched, and it is the longest of the three — so it is the section that would
@@ -2653,6 +2870,39 @@ class OutofspaceHud {
 
         /** How wide the counter wants to be: ten columns, four of them controls. */
         private val TRADE_WIDTH_DP = 880f
+
+        /**
+         * The whitelist's two columns — a name and a mass, and the counter's widths for both.
+         *
+         * ⚠️ **Shared with the counter deliberately.** They are the same two values with the same
+         * two longest cases, and `TradeSheetTest` already fails the build if a longer species name
+         * is ever added — a second pair of numbers would be a second thing to forget.
+         */
+        internal val EJECT_NAME_W = TRADE_NAME_W
+        internal val EJECT_MASS_W = TRADE_MASS_W
+
+        /**
+         * How wide the two switch halves are pinned, in `em`.
+         *
+         * ⛔ **Both the same, and both pinned**, which is what makes them read as one switch rather
+         * than as two buttons: sized to their labels, EJECT would be visibly wider than KEEP and the
+         * lit half would appear to grow when it was pressed. Five characters at the font's 0.75
+         * aspect is 3.75em, and the rest is the gap either side of the word.
+         */
+        internal val EJECT_SWITCH_EM = 4.6f
+
+        /** How wide the whitelist wants to be: four columns, two of them controls. */
+        private val EJECT_WIDTH_DP = 560f
+
+        /**
+         * ⛔ **Red, where every other lit control in this HUD is green.** Green is this game's colour
+         * for "armed and safe" — an interlock on, a lock holding. An ejector on is a machine feeding
+         * the ship's cargo into space and never giving it back, and dressing that as an approval is
+         * how a player throws away a tonne of titanium without noticing.
+         */
+        private val EJECT_ON = 0xA0432EFFL
+        private val KEEP_ON = 0x2E6B4AFFL
+        private val EJECT_OFF = 0x2A3550FFL
 
         /** Nav view half-width (provisional — 20s debug thrust). */
         const val NAV_RANGE_TILES: Float = 256f

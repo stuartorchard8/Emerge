@@ -27,6 +27,7 @@ import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.Docking
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.machine.DockingPort
+import org.emerge.demo.outofspace.world.machine.Ejector
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
@@ -692,6 +693,16 @@ class OutofspaceController(
 
     /** `>>` on the ore row. */
     fun toggleSellOreForever(port: DockingPort) = retune(port.unboundedOre())
+
+    /**
+     * One press of EJECT or KEEP on [species] — see `Ejector.switched`, where the rule lives.
+     *
+     * ⚠️ **The set is built on the machine, not here**, for the reason [nudge] gives: what a press
+     * means is a fact about what the list can say, and stating it in the panel would let the panel
+     * and any other caller form two opinions about it.
+     */
+    fun setEject(ejector: Ejector, species: Species, ejecting: Boolean) =
+        pending.add(Edit.TuneEjector(ejector.center, ejector.switched(species, ejecting).whitelist))
 
     private fun retune(port: DockingPort) =
         pending.add(Edit.TuneDockingPort(port.center, orders = port.orders, ore = port.ore))

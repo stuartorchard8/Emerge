@@ -208,7 +208,7 @@ val DeckMachineKind.fillPermille: Int
         DeckMachineKind.Hull, DeckMachineKind.Airlock -> 60
         // Mostly a housing, as it was while it was a machine — the number is carried across, not
         // rechosen, so the migration does not quietly change what the ship weighs.
-        DeckMachineKind.Vent -> 40
+        DeckMachineKind.Ejector -> 40
         // A shell with a room's worth of space inside it — carried across unchanged.
         // ⚠️ **The same fill for all three store sizes, which is a cost per tile and not per tank.**
         // A silo is three tiles of the same shell, so it costs a third of a warehouse to build and

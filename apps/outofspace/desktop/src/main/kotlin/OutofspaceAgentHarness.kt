@@ -82,7 +82,7 @@ import kotlin.math.roundToInt
  * pause on|off               # stop the world without stopping the loop — see `frames`
  * frames <n> [hz]            # N frames of real time, as a window would. The only way to watch a
  *                            # paused world settle: the clock runs, the passes do not
- * brush <kind> [dir]         # RAIL/EXTRACTOR/PROCESSOR/VENT/... and Right|Down|Left|Up
+ * brush <kind> [dir]         # RAIL/EXTRACTOR/PROCESSOR/EJECTOR/... and Right|Down|Left|Up
  * material <Species>|none    # what the next placement is made of; nothing builds without one
  * place <x> <y>              # build with the current brush
  * fit                        # shrink grid back to ship + pad

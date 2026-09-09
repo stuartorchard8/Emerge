@@ -17,7 +17,7 @@ import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.setTemperature
 import org.emerge.demo.outofspace.world.Structure
 import org.emerge.demo.outofspace.world.machine.Concentrator
-import org.emerge.demo.outofspace.world.machine.Vent
+import org.emerge.demo.outofspace.world.machine.Ejector
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.TileIndex
@@ -202,8 +202,8 @@ class HeatTest {
             deckFill = { x, y, tile ->
                 when {
                     x == 5 && y == 5 -> Concentrator(tile, Direction.Right)
-                    x == 7 && y == 5 -> Vent(tile)      // concentrate leaves forward
-                    x == 5 && y == 7 -> Vent(tile)      // tailings leave through the floor
+                    x == 7 && y == 5 -> openEjector(tile)      // concentrate leaves forward
+                    x == 5 && y == 7 -> openEjector(tile)      // tailings leave through the floor
                     else -> null
                 }
             },

@@ -34,7 +34,7 @@ import org.emerge.demo.outofspace.world.machine.Furnace
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.ThrusterControl
 import org.emerge.demo.outofspace.world.machine.TileEnergy
-import org.emerge.demo.outofspace.world.machine.Vent
+import org.emerge.demo.outofspace.world.machine.Ejector
 import org.emerge.demo.outofspace.world.machine.WireButton
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
@@ -70,7 +70,7 @@ fun materialBefore(kind: DeckMachineKind): Species = when (kind) {
     // every other plate defaulted to.
     DeckMachineKind.SolarPanel, DeckMachineKind.Terminal -> Species.Steel
     DeckMachineKind.Hull, DeckMachineKind.Airlock -> Species.Steel
-    DeckMachineKind.Vent, DeckMachineKind.Warehouse,
+    DeckMachineKind.Ejector, DeckMachineKind.Warehouse,
     // Unreachable for the docking port's reason below: neither size existed at version 20, so no
     // file this function reads can name one. Titanium keeps them with the warehouse they are sizes
     // of rather than inventing an answer for a case that cannot arise.
@@ -630,7 +630,21 @@ object Save {
                 if (m.lastPurity != 0) put("lastpurity", m.lastPurity.toString())
                 if (m.lastMass != 0L) put("lastmass", m.lastMass.toString())
             }
-            is Vent -> put("vented", m.ventedMass.toString())
+            is Ejector -> {
+                put("vented", m.ventedMass.toString())
+                // ⚠️ **Ordinal order, so that one whitelist has one spelling.** A `Set` has no order
+                // of its own and a save has to be diffable — two identical ejectors must not write
+                // two different lines because their sets were built by different button presses.
+                //
+                // Written only when something is on it, which is the same economy the storage lock's
+                // fields keep: a fresh ejector is the common case and adds nothing to the line. An
+                // older file with no field loads with an empty list, which is what a file written
+                // before the list existed genuinely says — see `canonicalKindName`.
+                if (m.whitelist.isNotEmpty()) put(
+                    "eject",
+                    m.whitelist.sortedBy { it.ordinal }.joinToString(",") { it.name },
+                )
+            }
             // A warehouse holds nothing itself: its contents are a tile of the buffer layer, and
             // the store loop below writes them under the key the record has always used.
             is Concentrator -> {
@@ -1907,6 +1921,16 @@ object Save {
         // family, since the family is what all three are. No field and no meaning changed, so no
         // version bump: see the note above for why that is the rule.
         "Storage" -> DeckMachineKind.Warehouse.name
+        // ⚠️ The hole was a `Vent` while it had no opinion about what went through it. It is an
+        // `Ejector` now that it carries a whitelist — a name for the machine rather than for the
+        // opening. No field and no meaning changed with the rename, so no version bump either.
+        //
+        // ⛔ **What a version-29-or-older file loads to is an ejector with an EMPTY list, which
+        // ejects nothing.** That is a real behaviour change and it is deliberate (Stu): the machine
+        // destroys the ship's cargo, and after this change nothing is destroyed that the player has
+        // not named — including in a world where they never got the chance to name it. A save's
+        // disposal lines jam on load until each ejector is given its list back.
+        "Vent" -> DeckMachineKind.Ejector.name
         else -> name
     }
 
@@ -1978,7 +2002,16 @@ object Save {
             DeckMachineKind.SolarPanel -> SolarPanel(tile, facing())
             DeckMachineKind.Terminal -> Terminal(tile)
             DeckMachineKind.Airlock -> Airlock(tile)
-            DeckMachineKind.Vent -> Vent(tile, ventedMass = massNum("vented", 0L))
+            DeckMachineKind.Ejector -> Ejector(
+                tile,
+                ventedMass = massNum("vented", 0L),
+                // ⛔ **An unknown species name is a refusal, not a silent drop.** A list quietly
+                // shortened by one is an ejector that keeps something the player told it to throw
+                // away, and it would say nothing about having changed its mind.
+                whitelist = f["eject"].orEmpty().split(',').filter { it.isNotEmpty() }.mapTo(
+                    LinkedHashSet(),
+                ) { name -> Species.ALL.firstOrNull { it.name == name } ?: fail("unknown species '$name'") },
+            )
             // Two lists, each one field. ⚠️ `wiring` is applied after this `when` for every kind
             // (see `withWiring` below), so it is not passed here.
             DeckMachineKind.DockingPort -> DockingPort(

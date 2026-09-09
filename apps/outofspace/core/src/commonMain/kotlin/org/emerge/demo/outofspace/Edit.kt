@@ -202,6 +202,21 @@ sealed interface Edit {
         val ore: Long,
     ) : Edit
 
+    /**
+     * Replace an ejector's whitelist wholesale.
+     *
+     * ⛔ **The whole set, not one species at a time**, which is [TuneDockingPort]'s reason exactly: a
+     * whitelist is a statement about a *set* — the network's demand at that tile is rebuilt from all
+     * of it together — so an edit that flipped one entry would have to say what happens to the rest
+     * anyway. `Ejector.toggled` is where a button press becomes a set, and it lives on the machine
+     * so that the panel and any other caller cannot disagree about what a press means.
+     */
+    data class TuneEjector(
+        val tile: TileIndex,
+        /** See [org.emerge.demo.outofspace.world.machine.Ejector.whitelist] — empty ejects nothing. */
+        val whitelist: Set<org.emerge.demo.outofspace.chem.Species>,
+    ) : Edit
+
     /** Wire: rewires action term. slot≥end=append, null trigger=remove. Single edit type (add/change/remove are same list op). */
     data class Wire(val tile: TileIndex, val action: Action, val slot: Int, val trigger: Trigger?) : Edit
 

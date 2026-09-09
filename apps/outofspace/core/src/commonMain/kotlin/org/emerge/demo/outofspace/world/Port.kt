@@ -20,7 +20,7 @@ import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.Furnace
 import org.emerge.demo.outofspace.world.machine.Thruster
-import org.emerge.demo.outofspace.world.machine.Vent
+import org.emerge.demo.outofspace.world.machine.Ejector
 import org.emerge.demo.outofspace.world.machine.WireButton
 import org.emerge.demo.outofspace.world.machine.SolarPanel
 
@@ -147,7 +147,7 @@ private fun localPorts(machine: DeckMachine): List<LocalPort> {
         )
 
         // A vent is a hole. It takes whatever is put into it, from whichever face.
-        is Vent -> Direction.ALL.map { LocalPort(0, 0, it, PortKind.Input) }
+        is Ejector -> Direction.ALL.map { LocalPort(0, 0, it, PortKind.Input) }
 
         // In one side, out the other, like everything else. The second input it used to have on top
         // bought nothing: two lines arriving at one tank is a merge, and a merge is something the

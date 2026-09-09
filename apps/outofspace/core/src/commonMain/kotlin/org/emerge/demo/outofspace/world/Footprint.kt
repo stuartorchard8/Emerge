@@ -158,7 +158,7 @@ private fun turnedY(x: Int, y: Int, facing: Direction): Int = when (facing) {
  */
 val DeckMachineKind.shape: Footprint
     get() = when (this) {
-        DeckMachineKind.Hull, DeckMachineKind.Airlock, DeckMachineKind.Vent -> ONE_TILE
+        DeckMachineKind.Hull, DeckMachineKind.Airlock, DeckMachineKind.Ejector -> ONE_TILE
         // A room-sized installation, as it was on the machine list.
         DeckMachineKind.Warehouse -> Footprint.square(3)
         // Three tiles end to end, and only ever three *along* its facing.

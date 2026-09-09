@@ -49,7 +49,15 @@ enum class DeckMachineKind(
 ) {
     Hull("HULL", preventAirflow = true),
     Airlock("AIRLOCK", preventAirflow = true),
-    Vent("VENT"),
+    /**
+     * Throws named material overboard — see [Ejector], where the whitelist lives.
+     *
+     * ⚠️ **Written to disk as `Vent` before this name existed**, and read back under it — see
+     * `Save.canonicalKindName`. No field and no meaning changed with the name, so no version bump;
+     * what changed is that the machine grew an opinion about what goes through it, and "vent" names
+     * the hole while "ejector" names the machine.
+     */
+    Ejector("EJECTOR"),
     /**
      * Three tiles square, twenty tonnes: the ship's warehouse — see [Storage], which is the
      * behaviour all three sizes share.

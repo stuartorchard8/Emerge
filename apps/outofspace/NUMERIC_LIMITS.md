@@ -104,7 +104,7 @@ Structure mass is `gramsPerTile × thermalTiles`, deflated by `fillPermille`.
 | BRIDGE | 391,926 | 176,366,700 | 3 |
 | HULL / AIRLOCK | 382,433 | 173,089,411 | 1 |
 | GAUGE | 261,284 | 117,577,800 | 1 |
-| SENSOR / BUTTON / VENT | 149,732 | 77,860,640 | 1 |
+| SENSOR / BUTTON / EJECTOR | 149,732 | 77,860,640 | 1 |
 | RAIL | 130,642 | 58,788,900 | 1 |
 | PIPE / VALVE | 111,552 | 42,947,520 | 1 |
 | WIRE | 14,873 | 5,726,336 | 1 |

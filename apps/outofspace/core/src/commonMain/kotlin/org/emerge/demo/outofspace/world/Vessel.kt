@@ -23,7 +23,7 @@ import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.Furnace
 import org.emerge.demo.outofspace.world.machine.Rocket
 import org.emerge.demo.outofspace.world.machine.Thruster
-import org.emerge.demo.outofspace.world.machine.Vent
+import org.emerge.demo.outofspace.world.machine.Ejector
 import org.emerge.demo.outofspace.world.machine.WireButton
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
@@ -1264,7 +1264,7 @@ fun fullness(machine: DeckMachine?, centre: TileIndex, grid: Grid, buffers: Buff
     is Storage -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / machine.capacity).toInt()
     is Sensor, is WireButton -> 0
     is Hull, is Airlock -> 0
-    is Vent -> 0
+    is Ejector -> 0
     is Pump -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / Pump.BUFFER_CAP).toInt()
     // Against both hoppers plus a feed, so a reading of full means the plant is genuinely backed up
     // rather than that the fast side got there first.

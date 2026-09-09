@@ -357,7 +357,7 @@ class FootprintTest {
         val expected: List<Pair<DeckMachineKind, List<String>>> = listOf(
             DeckMachineKind.Hull to List(4) { one },
             DeckMachineKind.Airlock to List(4) { one },
-            DeckMachineKind.Vent to List(4) { one },
+            DeckMachineKind.Ejector to List(4) { one },
             DeckMachineKind.Sensor to List(4) { one },
             DeckMachineKind.KeyInput to List(4) { one },
             DeckMachineKind.Pump to List(4) { one },

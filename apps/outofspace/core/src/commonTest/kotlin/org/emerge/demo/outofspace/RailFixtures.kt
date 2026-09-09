@@ -15,6 +15,8 @@ import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.machine.Extractor
+import org.emerge.demo.outofspace.world.machine.Ejector
+import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.massPerTileOf
@@ -89,6 +91,17 @@ class RailPlan(private val grid: Grid) {
 }
 
 /** `rails(grid) { row(4, 14, 5) }` — the usual way a test states its track. */
+/**
+ * An ejector that will throw **anything** overboard — the bottomless sink a transport fixture wants.
+ *
+ * ⛔ **A bare `Ejector(tile)` is not that machine and never was, from the day it grew a whitelist.**
+ * An unlisted ejector refuses every gram at its door and states that refusal to the network, which
+ * is the whole point of it; a fixture that wants "somewhere for material to go" has to say which
+ * material, and every one of these wants all of it. Written out here so that the tests which are
+ * *about* the list read differently from the ones merely using a sink.
+ */
+fun openEjector(tile: TileIndex): Ejector = Ejector(tile, whitelist = Species.ALL.toSet())
+
 fun rails(grid: Grid, build: RailPlan.() -> Unit): List<Segment?> = RailPlan(grid).apply(build).list()
 
 // ── In-place variants ─────────────────────────────────────────────────────────

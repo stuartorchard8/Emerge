@@ -36,7 +36,7 @@ import org.emerge.demo.outofspace.world.machine.WireButton
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.Pump
-import org.emerge.demo.outofspace.world.machine.Vent
+import org.emerge.demo.outofspace.world.machine.Ejector
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.FlowField
 import org.emerge.demo.outofspace.world.RigidBody
@@ -930,8 +930,8 @@ class OutofspaceRenderer {
                 intakeArrow(x, y, m.facing)
             }
 
-            is Vent -> {
-                tileRect(x, y, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Vent))
+            is Ejector -> {
+                tileRect(x, y, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Ejector))
                 tileRect(x, y, Visual.VENT_CORE_SCALE, Colors.VENT_CORE)
             }
             // Tank: room-sized fill, legible at distance. ⚠️ **Drawn over the footprint's own
@@ -2164,7 +2164,7 @@ fun kindColor(kind: DeckMachineKind): Long = when (kind) {
     DeckMachineKind.Valve -> 0xD8A860FFL
     DeckMachineKind.Hull -> 0x4A5464FFL
     DeckMachineKind.Airlock -> 0x6E7C90FFL
-    DeckMachineKind.Vent -> 0x3A3A44FFL
+    DeckMachineKind.Ejector -> 0x3A3A44FFL
     // One family, lightening as it shrinks: three sizes of the same machine should read as three
     // sizes of the same machine, and a silo standing in a corridor still has to be tellable from the
     // warehouse at the end of it.

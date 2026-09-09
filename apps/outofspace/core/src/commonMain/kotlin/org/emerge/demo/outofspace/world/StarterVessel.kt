@@ -13,7 +13,7 @@ import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
-import org.emerge.demo.outofspace.world.machine.Vent
+import org.emerge.demo.outofspace.world.machine.Ejector
 
 /**
  * **What the starting ship is built out of**, kind by kind.
@@ -155,8 +155,15 @@ fun starterVessel(
     // Concentrator→tank: a gauge reads concentrate on the way.
     rail(14, 28, y, setOf(17))
 
-    // Waste: vertical drops to vents.
-    put(13, y + 4) { Vent(it) }
+    // Waste: a vertical drop to an ejector, and the ejector is **told to take everything**.
+    //
+    // ⛔ **Authored, not placed.** A freshly placed ejector names nothing and is a dead end — see
+    // [Ejector], where that rule and its reason live. This ship is not a fresh placement: it is a
+    // demonstration plant whose extractor is aimed, whose sensor has a threshold and whose demo
+    // extractor is wired, and a tailings column ending in a machine that refuses tailings would
+    // demonstrate a jam. Whatever comes down this column came out of the concentrator's floor, so
+    // there is nothing on the list worth keeping and no shorter way to say "all of it".
+    put(13, y + 4) { Ejector(it, whitelist = Species.ALL.toSet()) }
     column(13, y + 1, y + 4)
 
     // Wiring demo: 7 rows below.

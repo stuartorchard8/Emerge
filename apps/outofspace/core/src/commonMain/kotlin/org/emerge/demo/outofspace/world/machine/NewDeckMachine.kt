@@ -19,7 +19,7 @@ import org.emerge.demo.outofspace.world.TileIndex
 fun newDeckMachine(kind: DeckMachineKind, tile: TileIndex, facing: Direction): DeckMachine = when (kind) {
     DeckMachineKind.Hull -> Hull(tile)
     DeckMachineKind.Airlock -> Airlock(tile)
-    DeckMachineKind.Vent -> Vent(tile)
+    DeckMachineKind.Ejector -> Ejector(tile)
     // One machine at three sizes — see [Storage]. The kind is handed straight through, which is
     // what makes a new size cost a line here rather than a class.
     DeckMachineKind.Warehouse, DeckMachineKind.Silo, DeckMachineKind.Buffer ->

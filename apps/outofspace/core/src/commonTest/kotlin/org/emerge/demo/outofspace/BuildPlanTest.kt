@@ -158,7 +158,7 @@ class BuildPlanTest {
         assertFalse(state.canStand(DeckMachineKind.Hull, middle, Direction.Right))
         assertFalse(reducerPlaces(state, middle, DeckMachineKind.Hull, Direction.Right))
         // A vent is permeable, so it displaces nothing and may stand in the same hole.
-        assertTrue(state.canStand(DeckMachineKind.Vent, middle, Direction.Right))
+        assertTrue(state.canStand(DeckMachineKind.Ejector, middle, Direction.Right))
     }
 
     // ── What the cursor offers ───────────────────────────────────────────────

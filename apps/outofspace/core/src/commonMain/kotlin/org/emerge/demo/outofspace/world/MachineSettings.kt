@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.machine.*
 
 /**
@@ -43,6 +44,16 @@ data class MachineSettings(
     val efficiencyPermille: Setting<Int>,
     val control: Setting<ThrusterControl>,
     val fuelPermille: Setting<Int>,
+    /**
+     * An ejector's whitelist — see [Ejector.whitelist].
+     *
+     * ⚠️ **[Setting.Empty] and [Setting.Absent] are not the same thing here, and the difference is
+     * the machine's whole safety story.** Absent means "the source had no such setting" and must
+     * leave the target's list alone; Empty means the source's list was *deliberately* empty and
+     * pasting it makes the target eject nothing. Copying a fresh ejector onto a tuned one has to
+     * clear it, or **C** would be a way to give a machine a list its own panel never showed.
+     */
+    val whitelist: Setting<Set<Species>>,
 ) {
     override fun toString(): String = buildString {
         append(kind.label).append(" [")
@@ -56,6 +67,7 @@ data class MachineSettings(
         append(',').append("eff=").append(if (efficiencyPermille is Setting.Present) efficiencyPermille.value else efficiencyPermille)
         append(',').append("control=").append(if (control is Setting.Present) control.value else control)
         append(',').append("mix=").append(if (fuelPermille is Setting.Present) fuelPermille.value else fuelPermille)
+        append(',').append("eject=").append(if (whitelist is Setting.Present) whitelist.value.size else whitelist)
         append(']')
     }
 }
@@ -142,6 +154,11 @@ fun DeckMachine.toMachineSettings(): MachineSettings = MachineSettings(
     },
     fuelPermille = when (this) {
         is Rocket -> Setting.Present(fuelPermille)
+        else -> Setting.Absent
+    },
+    whitelist = when (this) {
+        // ⛔ **Empty is captured as [Setting.Empty], never as a present empty set.** See the field.
+        is Ejector -> if (whitelist.isEmpty()) Setting.Empty else Setting.Present(whitelist)
         else -> Setting.Absent
     },
 )
@@ -293,10 +310,13 @@ fun DeckMachine.withSettings(settings: MachineSettings): DeckMachine {
             // Hull has wiring but no way to configure it — it is the wall, not a control surface.
             base
         }
-        DeckMachineKind.Vent -> {
-            // A vent only has wiring, which is the always-on throttle that controls what it discards.
-            var result = base as Vent
+        DeckMachineKind.Ejector -> {
+            // Wiring — the always-on throttle that controls whether it discards at all — and the
+            // list of what it is allowed to discard.
+            var result = base as Ejector
             if (settings.wiring is Setting.Present) result = result.copy(wiring = settings.wiring.value)
+            if (settings.whitelist is Setting.Present) result = result.copy(whitelist = settings.whitelist.value)
+            if (settings.whitelist is Setting.Empty) result = result.copy(whitelist = emptySet())
             result
         }
         DeckMachineKind.Airlock -> {

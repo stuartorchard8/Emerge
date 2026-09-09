@@ -26,7 +26,7 @@ import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
-import org.emerge.demo.outofspace.world.machine.Vent
+import org.emerge.demo.outofspace.world.machine.Ejector
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.contentsOf
 import org.emerge.demo.outofspace.world.starterVessel
@@ -156,7 +156,7 @@ class VesselSimTest {
         val rails = arrayOfNulls<Segment>(grid.size)
         val feed = feedExtractor(grid, deck, 2, 5)
         deck += fixtureStorage(grid.tile(8, 5), Direction.Right)   // in at (7, 5)
-        deck += Vent(grid.tile(5, 2))                                       // in at its own tile
+        deck += openEjector(grid.tile(5, 2))                                       // in at its own tile
         joinRow(grid, rails, 4, 7, 5)
         joinCol(grid, rails, 5, 2, 5)   // the branch, up from the middle of the run to the vent
 
@@ -188,7 +188,7 @@ class VesselSimTest {
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
         val feed = feedExtractor(grid, deck, 2, 5)
-        deck += Vent(grid.tile(5, 2))                                       // two tiles up from the fork
+        deck += openEjector(grid.tile(5, 2))                                       // two tiles up from the fork
         deck += fixtureStorage(grid.tile(9, 5), Direction.Right)   // four tiles along, in at (8, 5)
         joinRow(grid, rails, 4, 8, 5)
         joinCol(grid, rails, 5, 2, 5)
@@ -303,11 +303,18 @@ class VesselSimTest {
         var s = oreLine(grid, toX = 7)
         s = run(s, ticksToMove(Storage.WAREHOUSE_CAP + Extractor.BUFFER_CAP))
 
-        // Tear out the full tank and put a vent on the end of the run instead. The vent takes
-        // anything, so the line drains from the front — the tile nearest the consumer moves first.
+        // Tear out the full tank and put an ejector on the end of the run instead.
+        //
+        // ⚠️ **And name what it may throw away, in the same breath.** A freshly placed ejector has an
+        // empty whitelist and is a dead end, not a drain — see `Ejector`. Placing one and expecting
+        // the line to move is the mistake a player makes once, and a fixture that made it here would
+        // read as the transport layer having broken.
         s = run(s, 40, OutofspaceInput(listOf(
             Edit.Remove(grid.tile(8, 2)),
-            fixturePlace(grid.tile(7, 2), Brush.Building(DeckMachineKind.Vent), Direction.Right),
+            fixturePlace(grid.tile(7, 2), Brush.Building(DeckMachineKind.Ejector), Direction.Right),
+        )))
+        s = run(s, 40, OutofspaceInput(listOf(
+            Edit.TuneEjector(grid.tile(7, 2), Species.ALL.toSet()),
         )))
         assertTrue(s.ventedMass > 0L, "material should have gone overboard")
         assertBalanced(s, "drained line")
@@ -379,7 +386,7 @@ class VesselSimTest {
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
         val feed = feedExtractor(grid, deck, 2, 2)
-        deck += Vent(grid.tile(5, 2))   // takes everything, so the extractor never backs up
+        deck += openEjector(grid.tile(5, 2))   // takes everything, so the extractor never backs up
         joinRow(grid, rails, 4, 5, 2)
         var s = VesselState(
             grid, deck,

@@ -99,7 +99,7 @@ import org.emerge.demo.outofspace.world.SignalField
 import org.emerge.demo.outofspace.world.SignalNetworks
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.StructureMap
-import org.emerge.demo.outofspace.world.machine.Vent
+import org.emerge.demo.outofspace.world.machine.Ejector
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.BodyStep
@@ -473,7 +473,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // in the power pass, against the conduit under it, not against a buffer.
                     // A terminal is inert in the strongest sense on this list: it is a rod, and the
                     // only pass that reads it is the one that builds the contact graph.
-                    is Hull, is Airlock, is Vent, is Storage, is Bridge, is Gauge, is Valve,
+                    is Hull, is Airlock, is Ejector, is Storage, is Bridge, is Gauge, is Valve,
                     is Sensor, is WireButton, is SolarPanel, is Terminal -> m
                     is Pump -> w.suck(m, on, tile)
                     // A thruster on flight control answers the pilot's stick, not the wire — see
@@ -1636,7 +1636,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
      * at once and each half needs its own term:
      *
      *  - propellant is a solid off a belt, so spending it is [VesselState.ventedMass] — the same
-     *    store a [Vent] increments, and for the same reason: it has left the vessel's cargo.
+     *    store an [Ejector] increments, and for the same reason: it has left the vessel's cargo.
      *  - gas the jet scooped up is atmosphere. Overboard it is [VesselState.airVentedMass]; into the
      *    destination tile it has not gone anywhere at all and is booked nowhere.
      *  - propellant that lands in the destination tile has *become* atmosphere, so it is vented from
@@ -1993,7 +1993,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          *
          * Four running totals rather than one, because the exhaust is two substances leaving two
          * ledgers: the propellant is a solid off the belt ([VesselState.ventedMass], the same store
-         * a [Vent] uses) and the gas the jet scooped out of the corridor on its way past is
+         * an [Ejector] uses) and the gas the jet scooped out of the corridor on its way past is
          * atmosphere ([VesselState.airVentedMass]). Booking both to one term would close the sum and
          * break both identities. The momentum is the pair's other half — `+p` here is exactly the
          * `−p` handed to the ship below, so nothing is minted and the ledger needs no new store.
@@ -2487,6 +2487,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     val tile = originAt(edit.tile) ?: return
                     val m = deck[tile]
                     if (m is DockingPort) deck[tile] = m.copy(orders = edit.orders, ore = edit.ore)
+                }
+                is Edit.TuneEjector -> {
+                    val tile = originAt(edit.tile) ?: return
+                    val m = deck[tile]
+                    if (m is Ejector) deck[tile] = m.copy(whitelist = edit.whitelist)
                 }
                 is Edit.Undock -> {
                     val weld = assembly.welds.firstOrNull { it.parentId == Member.VESSEL } ?: return
@@ -4583,6 +4588,32 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 accepts.getOrPut(tile) { mutableListOf() }.add(Acceptance.filtered(SpeciesFilter.MIXED))
             }
 
+            // ── Ejectors: what the player has said may go overboard ──────────
+            //
+            // ⛔ **The whitelist is the whole of the machine's appetite, and an EMPTY one is stated
+            // out loud.** Every other fussy kind above may skip a machine it has nothing to say
+            // about, because a tile that states no acceptance takes anything for ever — see
+            // `sinkAdmits`, where that sentence is written down. For an ejector that default is
+            // exactly backwards: it is the one machine whose door standing open destroys the
+            // vessel's cargo. So it is the one kind here with no `continue` on an empty list, and
+            // `Acceptance.onlyOf(emptySet())` is what refuses everything.
+            //
+            // ⚠️ **[Acceptance.onlyOf] rather than a filter per species**, which is the docking
+            // port's shape and would be wrong here. A sell list is several appetites OR'd at a tile,
+            // so a lump matching *any* of them is admitted; an ejector needs the opposite reading —
+            // every species in the lump has to be named, or a packet of tailings takes a gram of
+            // iron overboard with it. See [Acceptance.only].
+            for ((tile, at) in ports) {
+                if (rails[tile.index] == null) continue
+                val input = at.firstOrNull { it.kind == PortKind.Input } ?: continue
+                val ejector = deck[input.owner] as? Ejector ?: continue
+                // A site is not a machine — the warehouse note above is the same trap, and it bites
+                // harder here: an unbuilt shell cannot throw anything away, and the site's own bill
+                // is the only appetite it has while it is one.
+                if (deck.isGhost(input.owner)) continue
+                accepts.getOrPut(tile) { mutableListOf() }.add(Acceptance.onlyOf(ejector.whitelist))
+            }
+
             // ── Docking ports: what the player has put up for sale ───────────
             //
             // ⛔ **The sell list is what makes the network route cargo to the mouth**, and it is the
@@ -5169,7 +5200,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // Overboard, and booked as it goes: [ventedMass] is the only legitimate way for mass
                 // to leave the vessel, so the ledger term and the machine's own running total move
                 // together or the world stops adding up.
-                is Vent -> {
+                is Ejector -> {
                     ventedMass += packet.mass
                     deck[destination.center] =
                         destination.copy(ventedMass = destination.ventedMass + packet.mass)

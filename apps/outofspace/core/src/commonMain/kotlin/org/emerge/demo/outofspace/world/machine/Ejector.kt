@@ -1,0 +1,68 @@
+package org.emerge.demo.outofspace.world.machine
+
+import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.world.TileIndex
+import org.emerge.demo.outofspace.world.Wiring
+
+/**
+ * An ejector: throws named material overboard. Somewhere for slag to go that is not "jam the line".
+ *
+ * A deck machine, because it takes a tile away from anything else that wants one — which is the
+ * whole of what makes something a deck machine. Its casing is matter in [DeckArray.stuff] like every
+ * other, so an ejector has a temperature made of the metal it is built from rather than of a
+ * constant.
+ *
+ * ⚠️ **It was called a VENT**, and files written under that name still say so — see
+ * `Save.canonicalKindName`. The old name described the hole; this one describes what the machine
+ * does with it, which matters now that the machine has an opinion about what goes through.
+ *
+ * ### The whitelist is the whole of its appetite
+ *
+ * ⛔ **Nothing is thrown away that the player has not named.** An ejector's [whitelist] becomes an
+ * [org.emerge.demo.outofspace.world.Acceptance] at its own tile, so the network only ever *routes*
+ * here what is on the list — nothing travels toward a place that cannot use it. It is the docking
+ * port's sell list by another name and for the same reason: both destroy the ship's cargo from the
+ * player's point of view, and neither may do it on the player's behalf.
+ *
+ * ⛔ **An EMPTY list refuses everything; it does not mean "no opinion".** That is the one thing this
+ * machine cannot be allowed to get wrong. A tile that states no acceptance at all takes anything for
+ * ever — see `sinkAdmits`, where "nothing stated means anything" is written down — so a fresh
+ * ejector has to state its emptiness out loud or it would be the old vent wearing a list. Place one
+ * and the belts back up behind it until a row is ticked, which is correct and not a failure to
+ * explain away.
+ *
+ * ⚠️ **All of a lump or none of it.** [org.emerge.demo.outofspace.world.Acceptance.onlyOf] admits a
+ * mixture only when *every* species in it is on the list, so a lump of tailings with one gram of
+ * iron in it stays aboard. Ejecting the ore to be rid of the gangue would quietly destroy the metal
+ * with it, and a machine whose mistakes are unrecoverable is the wrong place to be generous.
+ */
+data class Ejector(
+    override val center: TileIndex,
+    val ventedMass: Long = 0L,
+    /**
+     * Every species this ejector may throw overboard. **Empty means nothing, not anything.**
+     *
+     * A set rather than a signed book like [DockingPort.orders], because there is one direction here
+     * and no quantity: matter goes out, and it goes out for ever. What the port needs a number for
+     * — how much of an unbounded permission is left — an ejector has no use for.
+     */
+    val whitelist: Set<Species> = emptySet(),
+    override val wiring: Wiring = Wiring.RUNNING,
+) : DeckMachine {
+    override val kind: DeckMachineKind get() = DeckMachineKind.Ejector
+    override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
+    override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
+
+    /** Whether [species] is on the list — one press of the switch away from either answer. */
+    fun ejects(species: Species): Boolean = species in whitelist
+
+    /**
+     * This ejector with [species] on the stated side of its switch.
+     *
+     * ⛔ **Set, not flip.** The panel's two buttons each name a side, so pressing the lit one has to
+     * come to nothing — a `toggled` here would turn a double tap on EJECT into a silent reversal,
+     * and the whole reason the control is a pair is to make that impossible.
+     */
+    fun switched(species: Species, ejecting: Boolean): Ejector =
+        copy(whitelist = if (ejecting) whitelist + species else whitelist - species)
+}

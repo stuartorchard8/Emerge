@@ -26,7 +26,7 @@ import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.SpeciesFilter
 import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.Storage
-import org.emerge.demo.outofspace.world.machine.Vent
+import org.emerge.demo.outofspace.world.machine.Ejector
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -72,7 +72,7 @@ class DemandTest {
         val grid = cfg.initialGrid
         val deck = DeckArray(grid)
         deck += fixtureStorage(grid.tile(2, 3), Direction.Right)
-        if (sink) deck += Vent(grid.tile(toX + 1, 3))
+        if (sink) deck += openEjector(grid.tile(toX + 1, 3))
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 3, if (sink) toX + 1 else toX, 3)
         return VesselState(
@@ -591,7 +591,7 @@ class DemandTest {
     fun `nothing is let go up a road that ceases to exist in the same step`() {
         val grid = cfg.initialGrid
         val deck = DeckArray(grid)
-        deck += Vent(grid.tile(8, 3))
+        deck += openEjector(grid.tile(8, 3))
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 2, 5, 3)
         joinRow(grid, rails, 7, 8, 3)
