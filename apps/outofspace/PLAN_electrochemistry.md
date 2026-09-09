@@ -191,41 +191,94 @@ un-modelled, and it stops working the moment the cell is a load on a real circui
 
 ### ⭐ 5.5 The cell has three compartments, and they are buffer tiles
 
-**A cell is a 3×3 machine whose ports make a T** (Stu, 2026-09-08): pointing up, the feed enters at
-the bottom of the stem, and the two electrode compartments sit on the arms — **middle-left and
-middle-right** — each with its own store and its own rail port.
+**A cell is a 3×2 machine: three baths along one edge, its two terminals along the other** (Stu,
+2026-09-09). Pointing right in its own frame, the anchor is the **middle bath** — the feed — with the
+cathode bath behind it and the anode bath ahead of it, each on its own tile with its own rail port.
+The terminals sit on the two outer tiles of the far edge, on casing that carries no port at all.
 
-⚠️ **This replaced a 1×3, and the 1×3 had a hole.** It put the feed in `Inside` at the centre, and
-`Inside` is *"the one role with no port — nothing outside the machine ever touches it"*
-(`BufferRole.kt:44`). A cell whose feed cannot be delivered to is a cell that never runs, and the
-only machine that gets away with an `Inside` mouth is [Storage], which is special-cased. The T gives
-the feed a real port on a real tile and needs no exception.
+```
+   terminals    T . T
+   baths+ports  C F A        F = feed (the anchor)
+```
 
-⭐ **The arms are opposite each other with the machine's body between them, which is what the power
-model needs** — `PLAN_power_network.md` §5: a machine's two terminals must span its casing so that
-the casing is a *parallel path* around the work. The old 1×3 satisfied that too; what it could not
-satisfy was the feed. Terminal A shares the left arm with output A, terminal B the right arm with
-output B.
+⚠️ **This replaced a 3×3 whose ports made a T** (Stu, 2026-09-08), which in turn replaced a 1×3. The
+1×3 had a hole — it put the feed in `Inside`, which is *"the one role with no port"*
+(`BufferRole.kt`), so the feed could never be delivered to. The T fixed that by putting the feed on
+the stem and letting it fall into the middle bath, at the cost of two mechanisms. **The 3×2 fixes it
+by geometry instead**, and is the shape `PLAN_machine_relocation.md` increment 0 was built to make
+expressible: before it, every footprint was odd on both axes by construction.
+
+#### ⭐ Three mechanisms the 3×2 deletes
+
+1. ⛔ **No generalisation of `Storage`'s exception.** The T needed *"a machine declares which store
+   its input port fills"*, because its feed port was on the stem and the bath it filled was in the
+   middle — a port whose store is not under it. Here every bath sits on its own port, so
+   `BufferRole`'s *"a store sits on the port it serves"* holds **exactly as written**. The T section
+   forbade `is Electrolyzer ->` beside `is Storage ->`; now neither is needed.
+2. ⛔ **No `Inside`, so the rule it is the exception to survives untouched.** The three roles are
+   `Input`, `Cathode` and `Anode` — all three port-serving. `Inside` keeps meaning *"the one role
+   with no port"* and the cell stops being a second machine that bends it.
+3. ⛔ **No insulating segment required.** The T put a terminal on the same tile as an output port, and
+   a terminal bonds the layers present at its tile (`PLAN_power_network.md` §3) — so the hydrogen
+   belt sat at the cathode's potential, the oxygen belt at the anode's, and one metal rail network
+   touching both shorted the cell through its own logistics. Here the terminals stand on casing with
+   no port, so **nothing outside the machine is ever at an electrode's potential**. ⚠️ The insulating
+   segment remains *available* and still works — one non-metal tile in a metal run is still a
+   galvanic isolator made of track — it is simply no longer **forced** by the cell's own shape. See
+   that plan's increment 4, which is corrected to match.
+
+#### ⭐ Why the terminals need not touch the baths
+
+⚠️ **Worth stating, because it is the objection the 3×2 has to answer.** The terminals are two tiles
+away from the electrolyte, and rule 1 of `PLAN_power_network.md` §3 — *bodies sharing a tile always
+touch* — is **gated on a terminal** for charge. So the baths are not bonded into the circuit by
+sharing a tile with anything.
+
+They do not need to be. ⭐ **A device is an edge between its two terminal nodes, and that is already
+how the solve works**: `Source(positive, negative, emf, conductance)`, built for the panel at
+`OutofspaceSim.kt:4871` out of nothing but `nodeUnder` at each terminal tile. The cell is the same
+shape with `E` for the emf and the electrolyte's conductance for `g`. What the terminals must be is
+**conducting nodes**, which they are because they stand on casing.
+
+⭐ **And §5's parallel path survives exactly.** Current entering one terminal reaches the other either
+through the electrolyte — the device edge, which does the work — or around through the casing along
+the far edge. A copper-cased cell still shorts around its own chemistry and does nothing but warm up.
 
 #### ⛔ Three baths, and the middle one is where deliveries land
 
 **Each of the three is a bath** (Stu, 2026-09-08) — one at each electrode, and one **directly
-between them** at the centre tile. The input port at the bottom of the stem delivers into the middle
-bath, *if there is room in it*.
+between them**. The input port delivers into the middle bath, *if there is room in it*.
 
-⭐ **"Directly between them" is what makes ion migration a spatial statement.** The one new mechanism
-this section asks for is cations drifting toward the cathode and anions toward the anode; with the
-three baths in a line, that is a movement from the middle to each end rather than a bookkeeping
-entry between two stores that happen to belong to the same machine.
+⭐ **"Directly between them" is what makes ion migration a spatial statement**, and the 3×2 keeps it
+intact: the three baths are still a line with the feed in the middle, so cations drifting toward the
+cathode and anions toward the anode is a movement from the middle to each end rather than a
+bookkeeping entry between two stores that happen to share an owner.
 
-⚠️ **This generalises `Storage`'s exception rather than adding a second special case.**
-`BufferRole.kt` states that *"a store sits on the port it serves"* and that `Inside` is *"the one
-role with no port — nothing outside the machine ever touches it."* A [Storage] already breaks both:
-`inputBufferRole` answers `Inside` for it by name, and `inputBufferRoleAt` carries a fallback for
-*"a door that is not on a store's tile."* The cell is the second machine to want this, which is the
-point at which it stops being an exception and becomes a rule — **a machine declares which store its
-input port fills**, defaulting to the one under the port. ⛔ Do not add `is Electrolyzer ->` beside
-`is Storage ->`; that is the shape this codebase deleted `MachineKind` to avoid.
+⛔ **`Cathode` and `Anode` must be new `BufferRole`s, not reused `Product`/`Waste`.** That file added
+`Oxidiser` rather than let a rocket's tank read WASTE, on the grounds that *"this codebase deleted
+`Material` and `MachineKind` rather than live with a name that lies."*
+
+**What the compartments buy, and it is the reason for them:**
+
+- **Acid at one end, base at the other, from the electrode reactions themselves.** The anode runs
+  `2H₂O → O₂ + 4H⁺ + 4e⁻` and turns the anolyte **acidic**; the cathode runs `2H₂O + 2e⁻ → H₂ + 2OH⁻`
+  and turns the catholyte **basic**. Drain one end and you have concentrated acid; drain the other
+  and you have caustic. From a salt and a potential, and nobody writes it down. This is
+  water-splitting electrodialysis, and chlor-alkali is its industrial giant.
+- **The cell can be flushed.** Drain all three, refill with fresh water, start again — which is what
+  makes a fouled or exhausted electrolyte a recoverable situation rather than a stuck machine.
+- **⭐ It is a battery's substrate.** See decision 3. Two compartments of differing composition
+  separated by something *is* a galvanic cell, and its voltage comes off the same table with the sign
+  flipped.
+
+**One new mechanism, and only one: ion migration.** Under the applied field, cations drift toward the
+cathode compartment and anions toward the anode, at a rate set by the current. Everything else is
+§5's competition rule run at each end.
+
+⚠️ **A consequence worth stating**: once compartments hold arbitrary mixtures, spontaneous redox
+inside *one* of them becomes reachable **with the power off**. Copper cementing onto zinc is a
+legitimate `Reaction` row needing no voltage at all. That is not a bug, but the cell stops being
+inert when unpowered, which today's electrolyzer is.
 
 #### ⛔ A bath states a volume, and the volume does two jobs
 
@@ -237,9 +290,14 @@ acceptance, one door** — see `project_oos_economy`.
 
 ⭐ **One number answering both is the test that it is the right number.** A bath that is full refuses
 deliveries *and* holds its gas at a density that decides the phase, and neither reading is free to
-drift from the other. ⛔ Derive it from the tile and the machine's `fillPermille` as `Body.capacity`
-already does — a stated litres-per-bath constant is the version of this that quietly becomes a
-fudge.
+drift from the other. ⛔ Derive it from the tile and the machine's `DeckMachineKind.fillPermille` — a
+stated litres-per-bath constant is the version of this that quietly becomes a fudge.
+
+⚠️ **This section used to cite `Body.capacity` as the precedent and that citation was wrong.**
+`Body.capacity` is *"millijoules/kelvin, per tile"* (`Body.kt:92`) — a **heat** capacity, not a
+volume. The volume precedent is `TILE_LITRES` (`Composition.kt`, and `StateEquation.kt:212` for the
+mass-per-tile form), which is what a tile's own phase question is already answered from. The shape of
+the argument was right and the function named was not.
 
 It is not an internal grid anybody has to build — `BufferRole.kt` already says what this costs:
 
@@ -508,6 +566,71 @@ has its own gotchas; a machine kind called `Cell` would collide with it.
 
 ⭐ **So the rename waits on the battery decision, not on appetite.** Renaming twice would be worse
 than renaming late, and thirteen compiler-checked sites is a cost that stays affordable.
+
+### Increment 1b — the cell gains its shape and its three baths
+
+⚠️ **This is unbuilt work sitting under a heading marked ✅ BUILT, and that is a documentation bug
+this increment exists to correct.** Increment 1 shipped on 2026-09-06: it landed the competition rule
+and deleted `ENTHALPY_PER_KG`. §5.5 and §5.6 were written on **2026-09-08**, two days later, and
+describe compartments that do not exist — `BufferRole` is still `{ Input, Oxidiser, Inside, Product,
+Waste }` and `Electrolyzer.kt` still opens *"No charge, no progress, no dwell."* So they are additions
+to a closed increment and they get their own number.
+
+**Scoped 2026-09-09 against the code.** Four steps, each one commit, green before it lands.
+
+#### 1b.1 — the shape
+
+`DeckMachineKind.Electrolyzer` becomes `Footprint(width = 3, height = 2, anchorX = 1, anchorY = 1)`:
+the anchor is the middle bath, `behind = 1`, `ahead = 1`, `above = 1`, `below = 0`.
+
+⛔ **The waste port's current expression breaks and must be restated, not re-anchored.** `localPorts`
+reads `LocalPort(0, fp.below, …)` for the third mouth (`Port.kt:130`), and at 3×2 `below` is **zero**
+— so that port would collapse onto the anchor and share a tile with the feed. The three ports become
+one per bath along the `y = 0` row.
+
+⚠️ **Existing saves hold 3×3 electrolyzer records.** `Save.kt` has no migration policy — Stu has
+never built one — and the precedent for a retired shape is *skipped, not refused*. Decide which
+before writing, because a silently re-anchored machine is worse than a dropped one.
+
+Acceptance: the exact-tiles table in `FootprintTest` gains a kind that is genuinely 3×2 — the first
+one — and `BufferRoleTest` still holds `localBufferOffset` and `portsOf` in agreement at every facing.
+
+#### 1b.2 — the three baths
+
+`BufferRole` gains `Cathode` and `Anode`. `localBufferOffset` for the cell: `Input` at the anchor,
+`Cathode` at `-behind`, `Anode` at `+ahead`, all on the bath row. ⛔ No `Inside`, and no touching of
+`inputBufferRole`'s `is Storage ->` branches at `BufferRole.kt:91` and `:127` — see §5.5 for why the
+3×2 deletes that work rather than generalising it.
+
+Acceptance: three stores, three ports, one per tile, no two roles on one tile at any facing —
+`BufferRoleTest` already asserts exactly that for every machine and needs no new test to cover it.
+
+#### 1b.3 — a bath states a volume
+
+Derived from `TILE_LITRES` and `DeckMachineKind.fillPermille`. One number, two jobs: the room
+`sinkAdmits` asks about, and the density `FluidPhase` is derived from. ⚠️ See §5.6's corrected note —
+`Body.capacity` is a heat capacity and is **not** the precedent this wants.
+
+Acceptance: a full bath refuses a delivery, and the same figure decides the phase of what is in it.
+
+#### 1b.4 — the electrodes write into their own baths
+
+Increment 1's competition rule runs per compartment: the cathode couple into `Cathode`, the anode
+couple into `Anode`, the feed drawn from `Input`.
+
+⛔ **The outputs stay PURE here.** §5.7 is explicit that sampled outputs are a regression until a
+phase separator exists, and that the separator lands in the same commit or the outputs do not change.
+Neither is this increment.
+
+Acceptance: **`ElectrolyzerTest` unchanged** — water and 1.23 V makes hydrogen at one face and oxygen
+at the other, below 1.23 V nothing happens, the mass ledger closes. A regression target rather than a
+new-behaviour one, which is the strongest kind available here.
+
+### ⏸ Then: `PLAN_power_network.md` increment 4 — the cell as a load
+
+`I = (ΔV − E) / R_internal` as a `Source` between the two terminal nodes, with `R_internal` off
+`electrolyteStrength` (`chem/Cell.kt:237`, which already exists). Forward above the knee, reverse
+below it. ⭐ Nothing in it needs a mechanism this plan has not already put in place by 1b.4.
 
 ### Increment 2 — copper beats water
 

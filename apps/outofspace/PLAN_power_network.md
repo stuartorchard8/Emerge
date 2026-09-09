@@ -666,52 +666,48 @@ battery, with no battery machine: panels charge the bus by day, the cell banks i
 the cell holds the ship up when the panels go dark. The old plan listed a battery under *"explicitly
 not doing"* and then under *"it is §2 of the model"*; it is neither. It is this increment.
 
-### ⚠️ The ports become a T, and a terminal shares a tile with a rail
+### ⭐ The cell is a 3×2, and no terminal shares a tile with a rail
 
-Pointing up: **feed at the bottom of the stem, terminal A + output A middle-left, terminal B +
-output B middle-right** (Stu, 2026-09-08). Today's offsets are `Input (-1,0)`, `Product (+1,0)`,
-`Waste (0,+1)` (`BufferRole.kt:176`), so this is a three-way rotation of a table that already exists
-— and `BufferRoleTest` holds `localBufferOffset` and `portsOf` in agreement, so both move together.
+**Three baths along one edge, the two terminals along the other** (Stu, 2026-09-09). The anchor is
+the middle bath — the feed — with the cathode behind it and the anode ahead, each on its own tile with
+its own rail port. See `PLAN_electrochemistry.md` §5.5, which holds the layout and the argument.
 
-⭐ **The arms are what §5 needs.** Two terminals on opposite tiles with the machine's casing between
-them is exactly the parallel path: a copper-cased cell shorts around its own electrolyte and does
-nothing but warm up. The old layout put *input* and *product* on the opposite pair, which is the
-wrong pair to hang terminals from.
+```
+   terminals    T . T
+   baths+ports  C F A        F = feed (the anchor)
+```
 
-⛔ **A terminal sharing a tile with an output port makes that output's rail a conductor**, because a
-terminal bonds the layers present at its tile (§3) and a rail is one of them. So the hydrogen belt
-sits at the cathode's potential and the oxygen belt at the anode's — and if both belts belong to one
-connected rail network **made of metal**, the cell is shorted through its own logistics and stops.
+⚠️ **This supersedes the 3×3 T** (Stu, 2026-09-08), which put terminal A on the same tile as output A
+and terminal B on the same tile as output B. Two paragraphs of this plan followed from that and are
+**retired with it**:
 
-⭐ **And the answer is a material, not a rule (Stu, 2026-09-08).** A rail conducts only if it is made
-of something that conducts, and `Segment.material` is per **tile**. So:
+- ⛔ **The cell no longer forces an insulating segment.** A terminal bonds the layers present at its
+  tile (§3), so a terminal sharing a tile with an output port put the hydrogen belt at the cathode's
+  potential and the oxygen belt at the anode's — and one metal rail network touching both shorted the
+  cell through its own logistics. Terminals now stand on casing that carries no port, so **nothing
+  outside the machine is ever at an electrode's potential.**
+- ⭐ **The mechanic survives; only its necessity goes.** One non-metal tile in a metal run is still a
+  galvanic isolator made of track, still needs nothing built, and is still a build decision with a
+  visible cost. It is available to a player who wants it rather than a tax on anyone who builds a
+  cell. ⚠️ And the *chemical* reason the two gases must not meet is untouched: `2 H₂ + O₂ → H₂O`
+  lights at 773 K and a store reacts with itself.
 
-> ⭐ **One insulating segment in a metal run is a galvanic isolator made of track.** Packets cross it;
-> charge does not.
+⭐ **The terminals do not need to touch the electrolyte, and the solve already says so.** A device is
+an **edge between its two terminal nodes** — `Source(positive, negative, emf, conductance)`, which is
+exactly how the panel drives the bus at `OutofspaceSim.kt:4871`, built out of `nodeUnder` at each
+terminal tile and nothing else. The cell is the same shape with `E` for the emf and the electrolyte's
+conductance for `g`. The terminals must be **conducting nodes**, which they are because they stand on
+casing.
 
-Nothing has to be built for this. `electricalConductivityOf` already returns `0L` for a non-metal
-(`Conductivity.kt:101`), `seriesConductance(0, b)` is zero, and the walk already skips a segment that
-conducts nothing. `Stockpile.buildableSpecies` puts no structural constraint on what a run is drawn
-from, and creative mode's standing allowance is *"a structural metal, a conductor, and a rock"* —
-**Forsterite is already in the list**, described in its own doc as *"one that is not a metal at
-all."* ⭐ That comment was written to say the three choices should let a player *"feel the difference
-between the choices"*, at a time when the difference was mass and strength. This is what it turns
-into.
+⚠️ **§5's parallel path is unchanged**, which is the check that this layout is still the right one:
+current entering one terminal reaches the other either through the electrolyte — the device edge that
+does the work — or around through the casing along the far edge. A copper-cased cell still shorts
+around its own chemistry and does nothing but warm up.
 
-⚠️ **So the isolation is a build decision with a visible cost**: an insulating segment is a segment
-that is not metal, and a run's material is already a strength and mass decision. The player trades
-one against the other.
-
-⭐ **It is also the right answer twice over.** The two gases already must not meet, because
-`2 H₂ + O₂ → H₂O` lights at 773 K and a store reacts with itself — the whole reason `Electrolyzer`
-has a second output port at all. Now the two *rails* must not conduct to each other either, for an
-entirely independent electrical reason, and a real plant separates them for both. ⚠️ But a player who
-runs both metal belts into one network kills their cell and has no way to see why, which is what the
-increment-3 overlay is for.
-
-✅ **Three stores, and the input port has none of its own** (Stu, 2026-09-08): a bath at each
-electrode and a third **directly between them** at the centre, which is where deliveries land when
-there is room. The stem is a door, not a store. See `PLAN_electrochemistry.md` §5.5.
+✅ **Three stores, one per tile of the bath edge**: a bath at each electrode and a third **directly
+between them**, which is where deliveries land when there is room. ⭐ Every one of them sits on its
+own port, so `BufferRole`'s *"a store sits on the port it serves"* holds unmodified and the cell needs
+no generalisation of `Storage`'s exception — which the T did. See `PLAN_electrochemistry.md` §5.5.
 
 ⭐ **The electrolyte ceiling lands here too.** `chem/Cell.kt` has `electrolyteStrength` and pure
 water scores zero — seven orders of magnitude below brine — so **a cell full of pure water fails
