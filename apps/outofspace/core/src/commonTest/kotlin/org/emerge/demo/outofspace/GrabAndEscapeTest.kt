@@ -216,26 +216,59 @@ class GrabAndEscapeTest {
     }
 
     /**
-     * Turning the brush and clicking a machine already on the deck **turns that machine**.
+     * ⛔ **Turning the brush and clicking a machine already on the deck does NOT turn that machine.**
      *
-     * ⚠️ The facing comes off the cursor rather than out of the stamp, which is the only reason this
-     * works: a stamp that insisted on the facing it was captured with could copy a machine's tuning
-     * but never re-aim one.
+     * ⚠️ **This test was the exact opposite until `PLAN_machine_relocation.md` increment 3**, and the
+     * reversal is the point rather than a regression. Facing is a **placement** property, not a
+     * setting — but with no gesture able to turn a standing machine, a stamped click forcing the
+     * cursor's aim onto its target was the only way to re-aim anything, so a re-tune and a re-aim
+     * were one click and neither could be asked for on its own. `Tool.Move` is that gesture now, so a
+     * paste went back to meaning what it says.
+     *
+     * The settings still cross, which is what a stamp is *for* — see the setpoint assertion below.
      */
     @Test
-    fun a_turned_brush_turns_the_machine_it_is_clicked_on() {
+    fun a_turned_brush_does_not_turn_the_machine_it_is_clicked_on() {
         val c = controller()
         c.inspect(OVEN, InspectLayer.Deck)
         c.grab()
         assertEquals(Direction.Right, c.brushFacing, "grabbed facing the way the original faces")
+        val stood = (furnaceAt(c, PLAIN_OVEN) as DirectedDeckMachine).facing
         c.rotateBrush()
-        val aimed = c.brushFacing
-        assertNotEquals(Direction.Right, aimed)
+        assertNotEquals(stood, c.brushFacing, "fixture: the brush and the target now disagree")
 
         c.click(PLAIN_OVEN)
         c.stepOnce()
 
-        assertEquals(aimed, (furnaceAt(c, PLAIN_OVEN) as DirectedDeckMachine).facing)
+        assertEquals(
+            stood,
+            (furnaceAt(c, PLAIN_OVEN) as DirectedDeckMachine).facing,
+            "a paste turned the machine it landed on",
+        )
+        assertEquals(TUNED_KELVIN, furnaceAt(c, PLAIN_OVEN).setTemperature, "and it did not carry the settings")
+    }
+
+    /**
+     * ⭐ **A fresh placement still takes the cursor's aim**, which is the other half of the split.
+     *
+     * `aimed()` did not go away; it left the re-tune path and stayed on the placement one. A machine
+     * that does not exist yet has no facing of its own to preserve, so the cursor's is the only
+     * answer there is.
+     */
+    @Test
+    fun a_turned_brush_still_aims_a_machine_it_places() {
+        val c = controller()
+        c.inspect(OVEN, InspectLayer.Deck)
+        c.grab()
+        c.rotateBrush()
+        val aimed = c.brushFacing
+
+        c.click(EMPTY_FLOOR)
+        c.stepOnce()
+
+        val placed = c.state.deck[EMPTY_FLOOR]
+        assertNotNull(placed, "nothing was placed on bare floor")
+        assertEquals(aimed, (placed as DirectedDeckMachine).facing, "a fresh placement ignored the cursor's aim")
     }
 
     /** The cursor says so before the click: a hand-over is drawn as a yes, never as a refusal. */

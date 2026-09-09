@@ -32,7 +32,7 @@ import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.DirectedDeckMachine
 import org.emerge.demo.outofspace.world.MachineSettings
-import org.emerge.demo.outofspace.world.aimed
+import org.emerge.demo.outofspace.world.unaimed
 import org.emerge.demo.outofspace.world.toMachineSettings
 import org.emerge.demo.outofspace.world.withSettings
 import org.emerge.demo.outofspace.world.starterWorld
@@ -312,7 +312,11 @@ class OutofspaceController(
         // is about to re-tune. Drawn off the pointer instead, a click on a warehouse's top-left
         // corner previewed a warehouse hanging off the corner of the one already there, which reads
         // as an overlapping placement — the one thing this click is not.
-        return Edit.ReplaceDeckMachine(standing.center, standing.withSettings(settings.aimed(brushFacing)))
+        // ⛔ **`unaimed()`, and that is the whole of increment 3.** A paste hands over settings and
+        // does not turn what it lands on; `Tool.Move` is how a standing machine is re-aimed now.
+        // While this forced the cursor's facing there was no other gesture that could, so a re-tune
+        // and a re-aim were the same click and neither could be asked for alone.
+        return Edit.ReplaceDeckMachine(standing.center, standing.withSettings(settings.unaimed()))
     }
 
     /**

@@ -76,6 +76,25 @@ fun MachineSettings.aimed(facing: Direction): MachineSettings =
     if (this.facing is Setting.Absent) this else copy(facing = Setting.Present(facing))
 
 /**
+ * The same settings **carrying no facing at all** — what a paste onto a machine that is already
+ * standing hands over.
+ *
+ * ⛔ **Facing is a placement property, not a setting** (Stu, 2026-09-09). It used to be both: with no
+ * other gesture able to turn a standing machine, a stamped click forced the cursor's aim onto its
+ * target and that was the only way to re-aim anything. `Tool.Move` is that gesture now — see
+ * `PLAN_machine_relocation.md` — so a paste went back to meaning what it says, which is "have these
+ * settings", not "and face this way".
+ *
+ * ⚠️ **It is the exact counterpart of [aimed], and the pair is the split.** [aimed] stays on the
+ * *placement* path, where a fresh machine genuinely takes the cursor's aim because it has none of its
+ * own; this is the *re-tune* path, where the target already has one and it is not the paste's
+ * business. [withSettings] applies a facing only when it is [Setting.Present], so an absent one
+ * leaves the machine pointed exactly where it was.
+ */
+fun MachineSettings.unaimed(): MachineSettings =
+    if (facing is Setting.Absent) this else copy(facing = Setting.Absent)
+
+/**
  * Build a [MachineSettings] snapshot from a [DeckMachine].
  *
  * Only settings that the machine actually has are included as [Setting.Present]. All others are
