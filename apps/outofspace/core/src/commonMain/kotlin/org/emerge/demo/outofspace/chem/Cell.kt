@@ -223,6 +223,22 @@ fun electrolyse(charge: Mixture, action: CellAction, limit: Long): Electrolysed?
 val AQUEOUS_ELECTROLYTES: Set<Species> = setOf(Species.Halite, Species.Sylvite)
 
 /**
+ * **What an electrolytic cell will take in at its feed**: water, and the salts that dissolve in it.
+ *
+ * ⭐ **A cell runs on brine, and that is the real thing rather than a concession.** Chlor-alkali —
+ * the industrial giant `PLAN_electrochemistry.md` §5.5 names — is electrolysis *of brine*, and
+ * [electrolyteStrength] scores pure water at **zero**, so a cell handed nothing but clean water has
+ * no ions to carry a current and does nothing at all. An appetite for pure water and a load model
+ * that needs ions are a machine that can never run.
+ *
+ * ⚠️ **It was `SpeciesFilter(Water, pure = true)`** until `PLAN_power_network.md` increment 4 (Stu,
+ * 2026-09-09), which is the increment that made the electrolyte matter. Rock is still refused, and
+ * for the reason it always was: the player concentrates first, and there is nothing a cell can do
+ * with forsterite.
+ */
+val CELL_FEED: Set<Species> = AQUEOUS_ELECTROLYTES + Species.Water
+
+/**
  * **What share of a cell's throughput its solution can actually carry**, in permille.
  *
  * A current needs ions to ride on, so a cell runs at the rate its electrolyte allows and no faster.

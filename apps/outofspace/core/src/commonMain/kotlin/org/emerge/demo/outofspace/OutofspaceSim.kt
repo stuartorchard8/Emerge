@@ -4,6 +4,7 @@ import org.emerge.demo.outofspace.world.Whitelist
 import org.emerge.demo.outofspace.world.Acceptance
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Fluid
+import org.emerge.demo.outofspace.chem.CELL_FEED
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.MachineSettings
 import org.emerge.demo.outofspace.world.aimed
@@ -4458,7 +4459,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // A site is not a machine — the warehouse note above is the same trap.
                 if (deck.isGhost(input.owner)) continue
                 accepts.getOrPut(tile) { mutableListOf() }
-                    .add(Acceptance.filtered(SpeciesFilter(Species.Water, pure = true)))
+                    .add(Acceptance.onlyOf(CELL_FEED))
             }
 
             // ── Concentrators: ore, and never anything already pure ──────────

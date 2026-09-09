@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.chem.Mixture
+import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.num.scaledRatio
 
 /**
@@ -55,6 +56,20 @@ class Acceptance private constructor(
      */
     val filter: SpeciesFilter?,
     /**
+     * Every species this sink can **use**, by ordinal, or null for no such statement.
+     *
+     * ⛔ **Set membership, which is neither a recipe nor a threshold.** [bill] asks whether a lump
+     * matches proportions — a construction site's question — and [filter] asks for one species at a
+     * purity, which is a locked warehouse's. A cell asks a third thing: *is everything in here
+     * something I can work with*, in any proportions. Water and the salt dissolved in it, and no
+     * rock. Neither of the other two can say that: a bill would demand a fixed brine strength, and
+     * `SpeciesFilter(Water, pure = false)` would admit water with gravel in it.
+     *
+     * ⚠️ **A `BooleanArray` because [admits] is on the hot path and must not allocate** — the class
+     * note says so. Built once, at construction.
+     */
+    val only: BooleanArray?,
+    /**
      * Whether this sink stands **in the road** — refusing passage to what it cannot use, not merely
      * declining to take it.
      *
@@ -100,6 +115,12 @@ class Acceptance private constructor(
      */
     fun admits(mixture: Mixture): Boolean {
         if (isSatisfied) return false
+        only?.let { allowed ->
+            // Nothing is not a delivery — [buildableFrom]'s first line, for its reason.
+            if (mixture.total <= 0L) return false
+            for (s in Species.ALL) if (mixture[s] > 0L && !allowed[s.ordinal]) return false
+            return true
+        }
         filter?.let { return it.admits(mixture) }
         val want = bill ?: return true
         return buildableFrom(want, mixture)
@@ -117,7 +138,21 @@ class Acceptance private constructor(
         const val UNLIMITED: Long = Long.MAX_VALUE
 
         /** Takes any matter, for ever: every machine on the vessel. */
-        val ANYTHING: Acceptance = Acceptance(null, null, stopsTraffic = false, wanted = UNLIMITED)
+        val ANYTHING: Acceptance = Acceptance(null, null, null, stopsTraffic = false, wanted = UNLIMITED)
+
+        /**
+         * Takes lumps made **entirely of** [species], in any proportions — and refuses a lump with
+         * one gram of anything else in it.
+         *
+         * ⭐ **The electrolytic cell's shape, and the reason this exists.** A cell runs on water *and
+         * whatever is dissolved in it*: brine conducts, pure water does not, and both are things it
+         * should be handed. Neither of the other two factories can say that — see [only].
+         */
+        fun onlyOf(species: Set<Species>, wanted: Long = UNLIMITED): Acceptance {
+            val mask = BooleanArray(Species.COUNT)
+            for (s in species) mask[s.ordinal] = true
+            return Acceptance(null, null, mask, stopsTraffic = false, wanted = wanted)
+        }
 
         /**
          * Takes [filter]'s species in [SpeciesFilter.pure] condition, for ever: a locked
@@ -129,7 +164,7 @@ class Acceptance private constructor(
          * the exact exploit [stopsTraffic] exists to prevent, inverted.
          */
         fun filtered(filter: SpeciesFilter, wanted: Long = UNLIMITED): Acceptance =
-            Acceptance(null, filter, stopsTraffic = false, wanted = wanted)
+            Acceptance(null, filter, null, stopsTraffic = false, wanted = wanted)
 
         /**
          * Takes what [bill] can be built from, and [shortBy] more grams of it.
@@ -141,7 +176,7 @@ class Acceptance private constructor(
          * site, and it lives in [Whitelist].
          */
         fun forBill(bill: Mixture, shortBy: Long, stopsTraffic: Boolean = true): Acceptance =
-            Acceptance(bill, null, stopsTraffic, shortBy)
+            Acceptance(bill, null, null, stopsTraffic, shortBy)
     }
 }
 

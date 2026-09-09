@@ -380,13 +380,39 @@ class ElectrolyzerTest {
 
     @Test
     fun `and it will not take water that is still dirty`() {
-        // 100% and no tolerance, the same standard `BUILD_PURITY_PERCENT` holds the player to. The
-        // player concentrates first, which is a machine they already have and an idiom they know.
+        // ⚠️ **Rock, and the rule is unchanged**: there is nothing a cell can do with forsterite, so
+        // the player concentrates first — a machine they already have and an idiom they know.
+        // ⛔ **What changed is that "dirty" stopped meaning "not pure".** See the test below.
         val dirty = Mixture.of(
             Species.Water to 9L * Capacity.PACKET_MASS,
             Species.Forsterite to 1L * Capacity.PACKET_MASS,
             energy = 0L,
         ).atAmbient()
         assertEquals(0L, fed(run(fedFrom(dirty), 400)), "the plant took water with rock in it")
+    }
+
+    /**
+     * ⭐ **But it takes brine, because a cell runs on brine.**
+     *
+     * `PLAN_power_network.md` increment 4 (Stu, 2026-09-09). The appetite was
+     * `SpeciesFilter(Water, pure = true)` and that could not survive the electrolyte ceiling:
+     * [org.emerge.demo.outofspace.chem.electrolyteStrength] scores pure water at **zero**, so a cell
+     * that would only accept pure water is a cell nothing can ever make run. Chlor-alkali is
+     * electrolysis *of brine*; taking salt in is the machine working, not a hole in a filter.
+     */
+    @Test
+    fun `it takes brine, which is the only thing that can carry its current`() {
+        val brine = Mixture.of(
+            Species.Water to 9L * Capacity.PACKET_MASS,
+            Species.Halite to 1L * Capacity.PACKET_MASS,
+            energy = 0L,
+        ).atAmbient()
+        assertTrue(fed(run(fedFrom(brine), 400)) > 0L, "the plant refused brine")
+    }
+
+    /** And pure water still arrives, even though it is inert once the ceiling lands. */
+    @Test
+    fun `it still takes water on its own`() {
+        assertTrue(fed(run(fedFrom(water()), 400)) > 0L, "the plant refused clean water")
     }
 }
