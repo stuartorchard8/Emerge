@@ -29,7 +29,7 @@ import org.emerge.demo.outofspace.world.Wiring
  * where its one store sits. [bell] is the tile immediately [facing]-ward of that, and it is part of
  * the machine: it is claimed, it is made of metal, it weighs, and nothing else may be built there.
  * That makes the thruster the one kind whose anchor is not the middle of its own footprint — see
- * [org.emerge.demo.outofspace.world.FootprintShape.Nose], which holds the argument.
+ * [org.emerge.demo.outofspace.world.Footprint.nose], which holds the argument.
  *
  * Everything about where the exhaust *goes* is measured from the bell and not from the chamber:
  * [exhaustPath] starts its walk there, the impulse is booked there, and the lever arm the flight

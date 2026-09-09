@@ -64,7 +64,7 @@ enum class DeckMachineKind(
     /**
      * One tile wide and three long, five tonnes — a warehouse's behaviour in a corridor's footprint.
      *
-     * A line along its facing like a [Bridge] (`FootprintShape.Span`), so it takes material in at
+     * A line along its facing like a [Bridge] (`Footprint.span`), so it takes material in at
      * one end and gives it out at the other and a rotation can be refused. **Solid, unlike a
      * bridge**: a gantry is mostly the air under it, and a silo is a column of ore.
      */
@@ -73,7 +73,7 @@ enum class DeckMachineKind(
     /**
      * One tile wide and two long, two tonnes: the smallest store there is.
      *
-     * `FootprintShape.Nose`, the thruster's shape — **the anchor is the tile you feed**, and the
+     * `Footprint.nose`, the thruster's shape — **the anchor is the tile you feed**, and the
      * one in front of it is where material leaves. Its store sits on the anchor, which is to say on
      * the input tile: at two tiles there is no middle to put a volume in, and a store on the mouth
      * matter arrives at is the honest place for it.
@@ -87,7 +87,7 @@ enum class DeckMachineKind(
     Pump("PUMP", shipsWholePackets = true),
     /**
      * A rocket motor: two tiles end to end, and the only kind whose anchor is **not** the middle of
-     * its own footprint — see `FootprintShape.Nose`.
+     * its own footprint — see `Footprint.nose`.
      *
      * The tile it is stored at is the chamber, which is what you feed; the second tile is the bell,
      * which juts out into the exhaust direction. Solid to a rock, permeable to gas, because a bell
@@ -126,7 +126,7 @@ enum class DeckMachineKind(
 
     /**
      * Three tiles end to end, and the only kind whose footprint is a line rather than a square —
-     * see `FootprintShape.Span`.
+     * see `Footprint.span`.
      *
      * Permeable, because a bridge is a gantry and not a block: it is mostly the air under it, so it
      * divides no room and displaces no gas. What it *does* claim is the floor, which is the whole

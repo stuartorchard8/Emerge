@@ -43,7 +43,7 @@ import kotlin.test.assertTrue
  * The geometry is where it could go wrong silently. Both small sizes give up the property every
  * other store had — a silo is not square, so its footprint moves when it turns; a buffer's anchor is
  * not its middle, so `±reach` names one tile for both of its doors and the arithmetic that serves
- * every other machine quietly answers a plausible wrong thing. See `FootprintShape`.
+ * every other machine quietly answers a plausible wrong thing. See `Footprint`.
  */
 class SmallStorageTest {
 

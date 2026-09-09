@@ -1,6 +1,8 @@
 package org.emerge.demo.outofspace
 
-import org.emerge.demo.outofspace.world.diameter
+import org.emerge.demo.outofspace.world.Footprint
+import org.emerge.demo.outofspace.world.footprint
+import org.emerge.demo.outofspace.world.shape
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferLayer
@@ -209,7 +211,7 @@ class FootprintTest {
         // Two tiles out, not one: a port belongs to the face of the building, and a five-tile
         // machine whose ports sat beside its centre would be handing material to its own insides.
         assertEquals(grid.tile(10, 8), ports.single { it.kind == PortKind.Output }.tile)
-        assertEquals(5, DeckMachineKind.Extractor.diameter, "and it really is five across")
+        assertEquals(5, DeckMachineKind.Extractor.shape.width, "and it really is five across")
     }
 
     /**
@@ -316,4 +318,135 @@ class FootprintTest {
         assertTrue(s.stockpile.totalMass > 0L, "ore reaches the tank: ${s.stockpile}")
         assertEquals(s.extractedMass, s.inTransitMass + s.ventedMass, "conserving throughout")
     }
+
+    // ── The refactor must not move one tile ──────────────────────────────────
+
+    /**
+     * ⛔ **Every kind, every facing, the exact tiles — captured from the code that came before.**
+     *
+     * `PLAN_machine_relocation.md` increment 0 replaced a half-width model with a width, a height and
+     * an anchor, and the one thing that would have made that dangerous is a machine quietly covering a
+     * different set of squares. A test that says "it still fits" is not this test: these literals were
+     * printed by the *old* `footprint()` and pasted in, so they are a photograph and not a derivation.
+     *
+     * Offsets are from the anchor, `dx/dy`, in the order the walk returns them — which pins the
+     * **ascending-index order** the rest of the codebase pairs per-tile arrays against, and pins it at
+     * every facing rather than only the two where a local-frame walk would happen to agree.
+     */
+    @Test
+    fun `every kind covers exactly the tiles it covered before`() {
+        val grid = Grid(21, 21)
+        val cx = 10
+        val cy = 10
+        val centre = grid.tile(cx, cy)
+
+        val one = "0/0"
+        val three = "-1/-1,0/-1,1/-1,-1/0,0/0,1/0,-1/1,0/1,1/1"
+        val five = "-2/-2,-1/-2,0/-2,1/-2,2/-2," +
+            "-2/-1,-1/-1,0/-1,1/-1,2/-1," +
+            "-2/0,-1/0,0/0,1/0,2/0," +
+            "-2/1,-1/1,0/1,1/1,2/1," +
+            "-2/2,-1/2,0/2,1/2,2/2"
+        val spanFlat = "-1/0,0/0,1/0"
+        val spanUp = "0/-1,0/0,0/1"
+
+        // kind to (Right, Down, Left, Up)
+        val expected: List<Pair<DeckMachineKind, List<String>>> = listOf(
+            DeckMachineKind.Hull to List(4) { one },
+            DeckMachineKind.Airlock to List(4) { one },
+            DeckMachineKind.Vent to List(4) { one },
+            DeckMachineKind.Sensor to List(4) { one },
+            DeckMachineKind.KeyInput to List(4) { one },
+            DeckMachineKind.Pump to List(4) { one },
+            DeckMachineKind.Gauge to List(4) { one },
+            DeckMachineKind.Valve to List(4) { one },
+            DeckMachineKind.Terminal to List(4) { one },
+            DeckMachineKind.Warehouse to List(4) { three },
+            DeckMachineKind.Rocket to List(4) { three },
+            DeckMachineKind.Concentrator to List(4) { three },
+            DeckMachineKind.Electrolyzer to List(4) { three },
+            DeckMachineKind.Furnace to List(4) { three },
+            DeckMachineKind.SolarPanel to List(4) { three },
+            DeckMachineKind.DockingPort to List(4) { three },
+            DeckMachineKind.Extractor to List(4) { five },
+            // A span is symmetric about its anchor, so facing it backwards covers the same three.
+            DeckMachineKind.Silo to listOf(spanFlat, spanUp, spanFlat, spanUp),
+            DeckMachineKind.Bridge to listOf(spanFlat, spanUp, spanFlat, spanUp),
+            // ⚠️ A nose is NOT symmetric, which is the whole of why it needed its own branch before.
+            DeckMachineKind.Thruster to listOf("0/0,1/0", "0/0,0/1", "-1/0,0/0", "0/-1,0/0"),
+            DeckMachineKind.Buffer to listOf("0/0,1/0", "0/0,0/1", "-1/0,0/0", "0/-1,0/0"),
+        )
+
+        assertEquals(
+            DeckMachineKind.entries.size,
+            expected.size,
+            "a kind was added or removed and this table did not hear about it",
+        )
+        for ((kind, perFacing) in expected) {
+            for ((i, facing) in Direction.entries.withIndex()) {
+                val tiles = kind.footprint(centre, grid, facing)
+                    ?: error("$kind facing $facing does not fit a 21x21 grid at its middle")
+                val got = tiles.joinToString(",") { "${grid.xOf(it) - cx}/${grid.yOf(it) - cy}" }
+                assertEquals(perFacing[i], got, "$kind facing $facing covers different tiles")
+            }
+        }
+    }
+
+    /**
+     * ⭐ **A 3×2 is expressible, and nothing is one.** That is the point of the increment: the shape is
+     * a value, so it can be stated and checked without a machine kind standing up to hold it — which is
+     * what `PLAN_power_network.md` increment 4 needs for the cell.
+     *
+     * ⚠️ **The old model could not say this at all.** It derived `w = rx * 2 + 1` from a half-width, so
+     * every footprint was odd on both axes by construction.
+     */
+    @Test
+    fun `an even side is expressible and lands on the grid both ways round`() {
+        val grid = Grid(21, 21)
+        val cx = 10
+        val cy = 10
+        val centre = grid.tile(cx, cy)
+        // Three along the facing, two across, anchored on the lower-left of the block.
+        val cell = Footprint(width = 3, height = 2, anchorX = 1, anchorY = 1)
+
+        fun tiles(facing: Direction) = cell.tilesAt(centre, grid, facing)!!
+            .joinToString(",") { "${grid.xOf(it) - cx}/${grid.yOf(it) - cy}" }
+
+        assertEquals(6, tiles(Direction.Right).split(",").size, "a 3x2 is six tiles")
+        assertEquals("-1/-1,0/-1,1/-1,-1/0,0/0,1/0", tiles(Direction.Right))
+        // Turned a quarter it is two along and three across, and still lands on whole tiles.
+        assertEquals("0/-1,1/-1,0/0,1/0,0/1,1/1", tiles(Direction.Down))
+        assertEquals("-1/0,0/0,1/0,-1/1,0/1,1/1", tiles(Direction.Left))
+        assertEquals("-1/-1,0/-1,-1/0,0/0,-1/1,0/1", tiles(Direction.Up))
+    }
+
+    /**
+     * ⛔ **The four reaches are what replaced `reach`, and for a square they must still agree.**
+     *
+     * Every offset table states its doors in terms of these, so a square kind whose four disagreed
+     * would move its own ports. The oblong ones are here for the other half: they are exactly where
+     * one number could never have answered.
+     */
+    @Test
+    fun `a block states how far it reaches each way from its anchor`() {
+        val square = DeckMachineKind.Concentrator.shape
+        assertEquals(1, square.ahead)
+        assertEquals(1, square.behind)
+        assertEquals(1, square.below)
+        assertEquals(1, square.above)
+
+        val span = DeckMachineKind.Bridge.shape
+        assertEquals(1, span.ahead, "a gantry's far end")
+        assertEquals(1, span.behind, "and its near one")
+        assertEquals(0, span.below, "a span is one tile across")
+        assertEquals(0, span.above)
+
+        // ⚠️ The shape one number could not describe: everything is in front of the anchor.
+        val nose = DeckMachineKind.Thruster.shape
+        assertEquals(1, nose.ahead, "the bell")
+        assertEquals(0, nose.behind, "and nothing behind the chamber")
+        assertEquals(0, nose.below)
+        assertEquals(0, nose.above)
+    }
+
 }

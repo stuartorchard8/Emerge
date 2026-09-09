@@ -137,14 +137,18 @@ internal const val NO_OFFSET = -1
 private fun pack(dx: Int, dy: Int): Int = ((dx + OFFSET_BIAS) shl 8) or (dy + OFFSET_BIAS)
 
 internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
-    val r = machine.reach
+    // ⚠️ **The block's reach from its anchor, not a half-width.** Every machine below is square or a
+    // span, so `ahead`, `behind`, `below` and `above` are all equal to what `reach` used to answer —
+    // but they are equal for a *reason* now rather than by luck, and an oblong kind can state its
+    // doors here without a hand-written branch. See [Footprint.ahead].
+    val fp = machine.shape
     return when (machine) {
         // One store, on the one port it has. It used to hold a second — the cell in its jaws, ground
         // into the buffer at a rate — and that bought nothing: a belt tile holds one packet and a
         // machine hands over one packet a tick, so **the rail sets the throughput** and a rate
         // upstream of a full buffer is a rate nobody can observe. A bite now lands straight in the
         // store it leaves from.
-        is Extractor -> if (role == BufferRole.Product) pack(r, 0) else NO_OFFSET
+        is Extractor -> if (role == BufferRole.Product) pack(fp.ahead, 0) else NO_OFFSET
         // One port, one store, both on the chamber — the tile the machine is stored at. A thruster
         // is two tiles long but only one wide, so its reach is zero and there is no second role to
         // collide with; its bell is footprint and never a store.
@@ -153,19 +157,19 @@ internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
         // In at the back, concentrate out the front, tailings out of the floor, and a lump held in
         // the middle while it is worked.
         is Concentrator -> when (role) {
-            BufferRole.Input -> pack(-r, 0)
+            BufferRole.Input -> pack(-fp.behind, 0)
             BufferRole.Inside -> pack(0, 0)
-            BufferRole.Product -> pack(r, 0)
-            BufferRole.Waste -> pack(0, r)
+            BufferRole.Product -> pack(fp.ahead, 0)
+            BufferRole.Waste -> pack(0, fp.below)
             BufferRole.Oxidiser -> NO_OFFSET
         }
 
         // Fuel in at one back corner, oxidiser in at the other, and the chamber between them at the
-        // anchor. ⛔ **The bell is `pack(r, 0)` and is deliberately NOT a store** — it is the tile
+        // anchor. ⛔ **The bell is `pack(fp.ahead, 0)` and is deliberately NOT a store** — it is the tile
         // the exhaust starts from, and a store there would be propellant sitting in the nozzle.
         is Rocket -> when (role) {
-            BufferRole.Input -> pack(-r, -r)
-            BufferRole.Oxidiser -> pack(-r, r)
+            BufferRole.Input -> pack(-fp.behind, -fp.above)
+            BufferRole.Oxidiser -> pack(-fp.behind, fp.below)
             BufferRole.Inside -> pack(0, 0)
             BufferRole.Product, BufferRole.Waste -> NO_OFFSET
         }
@@ -174,15 +178,15 @@ internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
         // charge sitting in the middle of it being worked on, so there is no tile that would mean
         // anything. See `Electrolyzer`, which argues the same point from the other end.
         is Electrolyzer -> when (role) {
-            BufferRole.Input -> pack(-r, 0)
-            BufferRole.Product -> pack(r, 0)
-            BufferRole.Waste -> pack(0, r)
+            BufferRole.Input -> pack(-fp.behind, 0)
+            BufferRole.Product -> pack(fp.ahead, 0)
+            BufferRole.Waste -> pack(0, fp.below)
             BufferRole.Inside, BufferRole.Oxidiser -> NO_OFFSET
         }
         is Furnace -> when (role) {
-            BufferRole.Input -> pack(-r, 0)
+            BufferRole.Input -> pack(-fp.behind, 0)
             BufferRole.Inside -> pack(0, 0)
-            BufferRole.Product -> pack(r, 0)
+            BufferRole.Product -> pack(fp.ahead, 0)
             BufferRole.Waste, BufferRole.Oxidiser -> NO_OFFSET
         }
         // One store, on the one port it has — a pump is one tile, so both are its anchor. What it
@@ -197,8 +201,8 @@ internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
         is Storage -> if (role == BufferRole.Inside) pack(0, 0) else NO_OFFSET
 
         is DockingPort -> when (role) {
-            BufferRole.Input   -> pack(-r, -r)
-            BufferRole.Product -> pack(-r, +r)
+            BufferRole.Input   -> pack(-fp.behind, -fp.above)
+            BufferRole.Product -> pack(-fp.behind, +fp.below)
             else -> NO_OFFSET
         }
 
@@ -207,9 +211,9 @@ internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
         // down at the far end. The one machine whose `Inside` is genuinely *in transit* rather than
         // being worked on — see `Bridge`, and `advanceBridges` for the shuffle that moves it along.
         is Bridge -> when (role) {
-            BufferRole.Input -> pack(-r, 0)
+            BufferRole.Input -> pack(-fp.behind, 0)
             BufferRole.Inside -> pack(0, 0)
-            BufferRole.Product -> pack(r, 0)
+            BufferRole.Product -> pack(fp.ahead, 0)
             BufferRole.Waste, BufferRole.Oxidiser -> NO_OFFSET
         }
         else -> NO_OFFSET

@@ -7,7 +7,7 @@ import org.emerge.demo.outofspace.world.StuffLayer
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
-import org.emerge.demo.outofspace.world.reach
+import org.emerge.demo.outofspace.world.shape
 import org.emerge.demo.outofspace.world.kelvinOf
 import org.emerge.demo.outofspace.world.energyAtKelvin
 
@@ -37,8 +37,8 @@ sealed interface DeckMachine {
      */
     val wiring: Wiring
 
-    /** Half-width — where a square kind's ports and stores sit. See [DeckMachineKind.reach]. */
-    val reach: Int get() = kind.reach
+    /** The block this machine stands on. See [org.emerge.demo.outofspace.world.Footprint]. */
+    val shape: org.emerge.demo.outofspace.world.Footprint get() = kind.shape
 
     /** Quarter-turns clockwise from the facing-Right frame. Zero for anything that does not face. */
     val turns: Int get() = (this as? DirectedDeckMachine)?.facing?.ordinal ?: 0
@@ -49,7 +49,7 @@ sealed interface DeckMachine {
      *
      * ⚠️ **Not necessarily the middle of its footprint.** It is for a square kind and for a bridge,
      * and it is *not* for a thruster, whose anchor is its chamber and whose second tile is its bell
-     * — see [org.emerge.demo.outofspace.world.FootprintShape.Nose]. Anything that wants the middle
+     * — see [org.emerge.demo.outofspace.world.Footprint.anchorX]. Anything that wants the middle
      * of the thing standing here — a lever arm, a bounding box, a body to draw — must walk [tiles],
      * not add and subtract a half-width from this.
      */

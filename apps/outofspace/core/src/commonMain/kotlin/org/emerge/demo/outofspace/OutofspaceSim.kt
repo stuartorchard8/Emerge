@@ -84,7 +84,7 @@ import org.emerge.demo.outofspace.world.MotionLog
 import org.emerge.demo.outofspace.world.Cadence
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.biteCell
-import org.emerge.demo.outofspace.world.reach
+import org.emerge.demo.outofspace.world.shape
 import org.emerge.demo.outofspace.world.machine.reachableCell
 import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.Pump
@@ -3138,7 +3138,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         /** The first body with a cell over the plate at [at], or `-1`. */
         private fun reachedBody(m: Extractor, tile: TileIndex): Int {
-            val reach = m.kind.reach
+            // ⚠️ **A bite radius, not a footprint.** An extractor is square, so its block reaches
+            // the same distance every way and this is that distance — see `PLAN_machine_relocation.md`
+            // increment 0 for why the two had to stop being the same number.
+            val reach = m.kind.shape.ahead
             val x0 = grid.xOf(tile) - reach
             val y0 = grid.yOf(tile) - reach
             for (r in bodies.indices) {
@@ -3155,7 +3158,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val body = bodies[index]
             // Off the deck: an extractor is a deck machine, and asking the machine list for one
             // is a null-pointer rather than a wrong answer — which is at least loud.
-            val reach = deck[tile]!!.reach
+            val reach = deck[tile]!!.shape.ahead
             val cell = reachableCell(
                 body, pose, grid.xOf(tile) - reach, grid.yOf(tile) - reach,
                 grid.xOf(tile) + reach, grid.yOf(tile) + reach,

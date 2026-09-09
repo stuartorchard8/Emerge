@@ -108,10 +108,10 @@ object Docking {
         shipPose.toWorldY(berthLocalX(grid, port), berthLocalY(grid, port))
 
     private fun berthLocalX(grid: Grid, port: DockingPort): Long =
-        (grid.xOf(port.center) + port.facing.dx * (port.reach + 1)) * Flight.PER_TILE + Flight.PER_TILE / 2
+        (grid.xOf(port.center) + port.facing.dx * (port.shape.ahead + 1)) * Flight.PER_TILE + Flight.PER_TILE / 2
 
     private fun berthLocalY(grid: Grid, port: DockingPort): Long =
-        (grid.yOf(port.center) + port.facing.dy * (port.reach + 1)) * Flight.PER_TILE + Flight.PER_TILE / 2
+        (grid.yOf(port.center) + port.facing.dy * (port.shape.ahead + 1)) * Flight.PER_TILE + Flight.PER_TILE / 2
 
     /** The world point a station's berth presents: one cell out from the hull cell that carries it. */
     fun nodeWorldX(node: DockNode, stationPose: Pose): Long =

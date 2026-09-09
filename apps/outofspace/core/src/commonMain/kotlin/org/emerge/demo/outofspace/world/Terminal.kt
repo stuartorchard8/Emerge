@@ -102,15 +102,19 @@ private fun packTerminal(dx: Int, dy: Int): Int = ((dx + TERMINAL_BIAS) shl 8) o
  * along with the footprint to hang them off.
  */
 private fun localTerminalOffset(machine: DeckMachine, role: TerminalRole): Int {
-    val r = machine.reach
+    // ⚠️ **The block's reach from its anchor, not a half-width.** Every machine below is square or a
+    // span, so `ahead`, `behind`, `below` and `above` are all equal to what `reach` used to answer —
+    // but they are equal for a *reason* now rather than by luck, and an oblong kind can state its
+    // doors here without a hand-written branch. See [Footprint.ahead].
+    val fp = machine.shape
     return when (machine) {
         // ⭐ **The two arms, with the machine's body between them.** This is the pair
         // `PLAN_power_network.md` §5 needs: current entering one end reaches the other either
         // through the electrolyte, which does the work, or around the outside through the casing,
         // which does not — so a copper-cased cell shorts itself and a firebrick-cased one runs.
         is Electrolyzer -> when (role) {
-            TerminalRole.Negative -> packTerminal(-r, 0)
-            TerminalRole.Positive -> packTerminal(r, 0)
+            TerminalRole.Negative -> packTerminal(-fp.behind, 0)
+            TerminalRole.Positive -> packTerminal(fp.ahead, 0)
             else -> NO_TERMINAL
         }
         // ⭐ **The centre line at either end** (Stu), which is the same pair for the same reason:
@@ -121,8 +125,8 @@ private fun localTerminalOffset(machine: DeckMachine, role: TerminalRole): Int {
         // the negative terminal** — the one with the surplus. Getting this backwards would run the
         // whole network the wrong way and look entirely plausible doing it.
         is SolarPanel -> when (role) {
-            TerminalRole.Negative -> packTerminal(r, 0)
-            TerminalRole.Positive -> packTerminal(-r, 0)
+            TerminalRole.Negative -> packTerminal(fp.ahead, 0)
+            TerminalRole.Positive -> packTerminal(-fp.behind, 0)
             else -> NO_TERMINAL
         }
         // ⭐ **On its own tile, because the machine *is* the terminal.** One tile is the whole of it

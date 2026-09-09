@@ -48,7 +48,7 @@ import org.emerge.demo.outofspace.world.ApertureField
 import org.emerge.demo.outofspace.world.Structure
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.airlockOpenness
-import org.emerge.demo.outofspace.world.diameter
+import org.emerge.demo.outofspace.world.shape
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.DockingPort
@@ -787,7 +787,10 @@ class OutofspaceRenderer {
         // How wide the machine is, for the readouts drawn *inside* a square body — a fill bar and a
         // tank level. ⚠️ Never for the body itself: see [footprintRect] for why a size and a centre
         // is not enough to say where a machine is any more.
-        val n = m.kind.diameter
+        // ⚠️ **How wide a SQUARE body is, and it may not ride the footprint to find out.** Every
+        // machine that draws a readout inside itself is square, so this is its width — stated that
+        // way rather than derived from a shape that is oblong for four kinds aboard.
+        val n = m.kind.shape.width
         // A **ghost** is drawn as one body fading up from [Colors.GHOST] as it fills, the same ramp a
         // drawn run of track uses and for the same reason: a machine the player has just placed
         // should read at a glance as a plan rather than as a machine, and a half-fed one as half-fed.

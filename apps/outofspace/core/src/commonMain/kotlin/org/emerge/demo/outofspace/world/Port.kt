@@ -68,18 +68,22 @@ private data class LocalPort(
  * Machine connection points in local frame, rotated into world. Unrotated definition (one variant per machine, not per orientation).
  */
 private fun localPorts(machine: DeckMachine): List<LocalPort> {
-    val r = machine.reach
+    // ⚠️ **The block's reach from its anchor, not a half-width.** Every machine below is square or a
+    // span, so `ahead`, `behind`, `below` and `above` are all equal to what `reach` used to answer —
+    // but they are equal for a *reason* now rather than by luck, and an oblong kind can state its
+    // doors here without a hand-written branch. See [Footprint.ahead].
+    val fp = machine.shape
     return when (machine) {
         // A gantry: it takes the belt on at one end and puts it down at the other. Rail only —
         // there was never a pipe bridge, since a fluid is a continuum and has nothing to hop with.
         // At ±reach like every other machine's ports, which for a 3-long span is its two ends.
         is Bridge -> listOf(
-            LocalPort(-r, 0, Direction.Left, PortKind.Input),
-            LocalPort(r, 0, Direction.Right, PortKind.Output),
+            LocalPort(-fp.behind, 0, Direction.Left, PortKind.Input),
+            LocalPort(fp.ahead, 0, Direction.Right, PortKind.Output),
         )
 
 
-        is Extractor -> listOf(LocalPort(r, 0, Direction.Right, PortKind.Output))
+        is Extractor -> listOf(LocalPort(fp.ahead, 0, Direction.Right, PortKind.Output))
 
         // Propellant in at the chamber, which is the tile the machine is stored at — a rail is
         // threaded underneath it exactly as it is under an extractor. A thruster is one tile wide,
@@ -103,16 +107,16 @@ private fun localPorts(machine: DeckMachine): List<LocalPort> {
         // `labelOf`. That is the whole reason [BufferRole.Oxidiser] exists rather than a second use
         // of `Waste`.
         is Rocket -> listOf(
-            LocalPort(-r, -r, Direction.Left, PortKind.Input),
-            LocalPort(-r, +r, Direction.Left, PortKind.Input),
+            LocalPort(-fp.behind, -fp.above, Direction.Left, PortKind.Input),
+            LocalPort(-fp.behind, +fp.below, Direction.Left, PortKind.Input),
         )
 
 
         // In at the back, concentrate out the front, tailings out of the floor.
         is Concentrator -> listOf(
-            LocalPort(-r, 0, Direction.Left, PortKind.Input),
-            LocalPort(r, 0, Direction.Right, PortKind.Output, Stream.Product),
-            LocalPort(0, r, Direction.Down, PortKind.Output, Stream.Waste),
+            LocalPort(-fp.behind, 0, Direction.Left, PortKind.Input),
+            LocalPort(fp.ahead, 0, Direction.Right, PortKind.Output, Stream.Product),
+            LocalPort(0, fp.below, Direction.Down, PortKind.Output, Stream.Waste),
         )
 
         // ⚠️ **The concentrator's layout exactly**, because from the outside it is the same machine:
@@ -121,9 +125,9 @@ private fun localPorts(machine: DeckMachine): List<LocalPort> {
         // — a machine whose outputs swapped meaning would be a machine you have to inspect before
         // you can lay a belt to it.
         is Electrolyzer -> listOf(
-            LocalPort(-r, 0, Direction.Left, PortKind.Input),
-            LocalPort(r, 0, Direction.Right, PortKind.Output, Stream.Product),
-            LocalPort(0, r, Direction.Down, PortKind.Output, Stream.Waste),
+            LocalPort(-fp.behind, 0, Direction.Left, PortKind.Input),
+            LocalPort(fp.ahead, 0, Direction.Right, PortKind.Output, Stream.Product),
+            LocalPort(0, fp.below, Direction.Down, PortKind.Output, Stream.Waste),
         )
 
         // In one side, out the other, like everything else. The second input it used to have on top
@@ -131,8 +135,8 @@ private fun localPorts(machine: DeckMachine): List<LocalPort> {
         // player should have to build out of track where they can see it, not something a building
         // does for them out of sight.
         is Furnace -> listOf(
-            LocalPort(-r, 0, Direction.Left, PortKind.Input),
-            LocalPort(r, 0, Direction.Right, PortKind.Output),
+            LocalPort(-fp.behind, 0, Direction.Left, PortKind.Input),
+            LocalPort(fp.ahead, 0, Direction.Right, PortKind.Output),
         )
 
         // A vent is a hole. It takes whatever is put into it, from whichever face.
@@ -154,16 +158,16 @@ private fun localPorts(machine: DeckMachine): List<LocalPort> {
             LocalPort(0, 0, Direction.Left, PortKind.Input),
             LocalPort(1, 0, Direction.Right, PortKind.Output),
         ) else listOf(
-            LocalPort(-r, 0, Direction.Left, PortKind.Input),
-            LocalPort(r, 0, Direction.Right, PortKind.Output),
+            LocalPort(-fp.behind, 0, Direction.Left, PortKind.Input),
+            LocalPort(fp.ahead, 0, Direction.Right, PortKind.Output),
         )
 
         // ⛔ **`facing` is the BERTH, not a rail port — so neither doors need to be opposite it.**
         // Cargo goes in and out at the near edge (opposite the facing). In practice this looks like a storage with its
         // ports pulled back away from the BERTH side of the dock.
         is DockingPort -> listOf(
-            LocalPort(-r, -r, Direction.Down, PortKind.Input),
-            LocalPort(-r, +r, Direction.Down, PortKind.Output),
+            LocalPort(-fp.behind, -fp.above, Direction.Down, PortKind.Input),
+            LocalPort(-fp.behind, +fp.below, Direction.Down, PortKind.Output),
         )
         is Hull, is Airlock -> emptyList()
 
@@ -223,12 +227,13 @@ fun portsOf(grid: Grid, machine: DeckMachine, centreTile: TileIndex): List<Port>
  *
  * ### Why the centre tile
  *
- * A machine's real ports sit at ±[DeckMachine.reach], which is a different place for every footprint
- * and every facing. The centre is the one tile every machine has, whatever size it is, so a single
- * port there needs no knowledge of how wide the thing is and can never land on a side some kind
- * already uses. That is what makes this one entry rather than a rule per kind.
+ * A machine's real ports sit at the edges of its block — [Footprint.ahead] and its three companions —
+ * which is a different place for every footprint and every facing. The anchor is the one tile every
+ * machine has, whatever size it is, so a single port there needs no knowledge of how wide the thing
+ * is and can never land on a side some kind already uses. That is what makes this one entry rather
+ * than a rule per kind.
  *
- * For a **1x1** machine `reach` is 0, so the centre is exactly where its input port would be — and
+ * For a **1x1** machine every reach is 0, so the anchor is exactly where its input port would be — and
  * this **overrides** it, because a ghost has no buffer to put anything in. A machine with no ports
  * at all, a hull or an airlock, gains one for the first time in its life, which is the whole reason
  * a hull can be built at all.

@@ -75,13 +75,17 @@ class BufferRoleTest {
 
     @Test
     fun `every store lies inside its own machine's footprint`() {
+        // ⛔ **Asked of the footprint itself, not of a bounding box around it.** This used to test
+        // `dx, dy in -reach..reach`, which for a span admits six tiles the machine does not stand on —
+        // a store could sit beside a gantry rather than on it and the test would pass. The tiles are
+        // the claim, so the tiles are what it asks.
         for (facing in Direction.ALL) for (m in kinds(facing)) {
-            val r = m.reach
+            val standing = m.tiles(grid).toSet()
             for (role in bufferRolesOf(m)) {
                 val tile = bufferTile(grid, m, centre, role)!!
                 val dx = grid.xOf(tile) - grid.xOf(centre)
                 val dy = grid.yOf(tile) - grid.yOf(centre)
-                assertTrue(dx in -r..r && dy in -r..r, "$m $role sits at ($dx, $dy), outside reach $r")
+                assertTrue(tile in standing, "$m $role sits at ($dx, $dy), off its own footprint")
             }
         }
     }

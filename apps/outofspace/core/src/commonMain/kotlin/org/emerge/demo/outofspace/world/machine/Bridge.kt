@@ -23,7 +23,7 @@ import org.emerge.demo.outofspace.world.Wiring
  * is a real constraint and it is meant to be: the game is about being out of space.
  *
  * ⚠️ Its footprint is a **line along [facing]** — see
- * `FootprintShape.Span`. Turning a bridge therefore moves it onto two different tiles, so unlike
+ * `Footprint.span`. Turning a bridge therefore moves it onto two different tiles, so unlike
  * every other machine a rotation can be refused.
  */
 data class Bridge(
