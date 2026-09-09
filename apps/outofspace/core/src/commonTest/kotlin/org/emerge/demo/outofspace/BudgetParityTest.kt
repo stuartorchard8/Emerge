@@ -13,6 +13,7 @@ import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.machine.MACHINE_OUTPUT_CAP
+import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.millimolesOf
@@ -54,7 +55,13 @@ class BudgetParityTest {
         // throttle — no longer exists. What sizes them now is asserted just below. Still stated as a
         // mass, because a mass is what a parity test can check.
         assertEquals(200_000L, MACHINE_BUFFER_CAP.grams, "input buffer is two hundred kilograms")
-        assertEquals(200_000L, MACHINE_OUTPUT_CAP.grams, "output buffer is two hundred kilograms")
+        // ⚠️ **One belt-load since `811be00f`, and no longer the same figure as the input buffer.**
+        // An output buffer is a stop-threshold on a store its machine deposits whole lumps into, and
+        // one belt-load is the shallowest that can be: a port that ships whole packets stops holding
+        // a shippable one and restarts when it goes. Pinned beside `Pump.BUFFER_CAP` below, which is
+        // the cap that may NOT be this one.
+        assertEquals(100_000L, MACHINE_OUTPUT_CAP.grams, "output buffer is one hundred kilograms")
+        assertEquals(200_000L, Pump.BUFFER_CAP.grams, "a pump holds two hundred kilograms")
         assertEquals(20_000_000L, Storage.WAREHOUSE_CAP.grams, "a warehouse is twenty tonnes")
         assertEquals(5_000_000L, Storage.SILO_CAP.grams, "a silo is five tonnes")
         assertEquals(2_000_000L, Storage.BUFFER_CAP.grams, "a buffer is two tonnes")
@@ -75,6 +82,17 @@ class BudgetParityTest {
         // ⚠️ The extractor has no rate of its own any more — its two stores became one and the rail
         // sets its throughput — so its buffer is sized in belt-loads rather than in ticks.
         assertEquals(50L, Extractor.BUFFER_CAP / Capacity.PACKET_MASS, "fifty belt-loads of buffer")
+        // ⛔ **The floor under a pump's cap, and why it is not [MACHINE_OUTPUT_CAP].** `suck` clamps
+        // its draw to `BUFFER_CAP - held` and splits the clamp across species with `Share`, which
+        // rounds down — so the last grams never arrive and a cap of exactly one packet is one the
+        // pump can approach and never reach. Held at one belt-load it banked 99,999,999,999 g of a
+        // 100,000,000,000 g packet, `holdsBack` refused to ship a part packet, and nothing reached a
+        // tank in four thousand ticks. A threshold a lump may overshoot is relieved by shipping; a
+        // ceiling a draw is clamped under is relieved by nothing.
+        assertTrue(
+            Pump.BUFFER_CAP > Capacity.PACKET_MASS,
+            "a pump clamped to ${Pump.BUFFER_CAP} can never round its way up to a whole packet",
+        )
 
         // ── Machine throughput ──
         //

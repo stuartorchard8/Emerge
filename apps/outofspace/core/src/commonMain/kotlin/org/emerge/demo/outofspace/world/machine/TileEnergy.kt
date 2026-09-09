@@ -124,8 +124,18 @@ val MACHINE_BUFFER_CAP = 2L * PACKET_MASS
  * back up into the input and then up the belt behind it, which is the same way every other blockage
  * in the game behaves: visibly, and starting at the thing that is actually stuck.
  *
- * **Derivation**: the same two belt-loads as [MACHINE_BUFFER_CAP], and deliberately equal to it — a
- * machine that can hoard more output than input would drain its feed before it stalled.
+ * **Derivation**: **one belt-load**, which is the smallest depth a port that ships whole packets can
+ * work at — a machine stops the moment it is holding a shippable packet, and starts again as soon as
+ * the packet has gone. It was two belt-loads, matched to [MACHINE_BUFFER_CAP] so that a machine could
+ * not hoard more output than input; one belt-load keeps that property with room to spare and stops a
+ * concentrator's bank from ever holding two packets at once.
+ *
+ * ⛔ **This is a threshold, not a ceiling, and only a machine that deposits in lumps may read it.**
+ * The question it answers is "is this store *already* full", asked of a store that a whole lump lands
+ * in — so the answer may overshoot, and shipping always relieves it. A machine that instead clamps
+ * an intake to `cap - held` must not use this number: rounding inside the clamp leaves it short of a
+ * packet for ever, with nothing able to relieve it. See [Pump.BUFFER_CAP], which is that machine and
+ * which is why it now carries a cap of its own.
  */
 val MACHINE_OUTPUT_CAP = PACKET_MASS
 

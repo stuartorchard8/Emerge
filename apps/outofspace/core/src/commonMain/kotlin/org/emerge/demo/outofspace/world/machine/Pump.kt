@@ -53,12 +53,25 @@ data class Pump(
         val MASS_PER_TICK: Long = Capacity.PACKET_MASS / 400L
 
         /**
-         * How much it holds before it stops drawing.
+         * How much it holds before it stops drawing: **two belt-loads**. A machine that cannot bank
+         * a whole packet cannot ship one, and one that banks many is a warehouse with the wrong name
+         * on it.
          *
-         * Two belt-loads, which is [MACHINE_OUTPUT_CAP]'s size and for its reason: a machine that
-         * cannot bank a whole packet cannot ship one, and one that banks many is a warehouse with
-         * the wrong name on it.
+         * ⛔ **It cannot be one belt-load, and the reason is arithmetic rather than taste.** A pump
+         * clamps its draw to the room it has left — `min(MASS_PER_TICK, room, available)` in `suck`
+         * — and then splits that clamp across the room's species with
+         * [org.emerge.demo.outofspace.world.Share], which rounds every share down. On the last ticks
+         * before a full store the shares round to nothing and the draw stops short. So a cap of
+         * exactly [Capacity.PACKET_MASS] is one the pump approaches and never reaches, and
+         * `Work.holdsBack` will not release a part packet: measured at 99,999,999,999 g against a
+         * 100,000,000,000 g packet, unchanged from tick 400 to tick 4000 and for ever after.
+         *
+         * ⚠️ **It used to be [MACHINE_OUTPUT_CAP] and deliberately is not any more.** That constant is
+         * a *stop-threshold*, read off a store its machine deposits into in whole lumps that may
+         * overshoot it and are then relieved by shipping. This is a *ceiling a draw is clamped to fit
+         * under*, and nothing relieves a clamp. The two only ever looked like the same number — when
+         * the output cap went to one belt-load the pump went with it and stopped shipping at all.
          */
-        val BUFFER_CAP: Long = MACHINE_OUTPUT_CAP
+        val BUFFER_CAP: Long = 2L * Capacity.PACKET_MASS
     }
 }
