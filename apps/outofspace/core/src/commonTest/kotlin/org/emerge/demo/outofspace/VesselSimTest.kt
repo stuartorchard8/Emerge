@@ -314,7 +314,7 @@ class VesselSimTest {
             fixturePlace(grid.tile(7, 2), Brush.Building(DeckMachineKind.Ejector), Direction.Right),
         )))
         s = run(s, 40, OutofspaceInput(listOf(
-            Edit.TuneEjector(grid.tile(7, 2), Species.ALL.toSet()),
+            Edit.TuneEjector(grid.tile(7, 2), Species.ALL.toSet(), ore = true),
         )))
         assertTrue(s.ventedMass > 0L, "material should have gone overboard")
         assertBalanced(s, "drained line")

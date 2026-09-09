@@ -90,28 +90,6 @@ class Stockpile private constructor(
     fun buildable(species: Species): Long = loose[species.ordinal]
 
     /**
-     * How much of [species] is **aboard and loose** — in tanks, in machine buffers, on belts, and in
-     * anything already marked to come apart — whether it is sitting there pure or mixed into ore.
-     *
-     * ⛔ **[buildable] plus the mixed share, and NOT [inFabric].** This is the ejector panel's
-     * column, and what an ejector could ever be handed is exactly what the network can deliver
-     * without further instruction. The hull is not a candidate for going overboard, and listing the
-     * forty tonnes of steel the ship is *made of* at the top of a list of things to throw away would
-     * bury everything the player actually came to find — the same burial the class note above
-     * describes for the material picker.
-     *
-     * ⚠️ **The line between the two is an order, not a location**, which is what makes this the
-     * honest number rather than a conservative one: mark a machine for deconstruction and its metal
-     * moves into this figure without moving an inch, because the network may now have it.
-     *
-     * ⚠️ **Mixed mass is counted by species share.** A tile of half iron and half silica adds its
-     * iron here and its silica to silica's row. What an ejector will *do* with that tile is a
-     * different question and a stricter one — every species in a lump has to be whitelisted before
-     * any of it goes — so this column says what is aboard rather than what is about to leave.
-     */
-    fun aboard(species: Species): Long = loose[species.ordinal] + blended[species]
-
-    /**
      * How much of [species] is **built into the vessel** — casings and laid conduit — and so is
      * recoverable only by marking something for deconstruction.
      *

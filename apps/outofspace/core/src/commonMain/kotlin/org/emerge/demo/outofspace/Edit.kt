@@ -213,8 +213,10 @@ sealed interface Edit {
      */
     data class TuneEjector(
         val tile: TileIndex,
-        /** See [org.emerge.demo.outofspace.world.machine.Ejector.whitelist] — empty ejects nothing. */
+        /** See [org.emerge.demo.outofspace.world.machine.Ejector.whitelist] — species, **pure**. */
         val whitelist: Set<org.emerge.demo.outofspace.chem.Species>,
+        /** See [org.emerge.demo.outofspace.world.machine.Ejector.ore] — every blend, in one switch. */
+        val ore: Boolean = false,
     ) : Edit
 
     /** Wire: rewires action term. slot≥end=append, null trigger=remove. Single edit type (add/change/remove are same list op). */

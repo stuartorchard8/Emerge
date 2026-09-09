@@ -130,6 +130,15 @@ object Save {
     const val LEGACY_PIPE = "Pipe"
 
     /**
+     * What mixed ore calls itself inside an ejector's `eject=` list, and a docking port's `orders=`.
+     *
+     * ⚠️ **Not a species, and it must never collide with one.** Uppercase is what keeps it apart:
+     * every [Species] name is written in its own mixed case (`Iron`, `HydrogenSulfide`), so `ORE`
+     * cannot be mistaken for one however many species get added.
+     */
+    const val EJECT_ORE = "ORE"
+
+    /**
      * ⚠️ **27 adds `charge`** — what every tile of [Conduit.Power] is holding, written sparsely in
      * the same `tag tile=value` form as the heat fields. A file written before it loads with an
      * empty field, which is the *true* state of a world that has never had a solar panel: charge has
@@ -640,10 +649,12 @@ object Save {
                 // fields keep: a fresh ejector is the common case and adds nothing to the line. An
                 // older file with no field loads with an empty list, which is what a file written
                 // before the list existed genuinely says — see `canonicalKindName`.
-                if (m.whitelist.isNotEmpty()) put(
-                    "eject",
-                    m.whitelist.sortedBy { it.ordinal }.joinToString(",") { it.name },
-                )
+                // ⚠️ **The ore switch rides the same list under the name `ORE`**, which is the
+                // docking port's spelling for the same thing — see its `orders` field. A second key
+                // for one bit would be a second thing to remember to read.
+                val book = m.whitelist.sortedBy { it.ordinal }.map { it.name } +
+                    (if (m.ore) listOf(EJECT_ORE) else emptyList())
+                if (book.isNotEmpty()) put("eject", book.joinToString(","))
             }
             // A warehouse holds nothing itself: its contents are a tile of the buffer layer, and
             // the store loop below writes them under the key the record has always used.
@@ -2008,9 +2019,12 @@ object Save {
                 // ⛔ **An unknown species name is a refusal, not a silent drop.** A list quietly
                 // shortened by one is an ejector that keeps something the player told it to throw
                 // away, and it would say nothing about having changed its mind.
-                whitelist = f["eject"].orEmpty().split(',').filter { it.isNotEmpty() }.mapTo(
-                    LinkedHashSet(),
-                ) { name -> Species.ALL.firstOrNull { it.name == name } ?: fail("unknown species '$name'") },
+                whitelist = f["eject"].orEmpty().split(',')
+                    .filter { it.isNotEmpty() && it != EJECT_ORE }
+                    .mapTo(LinkedHashSet()) { name ->
+                        Species.ALL.firstOrNull { it.name == name } ?: fail("unknown species '$name'")
+                    },
+                ore = f["eject"].orEmpty().split(',').any { it == EJECT_ORE },
             )
             // Two lists, each one field. ⚠️ `wiring` is applied after this `when` for every kind
             // (see `withWiring` below), so it is not passed here.

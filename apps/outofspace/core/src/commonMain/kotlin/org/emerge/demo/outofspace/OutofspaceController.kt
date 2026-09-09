@@ -702,7 +702,13 @@ class OutofspaceController(
      * and any other caller form two opinions about it.
      */
     fun setEject(ejector: Ejector, species: Species, ejecting: Boolean) =
-        pending.add(Edit.TuneEjector(ejector.center, ejector.switched(species, ejecting).whitelist))
+        retune(ejector.switched(species, ejecting))
+
+    /** The same press on the ORE row, which has no species to key on. */
+    fun setEjectOre(ejector: Ejector, ejecting: Boolean) = retune(ejector.switchedOre(ejecting))
+
+    private fun retune(ejector: Ejector) =
+        pending.add(Edit.TuneEjector(ejector.center, ejector.whitelist, ejector.ore))
 
     private fun retune(port: DockingPort) =
         pending.add(Edit.TuneDockingPort(port.center, orders = port.orders, ore = port.ore))

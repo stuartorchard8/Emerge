@@ -326,6 +326,18 @@ class OutofspaceHud {
         private set
 
     /**
+     * Whether the frozen list includes the ORE row — the one row that is not a species.
+     *
+     * ⛔ **Frozen alongside [ejectorRows] and for the identical reason.** Ore sits at the foot of the
+     * main section, so ore arriving mid-read would push the NEW heading and everything under it down
+     * by a row. A separate flag rather than a member of the list because ORE is not a [Species] and
+     * has no mass to be ranked by — it is the counter's own shape, where the ore row likewise sits
+     * below the ranking rather than inside it.
+     */
+    var ejectorRowsHaveOre: Boolean = false
+        private set
+
+    /**
      * Open the whitelist sheet on the ejector at [tile], with a freshly taken list.
      *
      * ⚠️ **Freshly taken every time, including on the same machine.** Closing and reopening is the
@@ -348,11 +360,18 @@ class OutofspaceHud {
      */
     fun refreshEjectorRows(ejector: Ejector, stock: Stockpile) {
         ejectorRows = ejectorSpecies(ejector, stock)
+        ejectorRowsHaveOre = ejectorWantsOreRow(ejector, stock)
     }
 
     /**
-     * Which species deserve a row **right now**: everything with mass aboard, plus everything the
-     * player has already ticked. Heaviest first.
+     * Which species deserve a row **right now**: everything the ship holds *pure*, plus everything
+     * the player has already ticked. Heaviest first.
+     *
+     * ⛔ **[Stockpile.buildable] and not a sum over every buffer**, which is the counter's column and
+     * has to be. A species on this list means that species **pure** — see [Ejector.whitelist] — so
+     * ranking it by mass that includes the iron locked up inside ore would put a row at the top of
+     * the list on the strength of matter its own switch will never touch. What the mixed heap is
+     * worth is the ORE row's number, and it is the only place it appears.
      *
      * ⛔ **The second half is not a nicety**, and it is the docking counter's argument exactly: a
      * species whitelisted and then used up would otherwise vanish off the list, taking the only
@@ -364,8 +383,12 @@ class OutofspaceHud {
      * between one refresh and the next for no reason the player could see.
      */
     private fun ejectorSpecies(ejector: Ejector, stock: Stockpile): List<Species> =
-        Species.ALL.filter { stock.aboard(it) > 0L || ejector.ejects(it) }
-            .sortedByDescending { stock.aboard(it) }
+        Species.ALL.filter { stock.buildable(it) > 0L || ejector.ejects(it) }
+            .sortedByDescending { stock.buildable(it) }
+
+    /** Whether the ORE row earns its place: there is some aboard, or the switch is already on. */
+    private fun ejectorWantsOreRow(ejector: Ejector, stock: Stockpile): Boolean =
+        stock.blended.total > 0L || ejector.ore
 
     /**
      * What has come aboard since the list was taken — the NEW section, and nothing else.
@@ -375,10 +398,14 @@ class OutofspaceHud {
      * one. It gets its own heading at the bottom, where nothing is above it to move.
      */
     fun newEjectorSpecies(ejector: Ejector, stock: Stockpile): List<Species> {
-        if (ejectorRows.isEmpty()) return emptyList()
+        if (ejectorRows.isEmpty() && !ejectorRowsHaveOre) return emptyList()
         val shown = ejectorRows.toHashSet()
         return ejectorSpecies(ejector, stock).filter { it !in shown }
     }
+
+    /** Whether ore has turned up since the list was taken — the ORE row's half of [newEjectorSpecies]. */
+    fun newEjectorOre(ejector: Ejector, stock: Stockpile): Boolean =
+        !ejectorRowsHaveOre && ejectorWantsOreRow(ejector, stock)
 
     private val collapsed = mutableSetOf<String>()
     private val expanded = mutableSetOf<String>()
@@ -1055,11 +1082,19 @@ class OutofspaceHud {
      */
     private fun PanelBuilder.ejectorControls(controller: OutofspaceController, tile: TileIndex, ejector: Ejector) {
         keyValue("THROWN AWAY", mass(ejector.ventedMass), 0x9A9A9AFFL, 0xE0864AFFL)
-        if (ejector.whitelist.isEmpty()) {
+        if (ejector.isShut) {
             keyValue("EJECTING", "nothing", 0x9A9A9AFFL, 0x9A9A9AFFL)
             text("name a species and the belts will feed it", 0x5A5A5AFFL)
         } else {
-            keyValue("EJECTING", "${ejector.whitelist.size} species", 0x9A9A9AFFL, 0xE05A4AFFL)
+            // ⚠️ **Ore is counted in words, not as a species**, because it is not one — a summary
+            // reading "1 species" for a machine dumping every blend aboard would be a lie of
+            // exactly the kind this panel exists to prevent.
+            val named = when {
+                ejector.whitelist.isEmpty() -> "ore"
+                ejector.ore -> "${ejector.whitelist.size} species · ore"
+                else -> "${ejector.whitelist.size} species"
+            }
+            keyValue("EJECTING", named, 0x9A9A9AFFL, 0xE05A4AFFL)
         }
         // ⚠️ **The stockpile is read HERE, in the press, and not once a frame like the panels'.** It
         // is a sweep of every buffer, every belt and the whole deck — see [build] — and this needs
@@ -1113,15 +1148,18 @@ class OutofspaceHud {
                     text(EJECT_MASS_W.cell("ABOARD"), 0x7A7A7AFFL)
                 }
                 for (species in ejectorRows) ejectorRow(controller, ejector, stock, species)
+                if (ejectorRowsHaveOre) ejectorOreRow(controller, ejector, stock)
 
                 // ── What has come aboard since the list was taken ────────────
                 val arrived = newEjectorSpecies(ejector, stock)
-                if (arrived.isNotEmpty()) {
+                val newOre = newEjectorOre(ejector, stock)
+                if (arrived.isNotEmpty() || newOre) {
                     gap()
                     text("NEW ABOARD  ·  REFRESH to file them", 0xE0C060FFL)
                     for (species in arrived) ejectorRow(controller, ejector, stock, species)
+                    if (newOre) ejectorOreRow(controller, ejector, stock)
                 }
-                if (ejectorRows.isEmpty() && arrived.isEmpty()) {
+                if (ejectorRows.isEmpty() && !ejectorRowsHaveOre && arrived.isEmpty() && !newOre) {
                     text("(nothing aboard, and nothing on the list)", 0x9A9A9AFFL)
                 }
             }
@@ -1142,7 +1180,13 @@ class OutofspaceHud {
         }
     }
 
-    /** One species: its article, what there is of it aboard, and the two-position switch. */
+    /**
+     * One species: its article, how much of it the ship holds **pure**, and the two-position switch.
+     *
+     * ⚠️ **[Stockpile.buildable], which is the counter's YOURS column.** A tick here means this
+     * species pure, so the honest figure beside it is the mass that tick can actually move. Iron
+     * dissolved in a hold of rock is on the ORE row and nowhere else.
+     */
     private fun PanelBuilder.ejectorRow(
         controller: OutofspaceController,
         ejector: Ejector,
@@ -1152,7 +1196,7 @@ class OutofspaceHud {
         val on = ejector.ejects(species)
         row(gapPx = 2f) {
             button(EJECT_NAME_W.named(species.name.uppercase()), 0x00000000L) { controller.openWiki(species) }
-            text(EJECT_MASS_W.cell(mass(stock.aboard(species))), speciesColor(species) or 0xFFL)
+            text(EJECT_MASS_W.cell(mass(stock.buildable(species))), speciesColor(species) or 0xFFL)
             // ⛔ **Each button SETS its side rather than flipping.** Pressing the lit one has to be a
             // no-op, or a double tap on EJECT would quietly take the species back off the list.
             button("EJECT", if (on) EJECT_ON else EJECT_OFF, widthEm = EJECT_SWITCH_EM) {
@@ -1162,6 +1206,39 @@ class OutofspaceHud {
                 controller.setEject(ejector, species, false)
             }
         }
+    }
+
+    /**
+     * The ore row: **every blend aboard, in one switch**, and the row a player actually reaches for.
+     *
+     * ⛔ **Not a species and not summed into one.** A lump of two things is deliverable only as ore —
+     * that is the partition the network draws and the counter draws with it — so ticking IRON must
+     * not consent to throwing away rock that happens to contain iron. This is the switch that does,
+     * and it says so in one word.
+     *
+     * ⚠️ **Below the ranking rather than inside it**, exactly as the counter's own ore row is: it
+     * has no single species to be ranked against, and a mixed heap that outweighed every pure tank
+     * aboard would otherwise sit permanently at the top of a list of metals.
+     */
+    private fun PanelBuilder.ejectorOreRow(
+        controller: OutofspaceController,
+        ejector: Ejector,
+        stock: Stockpile,
+    ) {
+        val on = ejector.ore
+        row(gapPx = 2f) {
+            // Inert, unlike a species name: there is no article about "ore", because ore is not a
+            // thing — it is every lump aboard that is more than one thing.
+            button(EJECT_NAME_W.named("ORE"), 0x00000000L) { }
+            text(EJECT_MASS_W.cell(mass(stock.blended.total)), 0xC8A44AFFL)
+            button("EJECT", if (on) EJECT_ON else EJECT_OFF, widthEm = EJECT_SWITCH_EM) {
+                controller.setEjectOre(ejector, true)
+            }
+            button("KEEP", if (on) EJECT_OFF else KEEP_ON, widthEm = EJECT_SWITCH_EM) {
+                controller.setEjectOre(ejector, false)
+            }
+        }
+        text("  everything aboard that is more than one species", 0x5A5A5AFFL)
     }
 
     /**

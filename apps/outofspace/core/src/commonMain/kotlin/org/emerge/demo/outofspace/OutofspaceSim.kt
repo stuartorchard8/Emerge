@@ -2491,7 +2491,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Edit.TuneEjector -> {
                     val tile = originAt(edit.tile) ?: return
                     val m = deck[tile]
-                    if (m is Ejector) deck[tile] = m.copy(whitelist = edit.whitelist)
+                    if (m is Ejector) deck[tile] = m.copy(whitelist = edit.whitelist, ore = edit.ore)
                 }
                 is Edit.Undock -> {
                     val weld = assembly.welds.firstOrNull { it.parentId == Member.VESSEL } ?: return
@@ -4590,19 +4590,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
             // ── Ejectors: what the player has said may go overboard ──────────
             //
-            // ⛔ **The whitelist is the whole of the machine's appetite, and an EMPTY one is stated
-            // out loud.** Every other fussy kind above may skip a machine it has nothing to say
-            // about, because a tile that states no acceptance takes anything for ever — see
-            // `sinkAdmits`, where that sentence is written down. For an ejector that default is
-            // exactly backwards: it is the one machine whose door standing open destroys the
-            // vessel's cargo. So it is the one kind here with no `continue` on an empty list, and
-            // `Acceptance.onlyOf(emptySet())` is what refuses everything.
+            // ⛔ **The docking port's sell side, and it is the same code because it is the same
+            // question.** A tick on IRON is `SpeciesFilter(Iron, pure = true)` and the ore switch is
+            // `SpeciesFilter.MIXED`, so pure and mixed are complementary and never compete for a
+            // lump — see that constant, where the argument was written for the mouth that needed it
+            // first. It is also the only line the *network* can draw: a tile holding one species is
+            // deliverable as that species and a tile holding two is deliverable only as ore.
             //
-            // ⚠️ **[Acceptance.onlyOf] rather than a filter per species**, which is the docking
-            // port's shape and would be wrong here. A sell list is several appetites OR'd at a tile,
-            // so a lump matching *any* of them is admitted; an ejector needs the opposite reading —
-            // every species in the lump has to be named, or a packet of tailings takes a gram of
-            // iron overboard with it. See [Acceptance.only].
+            // ⛔ **An empty book is stated OUT LOUD, and the `getOrPut` outside the loop is what
+            // states it.** A tile with no entry in this map takes anything for ever — see
+            // `sinkAdmits`, where "nothing stated means anything" is written down — and for an
+            // ejector that default is exactly backwards: it is the machine whose door standing open
+            // destroys the vessel's cargo. An entry holding an *empty* list refuses everything,
+            // which is the docking port's rule too and the reason this line is not inside an `if`.
             for ((tile, at) in ports) {
                 if (rails[tile.index] == null) continue
                 val input = at.firstOrNull { it.kind == PortKind.Input } ?: continue
@@ -4611,7 +4611,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // harder here: an unbuilt shell cannot throw anything away, and the site's own bill
                 // is the only appetite it has while it is one.
                 if (deck.isGhost(input.owner)) continue
-                accepts.getOrPut(tile) { mutableListOf() }.add(Acceptance.onlyOf(ejector.whitelist))
+                val list = accepts.getOrPut(tile) { mutableListOf() }
+                for (species in ejector.whitelist) {
+                    list.add(Acceptance.filtered(SpeciesFilter(species, pure = true)))
+                }
+                if (ejector.ore) list.add(Acceptance.filtered(SpeciesFilter.MIXED))
             }
 
             // ── Docking ports: what the player has put up for sale ───────────

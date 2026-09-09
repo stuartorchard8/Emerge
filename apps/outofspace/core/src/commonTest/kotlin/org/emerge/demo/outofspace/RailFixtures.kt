@@ -99,8 +99,13 @@ class RailPlan(private val grid: Grid) {
  * is the whole point of it; a fixture that wants "somewhere for material to go" has to say which
  * material, and every one of these wants all of it. Written out here so that the tests which are
  * *about* the list read differently from the ones merely using a sink.
+ *
+ * ⚠️ **Both switches, because pure and mixed are two categories.** A species list admits that
+ * species *pure* and nothing else; every blend is [Ejector.ore]. "Anything" needs both, and a
+ * fixture that named only the species would silently be a fixture about pure metal.
  */
-fun openEjector(tile: TileIndex): Ejector = Ejector(tile, whitelist = Species.ALL.toSet())
+fun openEjector(tile: TileIndex): Ejector =
+    Ejector(tile, whitelist = Species.ALL.toSet(), ore = true)
 
 fun rails(grid: Grid, build: RailPlan.() -> Unit): List<Segment?> = RailPlan(grid).apply(build).list()
 

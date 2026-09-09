@@ -42,6 +42,13 @@ import kotlin.test.assertTrue
  * *both* — what the machine threw away, and whether anything was left standing on the track. The
  * ledger tells you the door worked; the empty track tells you the network never sent it.
  *
+ * ### Pure and mixed are two categories
+ *
+ * A species on the list means that species **pure**; every blend is `Ejector.ore`, one switch. That
+ * is the docking counter's partition and the only line the network can draw — see
+ * `SpeciesFilter.MIXED`. Several cases below exist purely to hold that line: ticking IRON must never
+ * be a way to throw away rock that happens to contain iron.
+ *
  * ⚠️ **`ventedMass` keeps its name**, on the machine and in the file. Mass leaving the vessel is
  * vented whatever pushed it out — a shrinking grid vents, an airlock vents — and the rename was of
  * the machine, not of the verb.
@@ -67,11 +74,11 @@ class EjectorTest {
      * The single fixture every case here uses, because the only variable worth changing is the list:
      * one source, one sink, one road between them and nowhere else for anything to go.
      */
-    private fun line(whitelist: Set<Species>, cargo: Mixture): VesselState {
+    private fun line(whitelist: Set<Species>, cargo: Mixture, ore: Boolean = false): VesselState {
         val grid = cfg.initialGrid
         val deck = DeckArray(grid)
         deck += fixtureStorage(grid.tile(tank.first, tank.second), Direction.Right)
-        deck += Ejector(grid.tile(ejector.first, ejector.second), whitelist = whitelist)
+        deck += Ejector(grid.tile(ejector.first, ejector.second), whitelist = whitelist, ore = ore)
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 3, ejector.first, 3)
         return VesselState(
@@ -135,29 +142,44 @@ class EjectorTest {
     }
 
     /**
-     * ⛔ **A lump is admitted whole or not at all.** Half the cargo being welcome is not half a
-     * delivery: an ejector handed a blend of a listed and an unlisted species would take the unlisted
-     * one overboard with it and never say so, and there is no getting it back.
+     * ⭐ **Stu's correction, and the case that states it.** Ticking IRON is a statement about *pure*
+     * iron. Rock that happens to contain iron is ore, it is a different switch, and naming every
+     * species in a blend must not add up to consent to throwing the blend away — a machine whose
+     * mistakes are unrecoverable is the wrong place to infer permission from arithmetic.
      */
     @Test
-    fun `a blend with one unnamed species in it stays aboard`() {
-        val s = run(line(setOf(Species.Iron), blend(Species.Iron, Species.Quartz)), 40 * RAIL_PERIOD)
-
-        assertEquals(0L, s.ventedMass, "the quartz went overboard riding on the iron's permission")
-        assertEquals(0L, onTrack(s), "and the blend should never have been routed there at all")
-        assertEquals(load, stillInTank(s))
-    }
-
-    /** Name both halves and the same blend goes — `onlyOf` is set membership, not a recipe. */
-    @Test
-    fun `a blend goes when every species in it is named`() {
+    fun `naming every species in a blend does not consent to the blend`() {
         val s = run(
             line(setOf(Species.Iron, Species.Quartz), blend(Species.Iron, Species.Quartz)),
             40 * RAIL_PERIOD,
         )
 
-        assertEquals(load, s.ventedMass, "a blend of two listed species should go overboard whole")
+        assertEquals(0L, s.ventedMass, "a blend went overboard on the strength of its species' ticks")
+        assertEquals(0L, onTrack(s), "and it should never have been routed there at all")
+        assertEquals(load, stillInTank(s))
+    }
+
+    /** The ore switch is what consents to a blend, and it consents to every blend. */
+    @Test
+    fun `the ore switch takes a blend, whatever it is made of`() {
+        val s = run(line(emptySet(), blend(Species.Iron, Species.Quartz), ore = true), 40 * RAIL_PERIOD)
+
+        assertEquals(load, s.ventedMass, "the ore switch should have taken the blend whole")
         assertEquals(0L, stillInTank(s))
+    }
+
+    /**
+     * ⛔ **The two never compete for the same lump.** Ore on and iron off must leave pure iron alone;
+     * the complementary case is the one above. This is `SpeciesFilter.MIXED`'s own promise, asked of
+     * the machine that now depends on it.
+     */
+    @Test
+    fun `the ore switch leaves pure metal alone`() {
+        val s = run(line(emptySet(), pure(Species.Iron), ore = true), 40 * RAIL_PERIOD)
+
+        assertEquals(0L, s.ventedMass, "a pure tank was drained by the ORE switch")
+        assertEquals(0L, onTrack(s), "and it should never have been routed there at all")
+        assertEquals(load, stillInTank(s))
     }
 
     /**
@@ -192,6 +214,52 @@ class EjectorTest {
         assertEquals(on, on.switched(Species.Iron, true), "pressing EJECT twice reversed itself")
         assertFalse(on.switched(Species.Iron, false).ejects(Species.Iron))
         assertEquals(bare, on.switched(Species.Iron, false), "and KEEP should put it back exactly")
+
+        // And the same of the ore row, which is the switch that has no species to key on.
+        assertTrue(bare.isShut, "a bare ejector should be shut")
+        assertFalse(bare.switchedOre(true).isShut)
+        assertEquals(bare, bare.switchedOre(true).switchedOre(false))
+        // ⚠️ Shut is BOTH halves: an ejector naming nothing but taking ore is open for business.
+        assertFalse(Ejector(TileIndex(0), ore = true).isShut)
+    }
+
+    /**
+     * ⭐ **The starter ship's own tailings column, end to end** — and the case that pins the ORE
+     * switch to a reason rather than to a preference.
+     *
+     * The starter's ejector is authored `ore = true` and nothing else. What comes down that column is
+     * what the concentrator could not separate, which is a blend and has no species to name — so an
+     * ejector with a *species* list, however long, would leave the plant jammed. `WiringTest` and
+     * `GaugeTest` both went red when this machine was shut, which is how the requirement was found;
+     * this says it directly, so a future change to the starter cannot break it silently.
+     *
+     * ⚠️ **And the pure metal is safe.** The same switch that takes every blend refuses every pure
+     * lump, which is the whole point of drawing the line where the counter draws it.
+     */
+    @Test
+    fun `the starter plant's tailings go overboard, and its concentrate does not`() {
+        val grid = Grid(40, 28)
+        val start = workingVessel(grid)
+        val ejector = start.deck.let { deck ->
+            (0 until deck.size).map { TileIndex(it) }.first { deck[it] is Ejector }
+        }
+        assertTrue((start.deck[ejector] as Ejector).ore, "the starter's ejector should be set to take ore")
+        assertEquals(emptySet(), (start.deck[ejector] as Ejector).whitelist, "and to name no species")
+
+        // ⚠️ **Stops as soon as it has its answer** — `GaugeTest`'s idiom, and for its reason: a
+        // tick of a 40x28 vessel is not cheap, and the bound is generous rather than measured. The
+        // concentrator takes two whole packets before it ships anything, so the first tailings reach
+        // the foot of the column somewhere past t=1000.
+        val cfg = OutofspaceConfig(initialGrid = grid)
+        var s = start
+        var ticks = 0
+        while (ticks < 1600 && s.ventedMass == 0L) {
+            s = OutofspaceReducer.reduce(cfg, s, emptyMap())
+            ticks++
+        }
+
+        assertTrue(s.ventedMass > 0L, "the tailings column never delivered anything in $ticks ticks")
+        assertTrue(s.extractedMass > 0L, "the plant dug nothing, so the vent figure proves nothing")
     }
 
     // ── The file ──────────────────────────────────────────────────────────────
@@ -199,8 +267,9 @@ class EjectorTest {
     @Test
     fun `a whitelist survives a save`() {
         val list = setOf(Species.Iron, Species.Quartz, Species.Water)
-        val written = Save.write(line(list, pure(Species.Iron)))
+        val written = Save.write(line(list, pure(Species.Iron), ore = true))
         assertEquals(list, ejectorAt(Save.read(written)).whitelist)
+        assertTrue(ejectorAt(Save.read(written)).ore, "the ore switch did not survive the file")
         // ⚠️ **The same world writes the same bytes.** A `Set` has no order of its own, so a list
         // spelled by ordinal is the only way two identical ejectors cannot produce two different
         // files — see `Save.writeDeckMachine`.
@@ -217,7 +286,7 @@ class EjectorTest {
      */
     @Test
     fun `an old VENT record loads as an ejector that throws nothing away`() {
-        val written = Save.write(line(setOf(Species.Iron), pure(Species.Iron)))
+        val written = Save.write(line(setOf(Species.Iron), pure(Species.Iron), ore = true))
         val asVent = written
             .replace(" Ejector ", " Vent ")
             .replace(Regex(" eject=[A-Za-z,]+"), "")
@@ -225,7 +294,22 @@ class EjectorTest {
 
         val loaded = Save.read(asVent)
         assertEquals(emptySet(), ejectorAt(loaded).whitelist, "an old vent should load naming nothing")
+        assertFalse(ejectorAt(loaded).ore, "nor taking ore")
+        assertTrue(ejectorAt(loaded).isShut)
         assertEquals(0L, run(loaded, 40 * RAIL_PERIOD).ventedMass, "and should therefore throw nothing away")
+    }
+
+    /**
+     * ⚠️ **`ORE` is a token in the species list and must not be read as a species.** It is uppercase
+     * where every species name is mixed case, which is what keeps the two from ever colliding.
+     */
+    @Test
+    fun `the ore token is not mistaken for a species`() {
+        val written = Save.write(line(emptySet(), pure(Species.Iron), ore = true))
+        assertTrue(written.contains("eject=ORE"), "the ore switch is not written under its own name")
+        val loaded = ejectorAt(Save.read(written))
+        assertEquals(emptySet(), loaded.whitelist)
+        assertTrue(loaded.ore)
     }
 
     /** A name the game does not know stops the load rather than quietly shortening the list. */
@@ -244,9 +328,9 @@ class EjectorTest {
     // whole of that rule, asked of the HUD directly because it can be built without a screen.
 
     /**
-     * A world holding [cargo] on the track, so `Stockpile.aboard` has something to rank.
+     * A world holding [cargo] on the track, so the panel's columns have something to rank.
      *
-     * Loose matter rather than a stocked tank, because the panel's column is about what the network
+     * Loose matter rather than a stocked tank, because the panel's columns are about what the network
      * could deliver to a mouth and a lump on a belt is the plainest example of it.
      */
     private fun aboard(vararg cargo: Pair<Pair<Int, Int>, Mixture>): Stockpile {
@@ -340,14 +424,65 @@ class EjectorTest {
      * `Stockpile.aboard` counts a species mixed into ore as well as sitting pure, and counts neither
      * of them twice — the column would otherwise rank a hold of blended rock at nothing at all.
      */
+    /**
+     * ⭐ **Stu's report, as an assertion.** The column beside IRON is what the ship holds *pure*; the
+     * iron dissolved in a hold of rock belongs to the ORE row and appears nowhere else. Summing the
+     * two — which the first cut of this panel did — reports a species the machine's own switch will
+     * never touch, and ranks the list by it.
+     */
     @Test
-    fun `aboard counts pure and mixed alike`() {
+    fun `the columns keep pure and mixed apart`() {
         val stock = aboard(
             (2 to 5) to lump(Species.Iron, 2L * Capacity.PACKET_MASS),
             (3 to 5) to blend(Species.Iron, Species.Quartz),
         )
-        assertEquals(2L * Capacity.PACKET_MASS + load / 2, stock.aboard(Species.Iron))
-        assertEquals(load / 2, stock.aboard(Species.Quartz))
-        assertEquals(0L, stock.aboard(Species.Titanium))
+        assertEquals(2L * Capacity.PACKET_MASS, stock.buildable(Species.Iron), "the ore's iron leaked into the pure column")
+        assertEquals(0L, stock.buildable(Species.Quartz), "quartz is only aboard as ore")
+        assertEquals(load, stock.blended.total, "and the whole blend is the ORE row's number")
+    }
+
+    /** A blend gets no species row at all — it is the ORE row, and only the ORE row. */
+    @Test
+    fun `a species held only inside ore gets no row of its own`() {
+        val hud = OutofspaceHud()
+        val machine = Ejector(TileIndex(0))
+        hud.refreshEjectorRows(machine, aboard((2 to 5) to blend(Species.Iron, Species.Quartz)))
+
+        assertEquals(emptyList(), hud.ejectorRows, "ore put species rows on a list of pure metals")
+        assertTrue(hud.ejectorRowsHaveOre, "and the ore aboard earned no ORE row")
+    }
+
+    /** The ORE row is frozen alongside the species rows, and arrives in NEW like anything else. */
+    @Test
+    fun `ore arriving mid-read waits in the NEW section`() {
+        val hud = OutofspaceHud()
+        val machine = Ejector(TileIndex(0))
+        hud.refreshEjectorRows(machine, aboard((2 to 5) to lump(Species.Iron, Capacity.PACKET_MASS)))
+        assertFalse(hud.ejectorRowsHaveOre, "there was no ore aboard when the list was taken")
+
+        val later = aboard(
+            (2 to 5) to lump(Species.Iron, Capacity.PACKET_MASS),
+            (3 to 5) to blend(Species.Iron, Species.Quartz),
+        )
+        assertFalse(hud.ejectorRowsHaveOre, "the frozen list grew an ORE row on its own")
+        assertTrue(hud.newEjectorOre(machine, later))
+
+        hud.refreshEjectorRows(machine, later)
+        assertTrue(hud.ejectorRowsHaveOre)
+        assertFalse(hud.newEjectorOre(machine, later))
+    }
+
+    /**
+     * ⛔ **An ejector taking ore keeps its ORE row after the last of the rock has gone** — the
+     * species rows' rule, for its reason: the switch that is still on has to stay reachable.
+     */
+    @Test
+    fun `the ore row survives when the ore does not, if the switch is on`() {
+        val hud = OutofspaceHud()
+        hud.refreshEjectorRows(Ejector(TileIndex(0), ore = true), Stockpile.EMPTY)
+        assertTrue(hud.ejectorRowsHaveOre)
+
+        hud.refreshEjectorRows(Ejector(TileIndex(0)), Stockpile.EMPTY)
+        assertFalse(hud.ejectorRowsHaveOre, "an ORE row outlived both the ore and the switch")
     }
 }

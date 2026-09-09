@@ -31,30 +31,52 @@ import org.emerge.demo.outofspace.world.Wiring
  * and the belts back up behind it until a row is ticked, which is correct and not a failure to
  * explain away.
  *
- * ⚠️ **All of a lump or none of it.** [org.emerge.demo.outofspace.world.Acceptance.onlyOf] admits a
- * mixture only when *every* species in it is on the list, so a lump of tailings with one gram of
- * iron in it stays aboard. Ejecting the ore to be rid of the gangue would quietly destroy the metal
- * with it, and a machine whose mistakes are unrecoverable is the wrong place to be generous.
+ * ### Pure and mixed are two categories, and the counter drew the line first
+ *
+ * ⛔ **A species on the [whitelist] means that species PURE**, and a blend of anything is [ore] —
+ * one switch of its own. This is `DockingPort`'s partition, taken whole and for its reasons: a tile
+ * holding one species is deliverable *as* that species and a tile holding two is deliverable only as
+ * ore, so that is the only line the network can honour. Ticking IRON therefore does not consent to
+ * throwing away rock that happens to have iron in it — which is what a set-membership reading of a
+ * blend would have meant, and what would have quietly destroyed the metal along with the gangue.
+ *
+ * ⚠️ **The two never compete for the same lump**, because pure and mixed are complementary — see
+ * [org.emerge.demo.outofspace.world.SpeciesFilter.MIXED], where that argument is written down for
+ * the mouth that needed it first.
  */
 data class Ejector(
     override val center: TileIndex,
     val ventedMass: Long = 0L,
     /**
-     * Every species this ejector may throw overboard. **Empty means nothing, not anything.**
+     * Every species this ejector may throw overboard **pure**. Empty means none, not any.
      *
      * A set rather than a signed book like [DockingPort.orders], because there is one direction here
      * and no quantity: matter goes out, and it goes out for ever. What the port needs a number for
      * — how much of an unbounded permission is left — an ejector has no use for.
+     *
+     * ⚠️ **Says nothing about blends.** See [ore], and the class note above.
      */
     val whitelist: Set<Species> = emptySet(),
+    /**
+     * Whether mixed ore may go overboard — the same switch for the same reason the counter has one.
+     *
+     * ⛔ **It cannot be a species**, which is the whole point of it being a field: a blend has no
+     * single species to key on, so there is nowhere on [whitelist] to put "any rock". It is also the
+     * switch a player actually reaches for — tailings are the thing an ejector exists to be rid of,
+     * and every one of them is a blend.
+     */
+    val ore: Boolean = false,
     override val wiring: Wiring = Wiring.RUNNING,
 ) : DeckMachine {
     override val kind: DeckMachineKind get() = DeckMachineKind.Ejector
     override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
     override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
 
-    /** Whether [species] is on the list — one press of the switch away from either answer. */
+    /** Whether pure [species] is on the list — one press of the switch away from either answer. */
     fun ejects(species: Species): Boolean = species in whitelist
+
+    /** True when this ejector will take nothing at all: no species named, and no ore. */
+    val isShut: Boolean get() = whitelist.isEmpty() && !ore
 
     /**
      * This ejector with [species] on the stated side of its switch.
@@ -65,4 +87,7 @@ data class Ejector(
      */
     fun switched(species: Species, ejecting: Boolean): Ejector =
         copy(whitelist = if (ejecting) whitelist + species else whitelist - species)
+
+    /** The same press on the ORE row, which has no species to key on. */
+    fun switchedOre(ejecting: Boolean): Ejector = copy(ore = ejecting)
 }

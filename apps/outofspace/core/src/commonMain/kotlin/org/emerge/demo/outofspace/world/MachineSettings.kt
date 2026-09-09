@@ -53,7 +53,7 @@ data class MachineSettings(
      * pasting it makes the target eject nothing. Copying a fresh ejector onto a tuned one has to
      * clear it, or **C** would be a way to give a machine a list its own panel never showed.
      */
-    val whitelist: Setting<Set<Species>>,
+    val whitelist: Setting<EjectBook>,
 ) {
     override fun toString(): String = buildString {
         append(kind.label).append(" [")
@@ -67,10 +67,22 @@ data class MachineSettings(
         append(',').append("eff=").append(if (efficiencyPermille is Setting.Present) efficiencyPermille.value else efficiencyPermille)
         append(',').append("control=").append(if (control is Setting.Present) control.value else control)
         append(',').append("mix=").append(if (fuelPermille is Setting.Present) fuelPermille.value else fuelPermille)
-        append(',').append("eject=").append(if (whitelist is Setting.Present) whitelist.value.size else whitelist)
+        append(',').append("eject=").append(
+            if (whitelist is Setting.Present) "${whitelist.value.species.size}${if (whitelist.value.ore) "+ore" else ""}"
+            else whitelist,
+        )
         append(']')
     }
 }
+
+/**
+ * An ejector's two switches as one value — see [Ejector.whitelist] and [Ejector.ore].
+ *
+ * ⛔ **One value and not two settings**, because they are one statement: what this machine throws
+ * away. Two [Setting]s could be [Setting.Present] and [Setting.Absent] at once, which is a state
+ * that means nothing and that a paste would have to invent an answer for.
+ */
+data class EjectBook(val species: Set<Species>, val ore: Boolean)
 
 /**
  * The same settings, pointed [facing] — or unchanged, for a machine that has no facing to point.
@@ -157,8 +169,9 @@ fun DeckMachine.toMachineSettings(): MachineSettings = MachineSettings(
         else -> Setting.Absent
     },
     whitelist = when (this) {
-        // ⛔ **Empty is captured as [Setting.Empty], never as a present empty set.** See the field.
-        is Ejector -> if (whitelist.isEmpty()) Setting.Empty else Setting.Present(whitelist)
+        // ⛔ **A shut ejector is captured as [Setting.Empty], never as a present empty book.** See
+        // the field — and note that "shut" is both halves: no species *and* no ore.
+        is Ejector -> if (isShut) Setting.Empty else Setting.Present(EjectBook(whitelist, ore))
         else -> Setting.Absent
     },
 )
@@ -315,8 +328,10 @@ fun DeckMachine.withSettings(settings: MachineSettings): DeckMachine {
             // list of what it is allowed to discard.
             var result = base as Ejector
             if (settings.wiring is Setting.Present) result = result.copy(wiring = settings.wiring.value)
-            if (settings.whitelist is Setting.Present) result = result.copy(whitelist = settings.whitelist.value)
-            if (settings.whitelist is Setting.Empty) result = result.copy(whitelist = emptySet())
+            if (settings.whitelist is Setting.Present) {
+                result = result.copy(whitelist = settings.whitelist.value.species, ore = settings.whitelist.value.ore)
+            }
+            if (settings.whitelist is Setting.Empty) result = result.copy(whitelist = emptySet(), ore = false)
             result
         }
         DeckMachineKind.Airlock -> {
