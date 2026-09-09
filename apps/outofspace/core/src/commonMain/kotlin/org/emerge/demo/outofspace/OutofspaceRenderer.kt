@@ -6,6 +6,9 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.bufferTile
+import org.emerge.demo.outofspace.world.TerminalRole
+import org.emerge.demo.outofspace.world.terminalRolesOf
+import org.emerge.demo.outofspace.world.terminalTile
 import org.emerge.demo.outofspace.world.machine.Electrolyzer
 import org.emerge.demo.outofspace.world.machine.Valve
 import org.emerge.demo.outofspace.world.machine.Gauge
@@ -811,6 +814,7 @@ class OutofspaceRenderer {
             // says how far along it is.
             footprintOutline(state, m, ghostColor(state, m))
             drawPorts(state, m)
+            drawTerminals(state, m)
             return
         }
         // No activation = stopped (red tile). An airlock is exempt: unsignalled is not a fault for a
@@ -823,6 +827,7 @@ class OutofspaceRenderer {
             footprintRect(state, m, Visual.MACHINE_INSET, Colors.STOPPED_BODY)
             footprintRect(state, m, Visual.STOP_INDICATOR_SCALE, Colors.STOPPED_INDICATOR)
             drawPorts(state, m)
+            drawTerminals(state, m)
             return
         }
         // Marked for deconstruction: drawn as itself, and then framed in [Colors.SCRAPPING]. As
@@ -959,6 +964,7 @@ class OutofspaceRenderer {
             }
         }
         drawPorts(state, m)
+        drawTerminals(state, m)
     }
 
     /**
@@ -1021,6 +1027,7 @@ class OutofspaceRenderer {
                 // are how the player reads the facing they picked, and a machine whose ports are
                 // pointing the wrong way is a thing worth seeing *before* finding somewhere it fits.
                 drawPorts(state, proposed)
+                drawTerminals(state, proposed)
             }
         }
     }
@@ -1104,6 +1111,39 @@ class OutofspaceRenderer {
             val w = Visual.PORT_SIZE
             val h = Visual.PORT_SIZE
             rect(cx, cy, w * tilePx, h * tilePx, color)
+        }
+    }
+
+    /**
+     * **Where a machine's electrical ends are**, drawn the way its ports are and for the same reason.
+     *
+     * ⛔ **A terminal is invisible and load-bearing, which is the worst pair a thing can have.** It
+     * decides where a cable has to reach, which way round a cell is wired, and — because a terminal
+     * bonds the layers present at its tile — whether a rail passing underneath joins the circuit.
+     * `PLAN_power_network.md` §5 already says the casing mechanic *"is emergent, which means it is
+     * invisible"* and that a readout is what makes it legible instead of a bug report; this is the
+     * same argument one level down, about the geometry rather than the physics.
+     *
+     * ⭐ **A plus and a minus, not two coloured squares.** The sign is the whole of what a player
+     * needs and getting it backwards is the mistake `TerminalRole`'s own doc warns about — a cell
+     * wired inside out looks entirely plausible. Marks are drawn small and inside the port square's
+     * footprint so a terminal sharing a tile with a port reads as both rather than covering it.
+     *
+     * ⚠️ **[TerminalRole.Bond] is a bar of its own** — a standalone terminal is a rod and not one end
+     * of anything, so it must not claim a sign it does not have.
+     */
+    private fun drawTerminals(state: VesselState, m: DeckMachine) {
+        for (role in terminalRolesOf(m)) {
+            val tile = terminalTile(state.grid, m, m.center, role) ?: continue
+            val x = state.grid.xOf(tile)
+            val y = state.grid.yOf(tile)
+            val cx = (x + 0.5f) * tilePx
+            val cy = (y + 0.5f) * tilePx
+            val long = Visual.TERMINAL_MARK * tilePx
+            val thick = Visual.TERMINAL_THICKNESS * tilePx
+            // The bar every sign has, then the upright that makes it a plus.
+            rect(cx, cy, long, thick, Colors.TERMINAL)
+            if (role == TerminalRole.Positive) rect(cx, cy, thick, long, Colors.TERMINAL)
         }
     }
 
@@ -1909,6 +1949,12 @@ class OutofspaceRenderer {
         const val PORT_IN  = 0xE8ECF2FFL
         const val PORT_OUT = 0x5ADB7EFFL
 
+        /**
+         * A terminal's mark. ⚠️ **[WIRE_POWER]'s own amber**, so that "this is the electrical layer"
+         * is one colour across the cable, the overlay and the machine ends it joins.
+         */
+        const val TERMINAL = 0xE08A3AFFL
+
         // ── Heat ramp base ──────────────────────────────────────────────
         const val HEAT_ALPHA = 0xC8L
 
@@ -1987,6 +2033,10 @@ class OutofspaceRenderer {
 
         // ── Port dimensions ─────────────────────────────────────────────
         const val PORT_SIZE = 0.75f
+
+        /** How long a terminal's bar is, as a fraction of a tile — inside [PORT_SIZE]'s square. */
+        const val TERMINAL_MARK = 0.42f
+        const val TERMINAL_THICKNESS = 0.12f
 
         const val SPECIES_OUTLINE_DIAMETER = 0.10f
 
