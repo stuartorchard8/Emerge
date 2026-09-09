@@ -332,6 +332,9 @@ class FootprintTest {
      * Offsets are from the anchor, `dx/dy`, in the order the walk returns them — which pins the
      * **ascending-index order** the rest of the codebase pairs per-tile arrays against, and pins it at
      * every facing rather than only the two where a local-frame walk would happen to agree.
+     *
+     * ⚠️ **One row has since changed on purpose** — the electrolyzer, to 3×2. It is marked where it
+     * sits. Everything else is still the photograph.
      */
     @Test
     fun `every kind covers exactly the tiles it covered before`() {
@@ -364,7 +367,17 @@ class FootprintTest {
             DeckMachineKind.Warehouse to List(4) { three },
             DeckMachineKind.Rocket to List(4) { three },
             DeckMachineKind.Concentrator to List(4) { three },
-            DeckMachineKind.Electrolyzer to List(4) { three },
+            // ⛔ **The one kind whose row changed, and it changed on purpose.** It was `three` — a
+            // 3×3 square — until `PLAN_electrochemistry.md` §5.5 made the cell three baths along one
+            // edge with its terminals along the other. ⭐ It is the first genuinely even footprint in
+            // the game, and the reason this whole model was built: the old half-width derived
+            // `w = rx * 2 + 1`, so it could not have said this shape at all.
+            DeckMachineKind.Electrolyzer to listOf(
+                "-1/-1,0/-1,1/-1,-1/0,0/0,1/0",
+                "0/-1,1/-1,0/0,1/0,0/1,1/1",
+                "-1/0,0/0,1/0,-1/1,0/1,1/1",
+                "-1/-1,0/-1,-1/0,0/0,-1/1,0/1",
+            ),
             DeckMachineKind.Furnace to List(4) { three },
             DeckMachineKind.SolarPanel to List(4) { three },
             DeckMachineKind.DockingPort to List(4) { three },

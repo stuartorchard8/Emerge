@@ -181,8 +181,16 @@ val DeckMachineKind.shape: Footprint
         DeckMachineKind.SolarPanel -> Footprint.square(3)
         DeckMachineKind.Thruster -> Footprint.nose(2)
         DeckMachineKind.Concentrator, DeckMachineKind.Furnace -> Footprint.square(3)
-        // A room-sized installation with three mouths on three different faces.
-        DeckMachineKind.Electrolyzer -> Footprint.square(3)
+        // ⭐ **Three baths along one edge, two terminals along the other** — `PLAN_electrochemistry.md`
+        // §5.5. The anchor is the middle bath, which is the feed, with the cathode behind it and the
+        // anode ahead; the terminals stand on the far edge, on casing that carries no port at all.
+        //
+        // ⛔ **The first even side in the game, and the reason this model exists.** It was a 3×3
+        // whose ports made a T, and the T cost two mechanisms: a port whose store was not under it,
+        // and a terminal sharing a tile with an output port — which put the gas belts at electrode
+        // potential and shorted the cell through its own logistics. Both are geometry problems and
+        // both are solved by a shape the old half-width model could not state.
+        DeckMachineKind.Electrolyzer -> Footprint(width = 3, height = 2, anchorX = 1, anchorY = 1)
         // Two doors at the back, a chamber in the middle, a bell on the front face. Square rather
         // than a nose: at three across, the front-centre tile *is* one step facing-ward of the
         // anchor, so `Engine.bell` lands on it and the exhaust walk needs no new geometry.

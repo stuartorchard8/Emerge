@@ -177,10 +177,20 @@ internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
         // electrolyzer works at a rate straight out of its feed into its two hoppers; there is no
         // charge sitting in the middle of it being worked on, so there is no tile that would mean
         // anything. See `Electrolyzer`, which argues the same point from the other end.
+        // ⭐ **Three baths in a line, each on its own port** — `PLAN_electrochemistry.md` §5.5. The
+        // feed is at the anchor, *directly between* the two electrodes, which is what makes ion
+        // migration a spatial statement rather than a bookkeeping entry between two stores that
+        // happen to share an owner.
+        //
+        // ⛔ **No [BufferRole.Inside], and that is the point of the shape.** The 3×3 that came before
+        // put the feed in `Inside` and gave it a port, which needed `Storage`'s exception —
+        // *"a machine declares which store its input port fills"* — generalised to a second machine.
+        // Here every store sits on the port it serves, exactly as this file's own rule says, and
+        // `Inside` goes on meaning "the one role with no port".
         is Electrolyzer -> when (role) {
-            BufferRole.Input -> pack(-fp.behind, 0)
-            BufferRole.Product -> pack(fp.ahead, 0)
-            BufferRole.Waste -> pack(0, fp.below)
+            BufferRole.Product -> pack(-fp.behind, 0)
+            BufferRole.Input -> pack(0, 0)
+            BufferRole.Waste -> pack(fp.ahead, 0)
             BufferRole.Inside, BufferRole.Oxidiser -> NO_OFFSET
         }
         is Furnace -> when (role) {

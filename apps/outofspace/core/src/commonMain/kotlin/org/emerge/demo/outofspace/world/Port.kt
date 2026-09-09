@@ -124,10 +124,17 @@ private fun localPorts(machine: DeckMachine): List<LocalPort> {
         // player cannot route them apart. Which gas leaves which mouth is fixed rather than dialled
         // — a machine whose outputs swapped meaning would be a machine you have to inspect before
         // you can lay a belt to it.
+        // ⭐ **One mouth per bath, all three on the bath edge** — `PLAN_electrochemistry.md` §5.5.
+        // Hydrogen leaves at the cathode end, oxygen at the anode end, and the feed enters between
+        // them. Three different faces, so a player can route the two gases apart.
+        //
+        // ⛔ **The third port was `LocalPort(0, fp.below, …)` and that expression died with the
+        // shape.** At 3×2 `below` is zero, so it would have collapsed onto the anchor and shared a
+        // tile with the feed. The offsets are restated here rather than re-anchored.
         is Electrolyzer -> listOf(
-            LocalPort(-fp.behind, 0, Direction.Left, PortKind.Input),
-            LocalPort(fp.ahead, 0, Direction.Right, PortKind.Output, Stream.Product),
-            LocalPort(0, fp.below, Direction.Down, PortKind.Output, Stream.Waste),
+            LocalPort(-fp.behind, 0, Direction.Left, PortKind.Output, Stream.Product),
+            LocalPort(0, 0, Direction.Down, PortKind.Input),
+            LocalPort(fp.ahead, 0, Direction.Right, PortKind.Output, Stream.Waste),
         )
 
         // In one side, out the other, like everything else. The second input it used to have on top

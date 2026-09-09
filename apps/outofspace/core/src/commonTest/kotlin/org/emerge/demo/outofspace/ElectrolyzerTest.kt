@@ -41,11 +41,19 @@ class ElectrolyzerTest {
 
     private val grid = Grid(16, 10)
 
-    /** The machine, at (5,3) facing right: feed at (4,3), hydrogen at (6,3), oxygen at (5,4). */
+    /**
+     * The machine, at (5,3) facing right — **three baths along one edge**, so all three mouths are on
+     * row 3: hydrogen out at (4,3), the feed in at (5,3), oxygen out at (6,3). Its two terminals
+     * stand above them at (4,2) and (6,2), on casing with no port.
+     *
+     * ⚠️ **It was a 3×3 whose ports made a T** until `PLAN_electrochemistry.md` §5.5 — feed at (4,3),
+     * hydrogen at (6,3), oxygen at (5,4). Every belt in this fixture moved with the doors; not one
+     * assertion about what the machine *does* changed.
+     */
     private val plantAt = grid.tile(5, 3)
-    private val hydrogenTank = grid.tile(9, 3)
-    private val oxygenTank = grid.tile(5, 8)
-    private val feedTank = grid.tile(1, 3)
+    private val hydrogenTank = grid.tile(1, 3)
+    private val oxygenTank = grid.tile(9, 3)
+    private val feedTank = grid.tile(5, 7)
 
     private fun run(state: VesselState, ticks: Int): VesselState {
         var s = state
@@ -69,12 +77,12 @@ class ElectrolyzerTest {
     private fun plant(feed: Mixture): VesselState {
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
-        deck += Electrolyzer(plantAt, Direction.Right)          // covers x 4..6
-        deck += fixtureStorage(hydrogenTank, Direction.Right)   // input port at (8,3)
-        // Facing Down, so its input port is on top at (5,7), under the end of the oxygen run.
-        deck += fixtureStorage(oxygenTank, Direction.Down)
-        joinRow(grid, rails, 6, 8, 3)   // hydrogen run
-        joinCol(grid, rails, 5, 4, 7)   // oxygen run
+        deck += Electrolyzer(plantAt, Direction.Right)          // covers x 4..6, y 2..3
+        // Facing Left, so its input port is on its right at (2,3), under the end of the hydrogen run.
+        deck += fixtureStorage(hydrogenTank, Direction.Left)
+        deck += fixtureStorage(oxygenTank, Direction.Right)     // input port at (8,3)
+        joinRow(grid, rails, 2, 4, 3)   // hydrogen run, leaving to the left
+        joinRow(grid, rails, 6, 8, 3)   // oxygen run, leaving to the right
         return VesselState(
             grid, deck,
             conduits = Conduits.ofRails(rails.toList()),
@@ -92,9 +100,11 @@ class ElectrolyzerTest {
     private fun fedFrom(cargo: Mixture): VesselState {
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
-        deck += Electrolyzer(plantAt, Direction.Right)      // covers x 4..6
-        deck += fixtureStorage(feedTank, Direction.Right)   // covers x 0..2, pours right from (2,3)
-        joinRow(grid, rails, 2, 4, 3)                       // tank → the plant's input port
+        deck += Electrolyzer(plantAt, Direction.Right)      // covers x 4..6, y 2..3
+        // ⚠️ **The feed comes from BELOW now**, because the feed port is the middle of the bath edge
+        // and the two gas mouths have the ends of it. Facing Up, so the tank pours upward from (5,6).
+        deck += fixtureStorage(feedTank, Direction.Up)
+        joinCol(grid, rails, 5, 3, 6)                       // tank → the plant's input port
         return VesselState(
             grid, deck,
             conduits = Conduits.ofRails(rails.toList()),
@@ -189,16 +199,22 @@ class ElectrolyzerTest {
 
     @Test
     fun `each mouth is wired to the store behind it`() {
-        // The ports are the concentrator's — forward and downward — and which gas leaves which is
-        // fixed rather than dialled, so a player can lay a belt without inspecting the machine first.
+        // ⭐ **Each bath sits on its own port**, which is what the 3×2 bought: every store here is on
+        // the tile its mouth is on, so `BufferRole`'s own rule holds unmodified and no machine has to
+        // declare which store its input fills. Which gas leaves which end is fixed rather than
+        // dialled, so a player can lay a belt without inspecting the machine first.
         val s = plant(water())
         assertEquals(
-            s.grid.tile(6, 3), bufferTileOf(s, BufferRole.Product),
-            "the hydrogen store is not on the forward port",
+            s.grid.tile(4, 3), bufferTileOf(s, BufferRole.Product),
+            "the hydrogen store is not on the cathode-end port",
         )
         assertEquals(
-            s.grid.tile(5, 4), bufferTileOf(s, BufferRole.Waste),
-            "the oxygen store is not on the downward port",
+            s.grid.tile(5, 3), bufferTileOf(s, BufferRole.Input),
+            "the feed store is not on the middle port, between the two electrodes",
+        )
+        assertEquals(
+            s.grid.tile(6, 3), bufferTileOf(s, BufferRole.Waste),
+            "the oxygen store is not on the anode-end port",
         )
     }
 

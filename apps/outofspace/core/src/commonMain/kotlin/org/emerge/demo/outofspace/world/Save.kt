@@ -135,7 +135,22 @@ object Save {
      * empty field, which is the *true* state of a world that has never had a solar panel: charge has
      * exactly one source and it is a machine that did not exist.
      */
-    const val VERSION = 28
+    const val VERSION = 29
+
+    /**
+     * The first version whose electrolyzer is **3×2**.
+     *
+     * ⛔ **A legacy record is skipped, not migrated** (Stu, 2026-09-09), on the precedent
+     * [LEGACY_PIPE] set for a retired shape. The machine went from a 3×3 square to three baths along
+     * one edge and two terminals along the other — `PLAN_electrochemistry.md` §5.5 — so a saved
+     * anchor no longer describes the same set of tiles. Standing it anyway would put a machine on
+     * tiles its neighbours are on, silently, in a save the player cannot see the inside of.
+     *
+     * ⚠️ **Its stores go with it, because they are written by tile** and those tiles are not the
+     * machine's any more. That is a loss and it is the accepted one: Stu took his own electrolyzer
+     * off the ship before this landed rather than have the reader guess.
+     */
+    const val ELECTROLYZER_3X2_VERSION = 29
 
     /**
      * The first version whose filters say **pure / mixed / no opinion** rather than a percentage.
@@ -1096,6 +1111,12 @@ object Save {
                 "deckmachine" -> {
                     val t = tile(1)
                     if (deck[t] != null || t in legacyThrusters) fail("two machines at tile $t")
+                    // ⛔ **A 3×3 electrolyzer is dropped rather than re-anchored** — see
+                    // [ELECTROLYZER_3X2_VERSION]. Recognised by name here for [LEGACY_PIPE]'s reason:
+                    // the reader has to know the old spelling in order to *ignore* it.
+                    if (version < ELECTROLYZER_3X2_VERSION &&
+                        tokens.getOrNull(2) == DeckMachineKind.Electrolyzer.name
+                    ) continue
                     val dm = readDeckMachine(tokens.drop(2), version, t, grid, buffers, scale, energyScale, ::fail) { droppedPropellant += it }
                     // Read off the raw tokens rather than through the machine, because the mark is a
                     // fact about the vessel and not about the machine — see [VesselState.scrapping].

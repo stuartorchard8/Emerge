@@ -112,9 +112,22 @@ private fun localTerminalOffset(machine: DeckMachine, role: TerminalRole): Int {
         // `PLAN_power_network.md` §5 needs: current entering one end reaches the other either
         // through the electrolyte, which does the work, or around the outside through the casing,
         // which does not — so a copper-cased cell shorts itself and a firebrick-cased one runs.
+        // ⭐ **On the far edge, above their own electrodes, on casing that carries no port.** The
+        // negative terminal stands over the cathode bath and the positive over the anode, so the
+        // sign of a terminal and the chemistry underneath it agree by construction.
+        //
+        // ⛔ **They used to sit ON the port tiles**, which is what forced the insulating-segment
+        // rule: a terminal bonds the layers present at its tile, so an output port's rail sat at its
+        // electrode's potential and one metal network touching both gas belts shorted the cell
+        // through its own logistics. Nothing outside the machine is at an electrode's potential now.
+        //
+        // ⚠️ **They do not touch the electrolyte and do not need to.** A device is an edge between
+        // its two terminal nodes — `Source(positive, negative, emf, conductance)`, which is how the
+        // panel already drives the bus — so what a terminal must be is a *conducting node*, and it is
+        // one because it stands on casing. See `PLAN_power_network.md` increment 4.
         is Electrolyzer -> when (role) {
-            TerminalRole.Negative -> packTerminal(-fp.behind, 0)
-            TerminalRole.Positive -> packTerminal(fp.ahead, 0)
+            TerminalRole.Negative -> packTerminal(-fp.behind, -fp.above)
+            TerminalRole.Positive -> packTerminal(fp.ahead, -fp.above)
             else -> NO_TERMINAL
         }
         // ⭐ **The centre line at either end** (Stu), which is the same pair for the same reason:
