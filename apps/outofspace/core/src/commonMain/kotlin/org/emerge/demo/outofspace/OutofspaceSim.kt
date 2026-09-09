@@ -12,6 +12,7 @@ import org.emerge.demo.outofspace.world.MachineSettings
 import org.emerge.demo.outofspace.world.aimed
 import org.emerge.demo.outofspace.world.withSettings
 import org.emerge.demo.outofspace.chem.HALF_REACTIONS
+import org.emerge.demo.outofspace.chem.recombine
 import org.emerge.demo.outofspace.chem.cellAction
 import org.emerge.demo.outofspace.chem.electrolyse
 import org.emerge.demo.outofspace.world.machine.Electrolyzer
@@ -1128,6 +1129,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             structure = structure,
             occupancy = occupancy,
             potential = potential,
+            cellCurrent = w.cellCurrent,
             circuit = w.circuitView,
             generatedEnergy = w.generatedEnergy,
             radiatedEnergy = state.radiatedEnergy + conductedRadiated,
@@ -1887,6 +1889,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * pair of questions asked once.
          */
         val before: VesselState = state
+
+        /**
+         * What each cell passed this tick, by anchor tile — see [VesselState.cellCurrent]. Written
+         * by [solvePower] and read by the *next* tick's [split].
+         */
+        val cellCurrent: LongArray = LongArray(state.grid.size)
 
         /** Everything riding on the track — see [RailLayer]. Mutated in place through the tick. */
         val rail: RailLayer = state.rail.copyOf()
@@ -3176,6 +3184,23 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // this same tick; a pass decides from the world as it stood when the tick began.
             val volts = terminalVolts(m, tile)
 
+            // ⭐ **One equation, and the sign decides** — `PLAN_power_network.md` increment 4. The
+            // solve already runs the cell in both directions, because a back-EMF source conducts
+            // both ways; all this reads is which way it went.
+            //
+            // ⛔ **Zero is "in no circuit", not "at nought volts"**, which a potential difference
+            // alone could never have said: an unwired pair of terminals and a dead circuit both read
+            // 0 V, and only one of them should discharge. See [VesselState.cellCurrent].
+            //
+            // ⚠️ **A DRIVEN cell reads negative, and that is the convention rather than a mistake.**
+            // `Solution.sourceCurrent` is positive *out of* a source's `fromNode`, and a cell's
+            // `fromNode` is its positive terminal — so current the bus pushes *into* the positive
+            // end and out of the negative comes back with a minus sign. Discharging is the positive
+            // reading, because then the cell really is a source.
+            val current = before.cellCurrent[tile.index]
+            if (current == 0L) return m
+            if (current > 0L) return discharge(m, tile, bath, hydrogenTile, oxygenTile)
+
             val charge = feed.take(minOf(Electrolyzer.MASS_PER_TICK, feed.total))
             if (charge.total <= 0L) return m
 
@@ -3212,6 +3237,46 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             putStore(m, tile, BufferRole.Input, (feed - made.consumed).orNull())
             buffers.put(hydrogenTile, hydrogenHeld?.plus(made.cathode) ?: made.cathode)
             buffers.put(oxygenTile, oxygenHeld?.plus(made.anode) ?: made.anode)
+            return m
+        }
+
+        /**
+         * **The cell run backwards: it burns its own gases and drives the bus.**
+         *
+         * ⭐ **A regenerative fuel cell, and there is no battery machine.** Panels charge the bus by
+         * day, the cell banks it as chemistry, and when the panels go dark the same cell holds the
+         * ship up. `PLAN_power_network.md` increment 4 argued that this is neither *"explicitly not
+         * doing"* nor *"§2 of the model"* but simply the other sign of the cell, and it is: the
+         * electrical half was already done by the back-EMF source, and this is only the chemistry.
+         *
+         * ⛔ **The water goes back into the standing bath**, which is where a fuel cell's water
+         * belongs and where the next split will find it. The two gases come off the electrodes they
+         * were made at, so a cell cycles without anything being routed anywhere.
+         *
+         * ⚠️ **Its rate is the electrolyte's, exactly as the forward direction's is.** A solution
+         * that cannot carry a current cannot carry it in either direction, and a cell of clean water
+         * is as inert discharging as it is splitting.
+         */
+        private fun discharge(
+            m: Electrolyzer,
+            tile: TileIndex,
+            bath: Mixture,
+            cathodeTile: TileIndex,
+            anodeTile: TileIndex,
+        ): Electrolyzer {
+            val cathodeHeld = buffers.resourceAt(cathodeTile) ?: return m
+            val anodeHeld = buffers.resourceAt(anodeTile) ?: return m
+            // The couples the bath supports, asked without a voltage gate: what may run backwards is
+            // whatever could have run forwards, and the bus being low is the caller's finding.
+            val action = cellAction(bath, Int.MAX_VALUE) ?: return m
+            val limit = scaledRatio(
+                electrolyteStrength(bath).toLong(), 1000L, Electrolyzer.MASS_PER_TICK,
+            )
+            val back = recombine(cathodeHeld, anodeHeld, action, limit) ?: return m
+
+            buffers.put(cathodeTile, (cathodeHeld - back.fromCathode).orNull())
+            buffers.put(anodeTile, (anodeHeld - back.fromAnode).orNull())
+            putStore(m, tile, BufferRole.Input, bath + back.made)
             return m
         }
 
@@ -4926,6 +4991,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 }
             }
 
+            // Which source belongs to which cell, so the solved current can be handed back to the
+            // machine that has to act on it. Panels come first and are not in here.
+            val cellOfSource = HashMap<Int, TileIndex>()
+
             // ── Cells, as two-terminal LOADS. ⭐ **`I = (ΔV − E) / R_internal` is not written
             // anywhere: it is what a `Source` with a back-EMF already is.** The cell opposes the bus
             // with the potential its reaction needs and conducts through its own electrolyte, so the
@@ -4959,8 +5028,20 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 val knee = cellAction(bath, Int.MAX_VALUE)?.requiredMillivolts ?: continue
                 val g = Electrolyzer.ELECTROLYTE_CONDUCTANCE * strength / 1000L
                 if (g <= 0L) continue
-                // ⚠️ Negative EMF: it opposes, from + to −, which is what makes it a load.
-                sources.add(Source(positive, negative, -knee.toLong() * 1000L, g))
+                // ⛔ **The same polarity as a panel, and a weaker EMF — not a negative one.** A cell
+                // opposing an applied voltage is `V = E + I·R` across its own ends, which is a
+                // *battery* of E volts with its plus at its positive terminal, in series with its
+                // electrolyte. A negative EMF is a battery wired backwards: it pushes the same way
+                // whatever the rest of the circuit is doing, so it can never be pushed *against* and
+                // can never discharge. That was the first version of this and it split nothing at
+                // night, because the sign of its current never changed.
+                //
+                // ⭐ **Written this way the two directions need no code at all.** A bus above the
+                // knee overcomes E and drives current backwards through the cell — electrolysis; a
+                // bus that sags below it lets the cell drive — a fuel cell. `I = (ΔV − E)/R` is the
+                // solver's own arithmetic on this one object.
+                cellOfSource[sources.size] = tile
+                sources.add(Source(positive, negative, knee.toLong() * 1000L, g))
             }
 
             // ⭐ **Seeded by tile, not by node.** Node ids are rebuilt with the bodies every tick, so
@@ -5008,6 +5089,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 val magnitude = if (current < 0L) -current else current
                 if (magnitude > peak) peak = magnitude
             }
+
+            // ⭐ **The sign the machine acts on.** `sourceCurrent` is positive out of a source's
+            // `fromNode`, which for a cell is its positive terminal — so a driven cell reads one way
+            // and a discharging one reads the other, and `split` needs no second opinion about which
+            // direction the chemistry is going. See [VesselState.cellCurrent].
+            for ((i, tile) in cellOfSource) cellCurrent[tile.index] = solution.sourceCurrent[i]
 
             val byTile = LongArray(grid.size)
             for (b in bodies.indices) {

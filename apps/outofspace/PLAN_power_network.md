@@ -655,10 +655,9 @@ menu on the grounds that *"a brush for it would lay cable that does nothing and 
 rather than like a feature that has not arrived"* — the same judgement applies to shipping shorts
 the player cannot see. ⛔ **A panel is not done until screenshotted.**
 
-### Increment 4 — the cell, forward and reverse ✅ **FORWARD BUILT** (2026-09-09)
+### Increment 4 — the cell, forward and reverse ✅ **BUILT** (2026-09-09)
 
-`9aa861b5` the brine appetite · the load and the ceiling below. ⏸ **The reverse half is not built** —
-see the note at the foot of this section.
+`9aa861b5` the brine appetite · `b50a6dd1` the load and the ceiling · the reverse half below.
 
 **Where it landed differently:**
 
@@ -744,14 +743,23 @@ because the network cannot push current through it**, not because anything forbi
 the standing bath `PLAN_electrochemistry.md` §5.5 adds, and it is the load model's `R_internal`
 rather than a gate bolted on beside it.
 
-### ⏸ The reverse half, not built
+### ✅ The reverse half
 
-Above the knee the cell splits water; **below it, it should burn hydrogen and oxygen back and drive
-the bus**. The electrical half of that is already here — a back-EMF source conducts both ways and the
-sign of the current decides — so what is missing is only the *chemistry* of running a `CellAction`
-backwards, and somewhere for a fuel cell's water to go. ⚠️ It is a regenerative fuel cell and it is
-the battery this plan says is neither a machine nor §2 of the model, so it deserves its own increment
-rather than being tacked onto the end of this one.
+Above the knee the cell splits water; below it, the same couples run backwards and the cell drives
+the bus. ⭐ **The battery this plan says is neither a machine nor §2 of the model** — it is the other
+sign of the cell, and it needed no electrical code at all.
+
+⛔ **A back-EMF is a source of the SAME polarity, not a negative one**, and getting that wrong is the
+one thing that stops this working. A cell opposing an applied voltage is `V = E + I·R` across its
+ends, which is a battery of E volts with its plus at its positive terminal. A *negative* EMF is a
+battery wired backwards: it pushes the same way whatever the rest of the circuit does, so it can
+never be pushed against and can never discharge — measured, it split nothing at night because the
+sign of its current never changed.
+
+⚠️ **A `SolarPanel`'s conductance IS its source's internal conductance**, so an unlit panel is not a
+dim source — it is **not a conductor**, and a bus whose only other element is a dark panel is an
+*open circuit* rather than a sagging one. A fuel cell needs a return path, which is a real thing a
+player has to build and which the test fixture had to learn.
 
 ⚠️ **Keep increment 2's chatter finding.** A cell allowed to spend its whole tile drained itself
 below its knee and limit-cycled on five ticks in forty *with power to spare*. The answer was neither

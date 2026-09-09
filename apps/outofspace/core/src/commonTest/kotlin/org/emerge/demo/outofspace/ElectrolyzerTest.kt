@@ -11,6 +11,8 @@ import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.machine.SolarPanel
 import org.emerge.demo.outofspace.world.materialBefore
+import org.emerge.demo.outofspace.world.Ambient
+import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.Direction
@@ -252,6 +254,101 @@ class ElectrolyzerTest {
     fun `a steel cell shorts itself and splits nothing`() {
         val after = run(plant(brine(), Species.Steel), 200)
         assertEquals(0L, madeAnything(after), "a steel-cased cell drove current through its electrolyte")
+    }
+
+    /**
+     * ⭐ **Night, with a load left on the bus**: the sun off, and the two legs joined into one loop.
+     *
+     * ⚠️ **Darkening the panel on its own is not night, it is an OPEN CIRCUIT** — which is what the
+     * first version of this did, and the cell sat there holding its gases. A panel's conductance *is*
+     * its source's internal conductance (`SolarPanel.conductanceAt` scales it by the light), so an
+     * unlit panel is not a dim source, it is **not a conductor at all** and the two legs dangle. That
+     * is correct physics and a useless fixture.
+     *
+     * So the legs are joined round the bottom into a single run. The cell is then the only source on
+     * a closed circuit and drives current through the cable, which is exactly what a fuel cell with
+     * a resistive load is — the wire warms up, and `PLAN_power_network.md` §8's I²R needs nobody to
+     * write it.
+     */
+    private fun afterDark(s: VesselState): VesselState {
+        val power = arrayOfNulls<Segment>(grid.size)
+        cable(power, (6..8).map { grid.tile(4, it) } + listOf(grid.tile(5, 8)) +
+            (8 downTo 6).map { grid.tile(6, it) })
+        return VesselState(
+            s.grid, s.deck,
+            conduits = Conduits.of(
+                grid.size,
+                Conduit.Rail to s.conduits[Conduit.Rail],
+                Conduit.Power to power.toList(),
+            ),
+            buffers = s.buffers, rail = s.rail,
+            potential = s.potential, cellCurrent = s.cellCurrent,
+            ambient = Ambient(Mixture.EMPTY, Temperature.AMBIENT_KELVIN, insolation = 0),
+        )
+    }
+
+    // ── Forward and reverse, and the sign is the only difference ──────────────
+
+    /**
+     * ⭐ **A regenerative fuel cell, and there is no battery machine.** The panel charges the bus by
+     * day, the cell banks it as hydrogen and oxygen, and when the sun goes out the *same cell* burns
+     * them back and holds the bus up.
+     *
+     * `PLAN_power_network.md` increment 4 argued this is neither *"explicitly not doing"* nor
+     * *"§2 of the model"* but simply the other sign of the cell — and it is: the electrical half was
+     * already done by the back-EMF source, and only the chemistry had to be written.
+     *
+     * ⛔ **The water goes back into the standing bath**, so a cell cycles without anything being
+     * routed anywhere.
+     */
+    @Test
+    fun `when the sun goes out the cell burns its gases back and drives the bus`() {
+        val day = run(plant(brine()), 200)
+        val gasesByDay = madeAnything(day)
+        val waterByDay = day.inStore(plantAt, BufferRole.Input)?.get(Species.Water) ?: 0L
+        assertTrue(gasesByDay > 0L, "fixture: the cell made nothing by day")
+
+        val night = run(afterDark(day), 100)
+
+        assertTrue(
+            madeAnything(night) < gasesByDay,
+            "the gases did not come back: $gasesByDay then ${madeAnything(night)}",
+        )
+        assertTrue(
+            (night.inStore(plantAt, BufferRole.Input)?.get(Species.Water) ?: 0L) > waterByDay,
+            "the water did not come back to the bath it left",
+        )
+    }
+
+    /** ⛔ And the round trip conserves — burning back is the same row read the other way. */
+    @Test
+    fun `a charge and a discharge weigh the same`() {
+        val day = run(plant(brine()), 200)
+        val before = everywhere(day)
+        val night = run(afterDark(day), 100)
+        assertEquals(before, everywhere(night), "the cell gained or lost mass running backwards")
+    }
+
+    /**
+     * ⛔ **An unwired cell does not discharge either**, which a potential difference alone could
+     * never have said: a pair of terminals on nothing and a dead circuit both read 0 V, and only one
+     * of them should burn its fuel. The current is what tells them apart — see
+     * [org.emerge.demo.outofspace.world.VesselState.cellCurrent].
+     */
+    @Test
+    fun `a cell with nothing wired to it does not burn its gases either`() {
+        val day = run(plant(brine()), 200)
+        val gases = madeAnything(day)
+        assertTrue(gases > 0L, "fixture: the cell made nothing by day")
+
+        val cut = VesselState(
+            day.grid, day.deck,
+            conduits = Conduits.ofRails(List(day.grid.size) { null }),
+            buffers = day.buffers, rail = day.rail,
+        )
+        val after = run(cut, 100)
+
+        assertEquals(gases, madeAnything(after), "a cell with no circuit discharged into nothing")
     }
 
     private fun water(packets: Long = 8L): Mixture =

@@ -109,6 +109,27 @@ data class VesselState(
      */
     val potential: LongArray = LongArray(grid.size),
     /**
+     * **What current each cell passed last tick**, by the tile its machine is stored at, and zero for
+     * a tile with no cell or a cell that is in no circuit.
+     *
+     * ⭐ **The sign is the whole reason this exists.** A cell is a two-terminal device with a
+     * back-EMF, so the solve already runs it in both directions. ⚠️ **Negative is the DRIVEN
+     * direction**: `Solution.sourceCurrent` is positive out of a source's `fromNode`, and a cell's
+     * `fromNode` is its positive terminal, so current the bus pushes in reads as a minus. Positive
+     * means the bus has sagged below the knee and the cell is *supplying* it. `Work.split` reads the sign to know which way to run its chemistry, which is
+     * `PLAN_power_network.md` increment 4's *"one equation; the sign decides"* arriving at the
+     * machine rather than staying inside the solver.
+     *
+     * ⛔ **And zero is not the same as "sitting at nought volts".** A cell with nothing wired to it
+     * is not in the circuit at all and passes no current, so it neither splits nor discharges — which
+     * a potential *difference* alone could not have said, because an unwired pair of terminals and a
+     * dead circuit both read 0 V.
+     *
+     * ⛔ **Derived and not saved**, like [potential] and [circuit]: it is a flattening of a solve
+     * redone every tick, and a world that arrives without it produces its own on the first one.
+     */
+    val cellCurrent: LongArray = LongArray(grid.size),
+    /**
      * **What the circuit looked like last tick**, for the overlay — see [CircuitView].
      *
      * ⛔ **Derived and not saved**, like [potential]: it is a flattening of a solve that is redone

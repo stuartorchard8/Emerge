@@ -207,6 +207,71 @@ fun electrolyse(charge: Mixture, action: CellAction, limit: Long): Electrolysed?
     return Electrolysed(cathode, anode, consumed)
 }
 
+/** What one reverse pass took off each electrode, and the water it gave back. */
+class Recombined(val made: Mixture, val fromCathode: Mixture, val fromAnode: Mixture)
+
+/**
+ * **Run [action] backwards**: consume what is standing at the two electrodes and give back what the
+ * forward pass would have consumed.
+ *
+ * ⭐ **A regenerative fuel cell, and it is the same row read the other way.** Above the knee a cell
+ * splits water into hydrogen and oxygen; below it, the same couples run in reverse and the reaction
+ * *drives* the circuit. `PLAN_power_network.md` increment 4: **one equation, and the sign decides**.
+ * Nothing here chooses which direction to be in — the caller reads the sign of the current the solve
+ * already produced.
+ *
+ * ⚠️ **Exactness is inherited from [electrolyse] rather than reinvented**, and by the same two
+ * devices: whole passes only, so no stoichiometry is ever rounded, and [apportion] over the products'
+ * formula-unit weights so the telescoping sum cannot lose or invent a gram. ⛔ Note the draw is
+ * **stoichiometric**, not [Mixture.take]'s proportional shovelful — an electrode bath holds water and
+ * salt as well as its gas, and a proportional draw would eat the electrolyte.
+ *
+ * ⚠️ **The heat rides along in proportion**, as it does forward: what leaves each electrode takes its
+ * share of that electrode's energy, and the water arrives holding the sum. No enthalpy is charged in
+ * either direction — see `PLAN_chemical_rockets.md` §1.
+ */
+fun recombine(cathode: Mixture, anode: Mixture, action: CellAction, limit: Long): Recombined? {
+    if (limit <= 0L) return null
+    // The forward pass refuses a proton surplus because there is nowhere to put the acid; the
+    // reverse refuses for the mirror reason, that there is nowhere to take it back from.
+    if (action.surplusProtons != 0) return null
+
+    var passes = limit / action.consumedMass
+    for ((species, units) in action.cathodeProducts) {
+        passes = minOf(passes, cathode[species] / (units.toLong() * species.molarMass))
+    }
+    for ((species, units) in action.anodeProducts) {
+        passes = minOf(passes, anode[species] / (units.toLong() * species.molarMass))
+    }
+    if (passes <= 0L) return null
+
+    fun drawFrom(bath: Mixture, products: List<Pair<Species, Int>>): Mixture {
+        val out = LongArray(Species.COUNT)
+        var total = 0L
+        for ((species, units) in products) {
+            val mass = passes * units.toLong() * species.molarMass
+            out[species.ordinal] += mass
+            total += mass
+        }
+        return Mixture.of(out, energy = scaledRatio(total, bath.total, bath.energy))
+    }
+
+    val fromCathode = drawFrom(cathode, action.cathodeProducts)
+    val fromAnode = drawFrom(anode, action.anodeProducts)
+    val recovered = fromCathode.total + fromAnode.total
+
+    val weights = LongArray(action.consumes.size) {
+        action.consumes[it].second.toLong() * action.consumes[it].first.molarMass
+    }
+    val masses = apportion(weights, recovered)
+    val energies = apportion(weights, fromCathode.energy + fromAnode.energy)
+    var made = Mixture.EMPTY
+    for (i in action.consumes.indices) {
+        made += Mixture.of(action.consumes[i].first to masses[i], energy = energies[i])
+    }
+    return Recombined(made, fromCathode, fromAnode)
+}
+
 /**
  * **The salts a solution conducts by** — the ions that carry the current between the electrodes.
  *
