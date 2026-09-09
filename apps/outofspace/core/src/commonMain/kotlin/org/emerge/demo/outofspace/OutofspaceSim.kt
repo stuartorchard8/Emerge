@@ -1360,27 +1360,38 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     }
 
     /**
-     * One tick of a [Concentrator], which since the concentrate buffer became an **accumulator** is
-     * a machine that banks pure metal a charge at a time until it has a packet of it.
+     * One tick of a [Concentrator], which since `811be00f` is **a chamber that enriches what is
+     * standing in it** and hands a whole pure packet to the rail whenever there is one to hand over.
      *
-     * [process] hands back the machine's share of the charge's dominant species, pure, and that is
-     * a fraction of a packet rather than a packet — 61 kg of iron out of a 200 kg charge of the
-     * standard ore body. So the concentrate store fills over several charges and the rail takes a
-     * whole 100 kg packet off it when there is one, while the tailings fill their own hopper and
-     * leave the same way.
+     * The chamber is topped back up to [Concentrator.CHARGE_MASS] off the feed each action and then
+     * worked: [process] draws the dominant species out whole and pure, one packet of it goes to the
+     * bank if a packet's worth came out, and **everything else stays in the chamber**. So the
+     * dominant fraction climbs every action — the draw takes the dominant out and the top-up cannot
+     * dilute it back to where it started — and a charge assaying 12% reaches a shippable packet in
+     * five or six actions rather than never. ⛔ **The tailings only leave on an action that made no
+     * packet**; an action that shipped one leaves them to be worked again, which is what makes this
+     * a loop rather than a single pass.
      *
-     * ⛔ **The bank holds one species, and that is the invariant everything downstream is built on.**
-     * A concentrator's product port emits nothing but 100% pure packets, so a tank locked to a
-     * species, a construction site at `BUILD_PURITY_PERCENT`, and an electrolyzer wanting water all
-     * take its output directly. Two species in one bank would end that, so a charge whose dominant
-     * is not what the bank is already holding **does not start**: the machine waits, `Work.holdsBack`
-     * sees a bank that has to be cleared and lets the short packet go, and the new species begins on
-     * an empty bank the tick after.
+     * ⛔ **What leaves is pure**, and that is the invariant everything downstream is built on: a tank
+     * locked to a species, a construction site at `BUILD_PURITY_PERCENT`, an electrolyzer wanting
+     * water. A deposit is exactly one packet of exactly one species.
      *
-     * ⚠️ **The gate is at the lift, not at the deposit**, and that is the whole reason no second
-     * store is needed: a charge that has been worked always matches what the bank holds, because it
-     * was not allowed in otherwise. Deciding at the deposit would leave the machine holding a
-     * finished charge of one species and a bank of another with nowhere to put either.
+     * ⚠️ **The species changes between packets, and that is the design rather than a leak.** Once a
+     * species has been drawn down whatever is left in the chamber takes its turn, so a mill works its
+     * way down the ore body by abundance without being told to and a tank downstream of one holds
+     * several pure species in order. `ConcentratorBankTest` pins the purity of each *lump*, not the
+     * sameness of successive ones.
+     *
+     * ⚠️ **The lift-time gate below is not the guarantee it reads as, and there is a known hole
+     * beside it.** It compares the charge against the bank, but it sits inside the `?: run { … }`
+     * that only executes when the chamber is **empty** — and since this rewrite the chamber is never
+     * empty again once the machine has run. So it fires once, on a machine that has never worked,
+     * and `holdsBack`'s `mustClearTheBank` exemption goes with it. On a *warm* machine whose bank has
+     * been part-shipped — which `holdsBack` permits when a sink's appetite is shorter than a packet —
+     * the next deposit is `banked + output` across two species and the port then emits blended lumps.
+     * Measured, not deduced: see the ignored `a part-shipped bank is not blended into` in
+     * `ConcentratorBankTest`. **Reported, deliberately not fixed here** — closing it is a design call
+     * about where the gate belongs, and the deposit is not obviously it.
      */
     private fun Work.refine(cfg: OutofspaceConfig, m: Concentrator, on: Boolean, tile: TileIndex): Concentrator {
         // Starting a fresh lump is a move between two stores, and the whole tick's heat is applied
@@ -1432,8 +1443,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 putStore(m, tile, BufferRole.Waste, tailings + r.tailings)
                 putStore(m, tile, BufferRole.Inside, remaining)
             }
-
-
             return m.copy(progress = 0, carry = carry)
         }
         return m.copy(progress = m.progress + actionProgress.toInt(), carry = carry)
