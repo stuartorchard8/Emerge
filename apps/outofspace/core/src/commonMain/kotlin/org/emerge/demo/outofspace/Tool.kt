@@ -26,6 +26,25 @@ enum class Tool(val label: String) {
      */
     Inspect("INSPECT"),
     Build("BUILD"),
+
+    /**
+     * **Picks a machine up and puts it down somewhere else** — `PLAN_machine_relocation.md`.
+     *
+     * Press on a machine, carry it while the button is down, `R` turns it, release over somewhere it
+     * fits. ⭐ **Release anywhere else cancels**, so the refusal *is* the cancel: there is no cancel
+     * key and no state to get stuck in, because letting go always ends the gesture with the machine
+     * either moved or exactly where it was.
+     *
+     * ⛔ **It is not a deconstruction and a construction.** The rail loop exists to answer which
+     * stockpile sources a bill and where a demolished machine's fabric lands, and a relocation asks
+     * neither: the metal is already assembled, the stores are already full, and all of it travels.
+     *
+     * ⚠️ **A moved machine leaves its belts behind** and nothing warns about it (Stu, 2026-09-09).
+     * The cursor says whether the thing fits, which is what a placement cursor says everywhere else;
+     * re-plumbing is the player's business.
+     */
+    Move("MOVE"),
+
     Delete("DELETE"),
 
     /**

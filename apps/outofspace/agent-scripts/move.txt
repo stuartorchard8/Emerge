@@ -1,0 +1,51 @@
+# The move tool: press on a machine, carry it, turn it, let go.
+#
+# `PLAN_machine_relocation.md` increment 2. What is worth photographing is the middle of the
+# gesture — the cursor holding a real machine — because that is the only part of this tool that
+# draws anything, and it is drawn through the same placement cursor a fresh build uses.
+#
+# What to read in the shots:
+#   `move-tool`     -- the tool taken out with nothing in hand. The panel describes a GESTURE
+#                      rather than a target, because this is the one tool that acts on a release.
+#   `carrying`      -- a concentrator held over clear deck, in the fits colour, with its ports
+#                      drawn on the sides they will actually be on. It is still standing where it
+#                      was: nothing is edited until the button comes up.
+#   `carrying-turned` -- R, and the same machine held a quarter turn round. Read the ports.
+#   `carrying-refused` -- held over the other machine, in the refusal colour. Letting go here is
+#                      the cancel: the machine goes back where it was.
+#   `moved`         -- let go somewhere it fits. One edit, and it took its casing, its stores and
+#                      its heat with it.
+
+new
+# ⚠️ **Creative, because a freshly placed machine is a GHOST** and a ghost does not move — which the
+# tool is right to refuse and which makes it useless as a subject. These two arrive built.
+creative 1
+camera centre 27 10 36
+
+brush CONCENTRATOR Right
+material Iron
+place 24 12
+place 30 12
+run 4
+
+reach MOVE
+shot move-tool
+
+# ── Press on it, and carry it over clear deck ────────────────────────────────
+take 24 12
+carry 24 8
+shot carrying
+
+# ── R turns what is being held ───────────────────────────────────────────────
+carry 24 8 Down
+shot carrying-turned
+
+# ── Held over the other machine: refused, and letting go here cancels ────────
+carry 30 12 Right
+shot carrying-refused
+
+# ── Let go somewhere it fits ─────────────────────────────────────────────────
+carry 24 8 Right
+drop
+run 4
+shot moved

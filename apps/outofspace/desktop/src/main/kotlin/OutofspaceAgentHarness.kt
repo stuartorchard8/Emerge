@@ -91,6 +91,9 @@ import kotlin.math.roundToInt
  * remove <x> <y> [layer]    # layer = TOP|BRIDGE|RAIL|PIPE|DECK|ALL (default TOP, one layer/click)
  * cancel <x> <y> [x2 y2]    # calls off a deconstruction on every layer of the tile, or of a run
  * rotate <x> <y>
+ * take <x> <y>               # move tool: press on a machine, picking it up into the cursor
+ * carry <x> <y> [dir]        # hold it over a tile, optionally turned — prints whether it would land
+ * drop                       # let go: it moves if it fits there, and stays put if it does not
  * wire <x> <y> <channel> <permille>  # append one RUN term. ALWAYS@1000 is "hold the button down",
  *                            # which is how a script opens an airlock — they ship wired to nothing
  * inject <x> <y> [ticks]     # debug bellows: 1kg of air a tick into a permeable tile. Mints matter
@@ -428,6 +431,44 @@ object OutofspaceAgentHarness {
                 }
 
                 "rotate" -> { controller.rotate(index(t[1], t[2])); settle() }
+
+                /*
+                 * The move gesture, in the three parts a mouse has: press, carry, let go.
+                 *
+                 * ⚠️ **Three commands rather than one**, because the interesting picture is the one
+                 * in the middle. A `move` that did the whole thing could never photograph the cursor
+                 * carrying a machine, which is the only part of this tool that has anything to draw.
+                 * `take` then `carry` then `shot` is how the ghost gets its picture taken.
+                 */
+                "take" -> {
+                    controller.tool = Tool.Move
+                    controller.apply(index(t[1], t[2]))
+                    val held = controller.carrying
+                    println(
+                        if (held == null) "[agent] nothing to pick up at (${t[1]},${t[2]})"
+                        else "[agent] carrying ${held.kind.label} from (${t[1]},${t[2]})",
+                    )
+                }
+                "carry" -> {
+                    val to = index(t[1], t[2])
+                    controller.carryTo(to)
+                    hovered = to
+                    if (t.size > 3) {
+                        val want = direction(t[3])
+                        var turns = 0
+                        while (controller.carriedFacing != want && turns++ < 4) controller.rotateBrush()
+                    }
+                    println(
+                        "[agent] holding over (${t[1]},${t[2]}) facing ${controller.carriedFacing} " +
+                            "· ${if (controller.planAt(to)?.allowed == true) "fits" else "REFUSED"}",
+                    )
+                }
+                "drop" -> {
+                    val was = controller.carriedFrom
+                    controller.drop()
+                    settle()
+                    println("[agent] let go of $was")
+                }
                 /*
                  * `tune <x> <y> temp|dwell [steps]` — a furnace's two dials, stepped the way the
                  * panel's own buttons step them.

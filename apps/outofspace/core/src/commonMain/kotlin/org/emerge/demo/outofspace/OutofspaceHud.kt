@@ -475,6 +475,14 @@ class OutofspaceHud {
                     // one that names its material and points sideways.
                     val chosen = controller.buildMaterial
                     title("MATERIAL  ·  ${chosen?.name?.uppercase() ?: "NONE PICKED"}")
+                } else if (controller.tool == Tool.Move) {
+                    // ⚠️ **The one tool whose hint has to describe a gesture rather than a target.**
+                    // Every other tool acts on a click; this one acts on a release, and a player who
+                    // does not know that will press, see a ghost, and let go somewhere arbitrary.
+                    title("MOVE")
+                    text("drag a machine somewhere else", 0x9A9A9AFFL)
+                    text("R turns what you are holding", 0x9A9A9AFFL)
+                    text("let go where it fits · anywhere else cancels", 0x9A9A9AFFL)
                 } else if (controller.tool == Tool.Delete) {
                     title("DELETE  ·  ${controller.deleteLayer.label}")
                     actionRow(

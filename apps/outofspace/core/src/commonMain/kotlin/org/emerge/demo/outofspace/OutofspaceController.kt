@@ -21,6 +21,9 @@ import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.canStand
+import org.emerge.demo.outofspace.world.canStandAfterMoving
+import org.emerge.demo.outofspace.world.canBeMoved
+import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.Docking
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.machine.DockingPort
@@ -326,7 +329,23 @@ class OutofspaceController(
      * something. The reducer asks the same question again at the moment it matters.
      */
     fun planAt(tile: TileIndex): BuildPlan? {
-        if (mode != Mode.Build || tool != Tool.Build || tile == TileIndex.NONE) return null
+        if (mode != Mode.Build || tile == TileIndex.NONE) return null
+        // ⭐ **A carried machine draws through the placement cursor**, which is the whole design of the
+        // move tool: the player is choosing where a machine goes, and that is a question the cursor
+        // already knows how to ask. Cyan where it fits, red where it does not.
+        //
+        // ⚠️ **`Brush.Building(kind)` and not the machine itself.** The preview is a footprint and a
+        // set of ports, and both are decided by the kind and the facing — the carried machine's
+        // settings, stores and heat travel with it but have nothing to draw.
+        carrying?.let { held ->
+            return BuildPlan(
+                tile = tile,
+                brush = Brush.Building(held.kind),
+                facing = carriedFacing,
+                allowed = state.canStandAfterMoving(carriedFrom, tile, carriedFacing),
+            )
+        }
+        if (tool != Tool.Build) return null
         val brush = brush ?: return null
         // ⚠️ **Asked first, because it is a different answer and not a softer one.** A stamped brush
         // over a machine of its own kind would fail `canStand` — something is standing there, which
@@ -351,6 +370,66 @@ class OutofspaceController(
      * runs can touch without joining, so a line is only a line where the player actually drew one.
      */
     private var dragFrom: TileIndex = TileIndex.NONE
+
+    /**
+     * The anchor of the machine currently **in hand**, or -1 when nothing is being carried.
+     *
+     * ⛔ **The world is not edited until the button comes up.** A carry is controller state exactly as
+     * the build cursor is, so a half-finished gesture never reaches the reducer and never reaches a
+     * save: the machine goes on standing where it was, and one [Edit.Move] is raised on release.
+     */
+    var carriedFrom: TileIndex = TileIndex.NONE
+        private set
+
+    /** Where the anchor would land — the tile the pointer has last been over. */
+    var carriedTo: TileIndex = TileIndex.NONE
+        private set
+
+    /** Which way the carried machine is being held. `R` turns it; see [rotateBrush]. */
+    var carriedFacing: Direction = Direction.Right
+        private set
+
+    /** The machine in hand, still standing where it was until this is dropped. */
+    val carrying: DeckMachine? get() = if (carriedFrom == TileIndex.NONE) null else state.deck[carriedFrom]
+
+    /**
+     * Takes the machine under [tile] into the hand, if it is one that may be picked up.
+     *
+     * ⚠️ **The anchor, not the tile pressed.** A press on a warehouse's corner picks up the
+     * warehouse — the same resolution a click makes everywhere else.
+     */
+    fun takeUp(tile: TileIndex) {
+        if (tile == TileIndex.NONE || tile.index !in 0 until state.deck.size) return
+        val from = state.occupancy[tile]
+        if (from == TileIndex.NONE || !state.canBeMoved(from)) return
+        carriedFrom = from
+        carriedTo = from
+        carriedFacing = (state.deck[from] as? DirectedDeckMachine)?.facing ?: Direction.Right
+    }
+
+    /** Carries what is in hand over [tile]. Records where it would land; changes nothing. */
+    fun carryTo(tile: TileIndex) {
+        if (carriedFrom == TileIndex.NONE || tile == TileIndex.NONE) return
+        carriedTo = tile
+    }
+
+    /**
+     * Lets go: the machine moves if it fits where it is being held, and stays exactly where it was
+     * if it does not.
+     *
+     * ⭐ **A refusal and a cancel are the same gesture**, which is what makes this tool have no state
+     * a player can be stuck in. Letting go always ends the carry.
+     */
+    fun drop() {
+        val from = carriedFrom
+        val to = carriedTo
+        val facing = carriedFacing
+        carriedFrom = TileIndex.NONE
+        carriedTo = TileIndex.NONE
+        if (from == TileIndex.NONE || to == TileIndex.NONE) return
+        if (!state.canStandAfterMoving(from, to, facing)) return
+        pending.add(Edit.Move(from, to, facing))
+    }
 
     /**
      * Points the machine panels at whatever is under [tile], or at nothing if that is bare deck.
@@ -489,6 +568,7 @@ class OutofspaceController(
                 place(tile)
                 if (brush is Brush.Run) dragFrom = tile
             }
+            Tool.Move -> takeUp(tile)
             Tool.Inspect -> inspect(tile)
             Tool.Delete -> removeAt(tile)
             // Calling a mark off drags for the same reason making one does: a player condemns a
@@ -745,6 +825,18 @@ class OutofspaceController(
                 tool = Tool.Inspect
                 return true
             }
+            Tool.Move -> {
+                // A carry in progress is its own rung: escape puts the machine back down where it
+                // was rather than also stepping off the tool, so the way out of a gesture and the way
+                // out of a tool are one key pressed twice and never one press doing both.
+                if (carriedFrom != TileIndex.NONE) {
+                    carriedFrom = TileIndex.NONE
+                    carriedTo = TileIndex.NONE
+                    return true
+                }
+                tool = Tool.Inspect
+                return true
+            }
             Tool.Inspect -> {
                 if (inspectTile == TileIndex.NONE && selected == TileIndex.NONE) return false
                 select(TileIndex.NONE)
@@ -965,7 +1057,10 @@ class OutofspaceController(
             Tool.Inject -> tool = Tool.InjectWater
             Tool.InjectWater -> tool = Tool.Inject
             // Nothing to aim: see this method's note.
-            Tool.Cancel, Tool.Inspect -> {}
+            // ⚠️ **Nothing to aim, and `R` is not its aim either.** A move tool with nothing in hand
+            // has no sub-target; `R` turns what is being carried, which is a thing to do *during* a
+            // gesture rather than a rung of this ladder.
+            Tool.Cancel, Tool.Inspect, Tool.Move -> {}
         }
     }
 
@@ -1068,7 +1163,20 @@ class OutofspaceController(
         brush = all[((at + delta) % all.size + all.size) % all.size]
     }
 
+    /**
+     * `R`: **turns whatever is on the cursor.**
+     *
+     * ⭐ **And it needs no precedence rule, which is the second thing the move tool bought.** An
+     * earlier design argued at length over whether `R` should turn the brush or the machine under the
+     * pointer, and worried about laying a row of machines while hovering a neighbour that would
+     * silently turn instead. A *carried* machine is what is on the cursor, and a player cannot be
+     * holding a brush and carrying a machine at once, so there is exactly one thing to turn.
+     */
     fun rotateBrush() {
+        if (carriedFrom != TileIndex.NONE) {
+            carriedFacing = carriedFacing.clockwise
+            return
+        }
         brushFacing = brushFacing.clockwise
     }
 

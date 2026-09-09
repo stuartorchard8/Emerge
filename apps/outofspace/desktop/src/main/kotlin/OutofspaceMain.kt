@@ -172,6 +172,9 @@ fun main() {
             } else {
                 leftDown = false
                 lastPainted = TileIndex.NONE
+                // ⭐ Letting go always ends a carry: the machine moves if it fits where it is being
+                // held and stays where it was if it does not, so the refusal is also the cancel.
+                if (controller.tool == Tool.Move) controller.drop()
                 controller.endDrag()
                 controller.injectTile = TileIndex.NONE
                 if (uiConsumed) { ui.hitTestUp(px, py); ui.releaseHold() }
@@ -204,6 +207,9 @@ fun main() {
             // A held bellows follows the pointer, so gas is laid along the drag.
             leftDown && (controller.tool == Tool.Inject || controller.tool == Tool.InjectWater) -> controller.injectTile = hovered
             // Deleting drags like building does — a run of track comes up in one gesture.
+            // A carried machine follows the pointer. Nothing is edited until the button comes up —
+            // this only moves where the cursor's ghost is drawn.
+            leftDown && controller.tool == Tool.Move -> controller.carryTo(hovered)
             leftDown && controller.tool == Tool.Delete -> if (hovered != TileIndex.NONE && hovered != lastPainted) {
                 controller.removeAt(hovered)
                 lastPainted = hovered
@@ -322,6 +328,7 @@ fun main() {
             // time, and that is the way back the whole editor is built around — a second way in
             // would be a second thing to learn for a tool you arrive at by putting others down.
             GLFW_KEY_B -> controller.reachFor(Tool.Build)
+            GLFW_KEY_V -> controller.reachFor(Tool.Move)
             GLFW_KEY_X -> controller.reachFor(Tool.Delete)
             GLFW_KEY_Z -> controller.reachFor(Tool.Cancel)
             GLFW_KEY_Q -> controller.reachFor(Tool.Cut)

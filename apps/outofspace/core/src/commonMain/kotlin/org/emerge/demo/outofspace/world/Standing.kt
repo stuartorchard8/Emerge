@@ -74,3 +74,47 @@ fun VesselState.canStand(kind: DeckMachineKind, tile: TileIndex, facing: Directi
         portsOn = { t -> portsAt(occupancy[t]).filter { it.tile == t } },
         displaceAir = { area -> air.canDisplace(grid, area) { deck.isPermeableToAir(it) } },
     )
+
+/**
+ * [canStand] asked of a machine that is **already standing at [from]**, for a move to [to].
+ *
+ * ⛔ **Its own tiles and its own ports do not count as in the way.** Nudging one tile and turning in
+ * place are the two commonest things a move is, and both overlap what the machine is standing on
+ * right now — so asked without the exemption this refuses the ordinary case, and a cursor drawn off
+ * it would read red for the gesture the tool exists to perform.
+ *
+ * ⚠️ **Every other refusal is [canStand]'s, unchanged.** The reducer asks the same question again at
+ * the moment it matters; a preview that reasoned separately would eventually promise a move the
+ * reducer declines. Whether the machine may be *picked up* at all is a different question — see
+ * [canBeMoved].
+ */
+fun VesselState.canStandAfterMoving(from: TileIndex, to: TileIndex, facing: Direction): Boolean {
+    val moving = deck[from] ?: return false
+    return to != TileIndex.NONE && to.index in 0 until deck.size && canStand(
+        grid = grid,
+        kind = moving.kind,
+        tile = to,
+        facing = facing,
+        occupied = { occupancy[it] != TileIndex.NONE && occupancy[it] != from },
+        portsOn = { t -> portsAt(occupancy[t]).filter { it.tile == t && it.owner != from } },
+        displaceAir = { area -> air.canDisplace(grid, area) { deck.isPermeableToAir(it) } },
+    )
+}
+
+/**
+ * Whether the machine anchored at [from] may be picked up at all.
+ *
+ * ⛔ **A ghost does not move**, building itself up or coming apart: a move stands a whole machine
+ * where a part-built one was, which is matter from nowhere. ⛔ **And neither does a docking port with
+ * a weld on it** — it is a member of an assembly, and moving the mouth would carry a station with it
+ * or tear the joint. Both are limitations Stu accepted as reasonable, 2026-09-09.
+ *
+ * ⚠️ **Asked at the pick-up rather than at the drop**, so the gesture never starts. A refusal the
+ * player discovers on release is one they have already committed a hand movement to.
+ */
+fun VesselState.canBeMoved(from: TileIndex): Boolean {
+    if (deck[from] == null) return false
+    if (deck.isGhost(from)) return false
+    if (from in scrapping) return false
+    return assembly.welds.none { it.portTile == from }
+}
