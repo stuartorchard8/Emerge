@@ -1,7 +1,29 @@
 # Footprints, rotation, and the difference between placing a thing and turning it
 
-Status: **proposed** (2026-09-09). Prerequisite for `PLAN_power_network.md` increment 4, which wants
-a 3×2 cell and cannot have one. Replaces three stated designs rather than adding to them:
+> ## ⛔ SUPERSEDED 2026-09-09 by `PLAN_machine_relocation.md`
+>
+> **Its central question stopped being asked.** Everything below §2 decision 2 is machinery for
+> deciding *whether a 90° turn in place is legal* — the pivot, the parity rule, "advance to the next
+> representable orientation", the buffer's lost quarter-turn. A machine is **moved** now rather than
+> turned, and a machine being placed is under no legality constraint at all (that plan's decision 4,
+> which was already stated here). So the apparatus is not wrong; it is answering a question nobody
+> asks any more.
+>
+> **What carried forward, into that plan:**
+> - **§1's findings about the code** — `diameter`/`reach`/`FootprintShape` and the three offset
+>   tables. Facts, not design, and all still true.
+> - **Increment 0 entire**, minus the `pivot` field. It is what `PLAN_power_network.md` increment 4
+>   needs and it is now an independent track.
+> - **§3's "a turn can move the anchor"** — the finding that no tile of a mixed-parity footprint
+>   survives its own 180° flip, so `rebuildInPlace`'s single `centre` has to become two. The argument
+>   that demanded it is retired; the change it demanded is the core of the new plan's increment 1.
+> - **§4 and increment 3 unchanged** — facing is a placement property, and a stamp pastes by class.
+>
+> **What did not:** `Pivot`, the parity rule, decisions 3, 6, 8 and 9, and increment 2's overloading
+> of `R`.
+
+Status: **superseded** (2026-09-09). Was: prerequisite for `PLAN_power_network.md` increment 4, which
+wants a 3×2 cell and cannot have one. Replaced three stated designs rather than adding to them:
 `FootprintShape`, `DeckMachine.rotated`, and the paste-over half of `PLAN_build_shortcuts`.
 
 > A machine's footprint is stated as a **half-width**, so every footprint is odd and square. Its
@@ -333,8 +355,8 @@ segment — see that plan's §"the ports become a T", which this supersedes.
   regression is loud. A brand-new machine with a wrong footprint just looks like a design choice.
 - **`METALLIC_CONDUCTION_MILLIWATTS`.** A live defect, unrelated, and Stu's call because it re-tunes
   friction.
-- **The three red tests** in `ConcentratorBankTest` and `HeatTest`. In-progress concentrator work
-  (Stu, 2026-09-09) — not to be fixed from here.
+- ~~**The three red tests** in `ConcentratorBankTest` and `HeatTest`.~~ Green as of `808a260d`; the
+  whole-repo gate passes.
 - **A general machine-shape editor, or footprints that are not rectangles.** An L-shaped machine is
   not asked for and every mechanism here assumes a rectangle. If one is ever wanted, this is the
   model to extend rather than the one to work around.
