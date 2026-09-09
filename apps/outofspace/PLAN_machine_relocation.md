@@ -183,26 +183,55 @@ rate and swings the centre of rotation, and the whole vessel visibly lurches. �
 discontinuity, not a leak** — accepted knowingly (Stu, 2026-09-09) — but it is the form the accepted
 "COM jump" actually takes, and it is more visible than a static shift.
 
+⭐ **No torque is involved and none may be booked** (Stu, 2026-09-09). Angular momentum is conserved
+trivially, because nothing crosses the vessel boundary and internal rearrangement is not an external
+twist; the change in angular *velocity* is a consequence, not a force. ⚠️ **And it costs nothing to
+implement**: `Rotation.kt` derives the vessel's mass, centre of mass and gyration radius by walking
+`forEachVesselMass` over rail, conduits, deck and buffers — none of it is stored, while `angImpulse`
+and `vesselImpulse` are. So `ω = L / I` recomputes on the next tick with no code aware a move
+happened. ⛔ **A torque term here would be a second way to spin the ship with nothing on the other
+side of it**, which is exactly the defect `angularBalance` exists to report.
+
+⚠️ **There is a linear counterpart, and `PLAN_com_anchored_frames.md` will invert it.** An isolated
+body's centre of mass may not jump either: shifting a machine to starboard should slide the rest of the
+ship to port so the world-frame COM keeps travelling straight. Today the vessel stores its **grid
+origin**, so the grid holds still and the COM jumps instead — `momentumBalance` does not notice,
+because it sums impulses and not positions. Once the stored position *is* the COM, the behaviour flips:
+the COM holds still and the **grid visibly slides**, which is the correct one and which is a translation
+you would see on a ship that is not spinning at all. Recorded so that change is not read as a
+regression in this tool.
+
 ## 4. The gesture
 
-A new `Tool.Move`, alongside `Build` and `Delete` in `Tool.kt`.
+A new `Tool.Move`, alongside `Build` and `Delete` in `Tool.kt`. **Press, drag, release** (Stu,
+2026-09-09).
 
-- **Click a machine** — any tile of it; the reducer already resolves a tile to an anchor through
+- **Press on a machine** — any tile of it; the reducer already resolves a tile to an anchor through
   `originAt`, which is how a click on a warehouse's corner edits the warehouse.
-- **The machine is carried**, drawn under the cursor as a placement preview: cyan where it fits, red
-  where it does not, per `reference_oos_build_cursor_plan`. ⚠️ **Green does not arise** — a move is
-  never a re-tune.
-- **Q and E turn it** left and right, one quarter-turn each, with no legality question (decision 4).
-- **Placing it** commits one `Edit.Move(from, to, facing)`.
-- **Escape puts it back**, changing nothing.
+- **It is carried while the button is down**, drawn under the cursor as a placement preview: cyan
+  where it fits, red where it does not, per `reference_oos_build_cursor_plan`. ⚠️ **Green does not
+  arise** — a move is never a re-tune.
+- **R turns the carried ghost**, one quarter-turn, with no legality question (decision 4).
+- **Release over a valid destination** commits one `Edit.Move(from, to, facing)`.
+- **⭐ Release anywhere else cancels**, changing nothing. The refusal *is* the cancel, so there is no
+  separate cancel key and no state a player can get stuck in: let go and the machine is either moved
+  or exactly where it was.
 
-⛔ **The world is not edited until it is placed.** Everything above is controller state, exactly as the
-build cursor already is, which is what keeps a half-finished gesture out of the save and out of the
-reducer.
+⛔ **The world is not edited until the button comes up.** Everything above is controller state, exactly
+as the build cursor already is, which is what keeps a half-finished gesture out of the save and out of
+the reducer.
 
-⚠️ **`R` is already bound** to `rotateBrush`, and `OutofspaceHud.kt:445` hard-codes the hint text
-`"R rotate brush"`. Q and E are chosen partly to leave that alone; the hint still has to grow a line
-for the new tool.
+### ⭐ `R` needs no precedence rule after all
+
+`R` is bound to `rotateBrush` (`OutofspaceMain.kt:309`) and `OutofspaceHud.kt:445` hard-codes the hint
+`"R rotate brush"`. The superseded plan needed a **precedence rule** for it — *"R turns the brush if
+you are holding one, and the machine under the pointer if you are not"* — and argued at length about
+the case where you are laying a row and hovering a neighbour.
+
+That whole problem dissolves. A carried machine **is** what is on the cursor, so `R` means one thing:
+turn what you are holding. There is no pointer-versus-brush ambiguity because there is no pointer
+target — you cannot be carrying a machine and holding a brush at once. ⚠️ The hint text still has to
+say which of the two it currently means.
 
 ## 5. What must be true, and what will hurt
 
@@ -301,10 +330,8 @@ the facing out of it before the move tool exists would leave a gap with no gestu
 
 ## 7. Open questions
 
-1. **Is the carry modal or held?** Written above as click-to-take, click-to-place. The alternative —
-   press, drag, release — is what was described first and reads more directly as "carrying". Modal is
-   recommended because Q/E during a held button is awkward and because Escape needs somewhere to live,
-   but it is a feel question and it is Stu's.
+1. ✅ **The carry is press-and-drag-release, and `R` turns the ghost** (Stu, 2026-09-09). Releasing
+   over a destination that will not take it cancels the move — settled, see §4.
 2. **Does a cross-family stamp apply to a *freshly placed* machine?** `OutofspaceSim.kt:2900` is the
    third guard of increment 3, and relaxing it means grabbing a warehouse, switching the brush to silo
    and placing gets a silo wearing the warehouse's filter. Probably wanted; stated because it is a
