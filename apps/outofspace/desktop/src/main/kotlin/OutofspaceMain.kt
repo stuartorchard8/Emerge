@@ -331,7 +331,12 @@ fun main() {
             // time, and that is the way back the whole editor is built around — a second way in
             // would be a second thing to learn for a tool you arrive at by putting others down.
             GLFW_KEY_B -> controller.reachFor(Tool.Build)
-            GLFW_KEY_V -> controller.reachFor(Tool.Move)
+            // ⭐ **M, and V is free again** (Stu, 2026-09-10). V was chosen while the clipboard's
+            // C-and-V were fresh in the hand; with the clipboard gone it was a letter that named
+            // nothing. MOVE starts with M, which is the only mnemonic this row has that costs
+            // nothing to remember. ⛔ **Not both** — one key per tool is the rule the rest of this
+            // block is built on, and a spare alias is a second thing to learn for no new reach.
+            GLFW_KEY_M -> controller.reachFor(Tool.Move)
             GLFW_KEY_X -> controller.reachFor(Tool.Delete)
             GLFW_KEY_Z -> controller.reachFor(Tool.Cancel)
             GLFW_KEY_Q -> controller.reachFor(Tool.Cut)

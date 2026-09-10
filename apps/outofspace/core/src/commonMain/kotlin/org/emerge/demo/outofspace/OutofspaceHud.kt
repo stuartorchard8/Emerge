@@ -649,7 +649,11 @@ class OutofspaceHud {
                 // [OutofspaceController.reachFor]. Said here in full because this panel only ever
                 // shows the tool you are already holding, so nothing else on screen names the way
                 // to the other five.
-                text("B build · X delete · Z cancel · Q cut · E material", 0x9A9A9AFFL)
+                //
+                // ⛔ **MOVE was missing from this line while it was on `V`**, so the one tool whose
+                // gesture nothing else explains was reachable only by finding its button. It is
+                // named here now, on the key that says its name.
+                text("B build · M move · X delete · Z cancel · Q cut · E material", 0x9A9A9AFFL)
                 // ⚠️ **The two keys the whole editor is reached through, said in one line.** C is
                 // the way in — get one of the thing you have selected, or of the thing under the
                 // mouse when you have selected nothing — and ESC is the way back out of whatever C

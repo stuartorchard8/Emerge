@@ -22,7 +22,10 @@ which is superseded in full — what carried forward is named in its banner and 
 - ⚠️ **The round-trip acceptance had to be a differential**, not a before-and-after. Heat conducts
   between casing and room every tick, so the first version read ten megajoules of ordinary conduction
   and called it a leak. See §5.
-- ⭐ **`V` rather than an overloaded key**, and `R` needed no precedence rule at all — see §4.
+- ⭐ **A key of its own rather than an overloaded one**, and `R` needed no precedence rule at all —
+  see §4. ⚠️ **It was `V` until 2026-09-10 and is `M` now**: V was picked while the deleted
+  clipboard's C-and-V were still in the hand, and MOVE starts with M. The build panel's key legend
+  had never named the tool at all; it does now.
 - ⚠️ **Ghost and weld refusals moved to the pick-up**, not the drop, so a carry never starts on
   something that cannot land. The reducer keeps its own copies as a backstop for the agent harness.
 
