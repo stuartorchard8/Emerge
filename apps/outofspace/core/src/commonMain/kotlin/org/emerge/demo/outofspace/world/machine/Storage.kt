@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.world.machine
 
+import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.num.Budget
 
 import org.emerge.demo.outofspace.world.Direction
@@ -70,6 +71,33 @@ data class Storage(
     val filter: SpeciesFilter? = null,
     val autoLock: Boolean,
     val autoUnlock: Boolean,
+    /**
+     * The species auto-lock is allowed to settle on — a **shortlist**, not a whitelist.
+     *
+     * ⛔ **EMPTY MEANS ANY, and this is the one place in the game where an empty list does.** A
+     * [org.emerge.demo.outofspace.world.machine.FeedBook]'s empty book refuses everything, because
+     * there the list *is* the machine's whole appetite; here it is an optional narrowing of an
+     * appetite that already exists, and a store with no shortlist is the ordinary store this game
+     * has always had. Reading it the other way would make every unlocked tank in every save a dead
+     * end. The two lists look identical in the panel and mean opposite things when empty, which is
+     * exactly why they are not the same type.
+     *
+     * ⛔ **It does not widen what the store HOLDS.** A store's contents are one `Mixture` on one
+     * tile and `takePacket` draws them proportionally, so a tank admitting two species does not hold
+     * two things — it holds an alloy of them, and can never ship either one pure again. That is the
+     * reason the shortlist constrains the *lock* rather than replacing it: the tank still settles on
+     * exactly one species, and all this decides is which ones it is allowed to settle on. Stu,
+     * 2026-09-10.
+     *
+     * ⚠️ **Inert unless [autoLock] is on**, since there is nothing to constrain otherwise — see
+     * [speciesUndecided], which is the only reader. The panel says so out loud rather than leaving a
+     * dial that quietly does nothing.
+     *
+     * ⚠️ **The purity dial still applies on top.** A shortlist of five under `pure = true` means
+     * five species and no blends at all, including no blend of two shortlisted species — see
+     * [org.emerge.demo.outofspace.world.Acceptance.shortlisted], where the two halves are composed.
+     */
+    val candidates: Set<Species> = emptySet(),
 ) : DirectedDeckMachine {
     /**
      * How much this one holds — [WAREHOUSE_CAP], [SILO_CAP] or [BUFFER_CAP].
@@ -105,6 +133,18 @@ data class Storage(
 
     /** Locked onto [filter], or unlocked when it is null. */
     fun withFilter(filter: SpeciesFilter?): Storage = copy(filter = filter)
+
+    /**
+     * Whether auto-lock may settle this store on [species] — the shortlist, read the way the door
+     * reads it.
+     *
+     * ⚠️ **An empty shortlist says yes**, which is [candidates]'s rule and the one that has to be
+     * stated in the predicate rather than at each call site.
+     */
+    fun mayLockOnto(species: Species): Boolean = candidates.isEmpty() || species in candidates
+
+    /** This store with a new shortlist. */
+    fun withCandidates(candidates: Set<Species>): Storage = copy(candidates = candidates)
 
     companion object {
         /**

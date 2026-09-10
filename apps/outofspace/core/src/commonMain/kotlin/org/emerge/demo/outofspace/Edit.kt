@@ -125,6 +125,19 @@ sealed interface Edit {
         val autoUnlock: Boolean,
     ) : Edit
     data class LockStoragePurity(val tile: TileIndex, val pure: Boolean?) : Edit
+
+    /**
+     * Replace a store's auto-lock shortlist wholesale — see
+     * [org.emerge.demo.outofspace.world.machine.Storage.candidates].
+     *
+     * ⚠️ **Not [TuneFeed], though the sheet that raises it is the same sheet.** A feed book and a
+     * shortlist mean opposite things when empty, so one edit for both would be one `when` away from
+     * shutting a tank that meant to be open.
+     */
+    data class ShortlistStorage(
+        val tile: TileIndex,
+        val candidates: Set<org.emerge.demo.outofspace.chem.Species>,
+    ) : Edit
     data class LockStorageSpecies(val tile: TileIndex, val species: Species?) : Edit
 
     /**

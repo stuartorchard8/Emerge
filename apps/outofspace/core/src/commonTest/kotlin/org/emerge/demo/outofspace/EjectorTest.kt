@@ -358,7 +358,8 @@ class EjectorTest {
             (3 to 5) to lump(Species.Quartz, 3L * Capacity.PACKET_MASS),
             (4 to 5) to lump(Species.Water, 2L * Capacity.PACKET_MASS),
         )
-        hud.refreshFeedRows(Ejector(TileIndex(0)), stock)
+        val bare = Ejector(TileIndex(0))
+        hud.refreshFeedRows(bare::takes, bare.ore, stock)
 
         assertEquals(listOf(Species.Quartz, Species.Water, Species.Iron), hud.feedRows)
     }
@@ -372,7 +373,8 @@ class EjectorTest {
     fun `a species that is named but not aboard still gets a row`() {
         val hud = OutofspaceHud()
         val stock = aboard((2 to 5) to lump(Species.Iron, Capacity.PACKET_MASS))
-        hud.refreshFeedRows(Ejector(TileIndex(0), whitelist = setOf(Species.Titanium)), stock)
+        val named = Ejector(TileIndex(0), whitelist = setOf(Species.Titanium))
+        hud.refreshFeedRows(named::takes, named.ore, stock)
 
         assertEquals(listOf(Species.Iron, Species.Titanium), hud.feedRows)
     }
@@ -385,7 +387,7 @@ class EjectorTest {
     fun `a species arriving mid-read joins the NEW section and moves nothing`() {
         val hud = OutofspaceHud()
         val machine = Ejector(TileIndex(0))
-        hud.refreshFeedRows(machine, aboard((2 to 5) to lump(Species.Iron, Capacity.PACKET_MASS)))
+        hud.refreshFeedRows(machine::takes, machine.ore, aboard((2 to 5) to lump(Species.Iron, Capacity.PACKET_MASS)))
         val opened = hud.feedRows
 
         // Titanium arrives, and heavier than the iron — so a live sort would put it at the *top*.
@@ -394,12 +396,12 @@ class EjectorTest {
             (3 to 5) to lump(Species.Titanium, 5L * Capacity.PACKET_MASS),
         )
         assertEquals(opened, hud.feedRows, "the frozen list moved on its own")
-        assertEquals(listOf(Species.Titanium), hud.newFeedSpecies(machine, later))
+        assertEquals(listOf(Species.Titanium), hud.newFeedSpecies(machine::takes, later))
 
         // REFRESH is the gesture that files it, and it files it by mass.
-        hud.refreshFeedRows(machine, later)
+        hud.refreshFeedRows(machine::takes, machine.ore, later)
         assertEquals(listOf(Species.Titanium, Species.Iron), hud.feedRows)
-        assertEquals(emptyList(), hud.newFeedSpecies(machine, later))
+        assertEquals(emptyList(), hud.newFeedSpecies(machine::takes, later))
     }
 
     /** The other half of REFRESH: a row with nothing behind it any more stops being a row. */
@@ -407,16 +409,13 @@ class EjectorTest {
     fun `refresh drops a row that is neither aboard nor named`() {
         val hud = OutofspaceHud()
         val machine = Ejector(TileIndex(0))
-        hud.refreshFeedRows(
-            machine,
-            aboard(
+        hud.refreshFeedRows(machine::takes, machine.ore, aboard(
                 (2 to 5) to lump(Species.Iron, Capacity.PACKET_MASS),
                 (3 to 5) to lump(Species.Quartz, Capacity.PACKET_MASS),
-            ),
-        )
+            ),)
         assertTrue(Species.Quartz in hud.feedRows)
 
-        hud.refreshFeedRows(machine, aboard((2 to 5) to lump(Species.Iron, Capacity.PACKET_MASS)))
+        hud.refreshFeedRows(machine::takes, machine.ore, aboard((2 to 5) to lump(Species.Iron, Capacity.PACKET_MASS)))
         assertEquals(listOf(Species.Iron), hud.feedRows, "the spent row outlived a refresh")
     }
 
@@ -446,7 +445,7 @@ class EjectorTest {
     fun `a species held only inside ore gets no row of its own`() {
         val hud = OutofspaceHud()
         val machine = Ejector(TileIndex(0))
-        hud.refreshFeedRows(machine, aboard((2 to 5) to blend(Species.Iron, Species.Quartz)))
+        hud.refreshFeedRows(machine::takes, machine.ore, aboard((2 to 5) to blend(Species.Iron, Species.Quartz)))
 
         assertEquals(emptyList(), hud.feedRows, "ore put species rows on a list of pure metals")
         assertTrue(hud.feedRowsHaveOre, "and the ore aboard earned no ORE row")
@@ -457,7 +456,7 @@ class EjectorTest {
     fun `ore arriving mid-read waits in the NEW section`() {
         val hud = OutofspaceHud()
         val machine = Ejector(TileIndex(0))
-        hud.refreshFeedRows(machine, aboard((2 to 5) to lump(Species.Iron, Capacity.PACKET_MASS)))
+        hud.refreshFeedRows(machine::takes, machine.ore, aboard((2 to 5) to lump(Species.Iron, Capacity.PACKET_MASS)))
         assertFalse(hud.feedRowsHaveOre, "there was no ore aboard when the list was taken")
 
         val later = aboard(
@@ -465,11 +464,11 @@ class EjectorTest {
             (3 to 5) to blend(Species.Iron, Species.Quartz),
         )
         assertFalse(hud.feedRowsHaveOre, "the frozen list grew an ORE row on its own")
-        assertTrue(hud.newFeedOre(machine, later))
+        assertTrue(hud.newFeedOre(machine.ore, later))
 
-        hud.refreshFeedRows(machine, later)
+        hud.refreshFeedRows(machine::takes, machine.ore, later)
         assertTrue(hud.feedRowsHaveOre)
-        assertFalse(hud.newFeedOre(machine, later))
+        assertFalse(hud.newFeedOre(machine.ore, later))
     }
 
     /**
@@ -479,10 +478,12 @@ class EjectorTest {
     @Test
     fun `the ore row survives when the ore does not, if the switch is on`() {
         val hud = OutofspaceHud()
-        hud.refreshFeedRows(Ejector(TileIndex(0), ore = true), Stockpile.EMPTY)
+        val withOre = Ejector(TileIndex(0), ore = true)
+        hud.refreshFeedRows(withOre::takes, withOre.ore, Stockpile.EMPTY)
         assertTrue(hud.feedRowsHaveOre)
 
-        hud.refreshFeedRows(Ejector(TileIndex(0)), Stockpile.EMPTY)
+        val shut = Ejector(TileIndex(0))
+        hud.refreshFeedRows(shut::takes, shut.ore, Stockpile.EMPTY)
         assertFalse(hud.feedRowsHaveOre, "an ORE row outlived both the ore and the switch")
     }
 }

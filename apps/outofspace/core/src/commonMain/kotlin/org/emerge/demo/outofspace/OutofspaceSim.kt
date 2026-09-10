@@ -2667,6 +2667,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         )
                     }
                 }
+                is Edit.ShortlistStorage -> {
+                    val tile = originAt(edit.tile) ?: return
+                    val m = deck[tile]
+                    if (m is Storage) deck[tile] = m.withCandidates(edit.candidates)
+                }
                 is Edit.LockStoragePurity -> {
                     val tile = originAt(edit.tile) ?: return
                     val m = deck[tile]
@@ -4196,6 +4201,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          */
         private fun lockedOnto(store: Storage, cargo: Mixture): SpeciesFilter? {
             val dominant = cargo.dominant ?: return store.filter
+            // ⛔ **The shortlist is asked HERE as well as on the route**, which is this file's rule
+            // everywhere: a door and a route are one statement read twice. Material can reach a
+            // store without ever having been rationed — off a tile that answers
+            // [Whitelist.permitsAnything], or straight out of a machine beside it — and a tank that
+            // settled on something the player had struck off its list would be the shortlist
+            // silently not meaning what it says.
+            if (!store.mayLockOnto(dominant)) return store.filter
             return SpeciesFilter(dominant, pure = if (cargo[dominant] == cargo.total) true else null)
         }
 
@@ -4653,8 +4665,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // per convergent branch instead of every source on the vessel, and it is the
                 // underdraw side of the trade this file takes everywhere else.
                 val wanted = if (storage.speciesUndecided) minOf(room, Capacity.PACKET_MASS) else room
-                val acceptance =
-                    if (filter == null) Acceptance.upTo(wanted) else Acceptance.filtered(filter, wanted)
+                // ⚠️ **Three shapes, and the shortlist is the middle one.** A store that has settled
+                // reads its lock; a store that has not, and has been given a shortlist, asks for any
+                // one of those species at whatever purity it was set to; a store with neither takes
+                // what fits. Only the middle case is new, and it exists because "anything pure" was
+                // the *only* thing an undecided tank could say — which is a demand on every source
+                // aboard for a decision that concerns one branch. See [Acceptance.shortlisted].
+                val acceptance = when {
+                    storage.speciesUndecided && storage.candidates.isNotEmpty() ->
+                        Acceptance.shortlisted(storage.candidates, filter?.pure, wanted)
+                    filter == null -> Acceptance.upTo(wanted)
+                    else -> Acceptance.filtered(filter, wanted)
+                }
                 accepts.getOrPut(tile) { mutableListOf() }.add(acceptance)
                 // ⛔ **And the cap alone is not enough, which a two-branch feed proves in three rail
                 // steps.** [Whitelist.promise] closes the appetite for the rest of a step and

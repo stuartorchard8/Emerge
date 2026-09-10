@@ -822,6 +822,19 @@ class OutofspaceController(
     /** The same press on the ORE row, which has no species to key on. */
     fun setFeedsOre(book: FeedBook, taking: Boolean) = retune(book.switchedOre(taking))
 
+    /**
+     * One press of the switch on a store's auto-lock shortlist — see [Storage.candidates].
+     *
+     * ⚠️ **The set is built here rather than on the machine**, unlike [setFeeds]. `Storage` has no
+     * switch of its own because a shortlist has no second half to disagree about: there is no ore
+     * row, and no "off" that means anything but absence from the set.
+     */
+    fun setShortlisted(store: Storage, species: Species, listed: Boolean) =
+        pending.add(Edit.ShortlistStorage(
+            store.center,
+            if (listed) store.candidates + species else store.candidates - species,
+        ))
+
     private fun retune(book: FeedBook) =
         pending.add(Edit.TuneFeed(book.center, book.whitelist, book.ore))
 

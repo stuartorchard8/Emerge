@@ -148,13 +148,23 @@ class Acceptance private constructor(
      */
     fun admits(mixture: Mixture): Boolean {
         if (isSatisfied) return false
-        only?.let { allowed ->
+        val allowed = only
+        if (allowed != null) {
             // Nothing is not a delivery — [buildableFrom]'s first line, for its reason.
             if (mixture.total <= 0L) return false
             for (s in Species.ALL) if (mixture[s] > 0L && !allowed[s.ordinal]) return false
-            return true
         }
+        // ⛔ **[only] and [filter] COMPOSE, and [only] used to return here instead.** A sink may be
+        // fussy in more than one way at once, and the store shortlist is what proved it: "one of
+        // these five species, and only if it is pure" is two statements about one lump, and there is
+        // nowhere else to put the second. Stated as two acceptances it would say the opposite of
+        // what it means — a tile's acceptances are OR'd at the door, so "one of these five" beside
+        // "anything pure" admits pure gravel. See [shortlisted].
+        //
+        // ⚠️ The electrolytic cell, which [onlyOf] was written for, states no [filter] at all and so
+        // cannot tell the difference. Nothing about it changed.
         filter?.let { return it.admits(mixture) }
+        if (allowed != null) return true
         val want = bill ?: return true
         return buildableFrom(want, mixture)
     }
@@ -226,6 +236,30 @@ class Acceptance private constructor(
          */
         fun filtered(filter: SpeciesFilter, wanted: Long = UNLIMITED): Acceptance =
             Acceptance(null, filter, null, stopsTraffic = false, wanted = wanted)
+
+        /**
+         * Takes any **one** of [species], at [pure], and [wanted] more grams of it: a store that has
+         * yet to decide which of a shortlist it will hold.
+         *
+         * ⛔ **One acceptance and not one per species, which is the whole reason this exists.** The
+         * obvious spelling is a [filtered] apiece and it is wrong twice over. A tile's acceptances
+         * are OR'd, so five of them are five *independent* appetites: [Whitelist.promised] is keyed
+         * per acceptance, so five different species could each have a packet let go for them in one
+         * step, and four of the five would be stranded the moment the tank made up its mind — which
+         * is exactly the failure the one-packet cap exists to prevent, walked back in through the
+         * door the fix left open. As one acceptance the promise is spent once.
+         *
+         * ⚠️ **Both halves are asked**, which is why [admits] no longer returns early on [only]. The
+         * membership test says *which* species and the [SpeciesFilter] says *how pure*; a shortlist
+         * of five under a `pure = true` lock means five species and no blends, including no blend of
+         * two shortlisted species — which a bare [onlyOf] would happily admit and a store would then
+         * mix into something it can never ship again.
+         */
+        fun shortlisted(species: Set<Species>, pure: Boolean?, wanted: Long = UNLIMITED): Acceptance {
+            val mask = BooleanArray(Species.COUNT)
+            for (s in species) mask[s.ordinal] = true
+            return Acceptance(null, SpeciesFilter(null, pure), mask, stopsTraffic = false, wanted = wanted)
+        }
 
         /**
          * Takes what [bill] can be built from, and [shortBy] more grams of it.

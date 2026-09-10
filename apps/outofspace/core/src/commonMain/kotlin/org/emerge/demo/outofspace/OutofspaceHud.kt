@@ -345,9 +345,9 @@ class OutofspaceHud {
      * player's other way of saying REFRESH, and a sheet that reopened onto a stale list would make
      * that gesture do nothing.
      */
-    fun openFeedSheet(tile: TileIndex, book: FeedBook, stock: Stockpile) {
+    internal fun openFeedSheet(tile: TileIndex, target: FeedTarget, stock: Stockpile) {
         feedTile = tile
-        refreshFeedRows(book, stock)
+        refreshFeedRows(target.listed, target.ore, stock)
         openSheet = Sheet.Feed
     }
 
@@ -359,9 +359,9 @@ class OutofspaceHud {
      * section joins the list in its rightful place by mass; anything that is neither aboard nor
      * whitelisted stops having a row.
      */
-    fun refreshFeedRows(book: FeedBook, stock: Stockpile) {
-        feedRows = feedSpecies(book, stock)
-        feedRowsHaveOre = feedWantsOreRow(book, stock)
+    fun refreshFeedRows(listed: (Species) -> Boolean, oreOn: Boolean?, stock: Stockpile) {
+        feedRows = feedSpecies(listed, stock)
+        feedRowsHaveOre = feedWantsOreRow(oreOn, stock)
     }
 
     /**
@@ -383,13 +383,13 @@ class OutofspaceHud {
      * with nothing aboard — both on the list, both spent — would otherwise be free to swap places
      * between one refresh and the next for no reason the player could see.
      */
-    private fun feedSpecies(book: FeedBook, stock: Stockpile): List<Species> =
-        Species.ALL.filter { stock.buildable(it) > 0L || book.takes(it) }
+    private fun feedSpecies(listed: (Species) -> Boolean, stock: Stockpile): List<Species> =
+        Species.ALL.filter { stock.buildable(it) > 0L || listed(it) }
             .sortedByDescending { stock.buildable(it) }
 
     /** Whether the ORE row earns its place: there is some aboard, or the switch is already on. */
-    private fun feedWantsOreRow(book: FeedBook, stock: Stockpile): Boolean =
-        stock.blended.total > 0L || book.ore
+    private fun feedWantsOreRow(oreOn: Boolean?, stock: Stockpile): Boolean =
+        oreOn != null && (stock.blended.total > 0L || oreOn)
 
     /**
      * What has come aboard since the list was taken — the NEW section, and nothing else.
@@ -398,15 +398,15 @@ class OutofspaceHud {
      * freeze: a species arriving mid-read must not push the row under the player's finger down by
      * one. It gets its own heading at the bottom, where nothing is above it to move.
      */
-    fun newFeedSpecies(book: FeedBook, stock: Stockpile): List<Species> {
+    fun newFeedSpecies(listed: (Species) -> Boolean, stock: Stockpile): List<Species> {
         if (feedRows.isEmpty() && !feedRowsHaveOre) return emptyList()
         val shown = feedRows.toHashSet()
-        return feedSpecies(book, stock).filter { it !in shown }
+        return feedSpecies(listed, stock).filter { it !in shown }
     }
 
     /** Whether ore has turned up since the list was taken — the ORE row's half of [newFeedSpecies]. */
-    fun newFeedOre(book: FeedBook, stock: Stockpile): Boolean =
-        !feedRowsHaveOre && feedWantsOreRow(book, stock)
+    fun newFeedOre(oreOn: Boolean?, stock: Stockpile): Boolean =
+        !feedRowsHaveOre && feedWantsOreRow(oreOn, stock)
 
     private val collapsed = mutableSetOf<String>()
     private val expanded = mutableSetOf<String>()
@@ -1115,7 +1115,7 @@ class OutofspaceHud {
         // is a sweep of every buffer, every belt and the whole deck — see [build] — and this needs
         // it exactly once per opening rather than once per frame the inspector happens to be up.
         button("WHITELIST", 0x2E5A6BFFL) {
-            openFeedSheet(tile, ejector, controller.state.stockpile)
+            FeedTarget.of(controller, ejector)?.let { openFeedSheet(tile, it, controller.state.stockpile) }
         }
     }
 
@@ -1152,7 +1152,7 @@ class OutofspaceHud {
      * belts send this here*; what they promise the player is what happens next, which is the only
      * thing they need to get right.
      */
-    private data class FeedWords(
+    internal data class FeedWords(
         /** The sheet's own heading. */
         val title: String,
         /** The lit-side button: what the machine does with what arrives. */
@@ -1161,51 +1161,156 @@ class OutofspaceHud {
         val off: String,
         /** The lit side's colour — see [EAT_ON], where the difference is argued. */
         val onLit: Long,
+        /**
+         * The other side's colour when *it* is the lit one.
+         *
+         * ⛔ **Both halves need naming, and for one machine they were the same.** This was
+         * [KEEP_ON] for everybody until the shortlist arrived, whose two sides are ALLOW and BAR —
+         * both green, so the only thing telling a player which state a row was in was which *column*
+         * the lit cell sat in. Every other switch in this HUD says it twice, and a screenshot is
+         * what caught it.
+         */
+        val offLit: Long,
     ) {
         companion object {
-            val OVERBOARD = FeedWords("OVERBOARD", "EJECT", "KEEP", EJECT_ON)
-            val KILN = FeedWords("INTO THE KILN", "COOK", "LEAVE", EAT_ON)
+            val OVERBOARD = FeedWords("OVERBOARD", "EJECT", "KEEP", EJECT_ON, KEEP_ON)
+            val KILN = FeedWords("INTO THE KILN", "COOK", "LEAVE", EAT_ON, KEEP_ON)
 
-            /** Which set of words [book] speaks. */
-            fun of(book: FeedBook): FeedWords = if (book is Furnace) KILN else OVERBOARD
+            /**
+             * ⚠️ **"MAY HOLD", not "HOLD"** — a shortlist does not decide what the tank ends up
+             * with, it decides what it is *allowed* to end up with, and the tank still settles on
+             * exactly one of them. A caption promising more than that would be promising the one
+             * thing a store cannot do; see [Storage.candidates].
+             */
+            val SHORTLIST = FeedWords("MAY LOCK ONTO", "ALLOW", "BAR", KEEP_ON, BAR_ON)
+        }
+    }
+
+    /**
+     * One machine's feed sheet, as the sheet needs to see it: what the rows say, which of them are
+     * lit, and what a press does.
+     *
+     * ⛔ **The sheet serves two things that are NOT the same type, and this is where that is
+     * absorbed.** A [FeedBook] is a machine's whole appetite and an empty one refuses everything; a
+     * store's [Storage.candidates] is an optional narrowing of an appetite that already exists and
+     * an empty one allows everything. They are opposite at exactly the point a shared interface
+     * would have hidden — so they stay two types, and the *control* is what is shared, through four
+     * function-typed fields that neither of them has to know about.
+     *
+     * ⚠️ **[ore] is null for a store**, which is how the sheet knows not to draw the row. Ore is not
+     * a species and a store locks onto a species, so there is nothing for that switch to say.
+     */
+    internal class FeedTarget(
+        val words: FeedWords,
+        /** Whether [species]'s row is lit. */
+        val lit: (Species) -> Boolean,
+        /**
+         * Whether [species] is on the player's list **explicitly** — which earns it a row even with
+         * none aboard.
+         *
+         * ⛔ **Not the same question as [lit], and a store is why.** An empty shortlist lights every
+         * row, so a `lit`-shaped test here would hand a fresh tank a row for all hundred-odd species
+         * in the game. What earns a row is that the ship holds some, or that the player has said
+         * something about it — and for an empty shortlist they have said nothing about anything.
+         */
+        val listed: (Species) -> Boolean,
+        /** One press. Sets the named side rather than flipping — see [FeedBook.switched]. */
+        val press: (Species, Boolean) -> Unit,
+        /** The ORE row's state, or null when this machine has no ore row at all. */
+        val ore: Boolean?,
+        val pressOre: (Boolean) -> Unit,
+        /** Drawn above the columns: whatever this machine wants said about itself. */
+        val summary: (PanelBuilder.() -> Unit)?,
+        /** Open the article on [species] — the row's name is a link, on every machine. */
+        val wiki: (Species) -> Unit,
+    ) {
+        companion object {
+            /** How [machine] wants its list shown, or null if it keeps no list at all. */
+            fun of(controller: OutofspaceController, machine: DeckMachine?): FeedTarget? = when (machine) {
+                is Ejector -> FeedTarget(
+                    FeedWords.OVERBOARD,
+                    lit = { machine.takes(it) },
+                    listed = { machine.takes(it) },
+                    press = { sp, on -> controller.setFeeds(machine, sp, on) },
+                    ore = machine.ore,
+                    pressOre = { on -> controller.setFeedsOre(machine, on) },
+                    summary = { keyValue("THROWN AWAY", mass(machine.ventedMass), 0x9A9A9AFFL, 0xE0864AFFL) },
+                    wiki = { controller.openWiki(it) },
+                )
+                is Furnace -> FeedTarget(
+                    FeedWords.KILN,
+                    lit = { machine.takes(it) },
+                    listed = { machine.takes(it) },
+                    press = { sp, on -> controller.setFeeds(machine, sp, on) },
+                    ore = machine.ore,
+                    pressOre = { on -> controller.setFeedsOre(machine, on) },
+                    summary = { keyValue("HOLD AT", "${machine.setTemperature} K", 0x9A9A9AFFL, 0xE0864AFFL) },
+                    wiki = { controller.openWiki(it) },
+                )
+                is Storage -> FeedTarget(
+                    FeedWords.SHORTLIST,
+                    lit = { machine.candidates.isEmpty() || it in machine.candidates },
+                    listed = { it in machine.candidates },
+                    press = { sp, on -> controller.setShortlisted(machine, sp, on) },
+                    ore = null,
+                    pressOre = { },
+                    summary = {
+                        // ⛔ **Both of these are the sentence a player needs and neither is a
+                        // number.** An empty shortlist lights every row, which looks identical to
+                        // one the player has ticked everything on and means something different the
+                        // moment they bar one; and a shortlist under a store with auto-lock off is a
+                        // dial that does nothing at all.
+                        if (machine.candidates.isEmpty()) {
+                            text("nothing barred — this tank may lock onto anything", 0x9A9A9AFFL)
+                        } else {
+                            keyValue("MAY LOCK ONTO", "${machine.candidates.size} species", 0x9A9A9AFFL, 0x6EE08AFFL)
+                        }
+                        if (!machine.autoLock) {
+                            text("AUTO-LOCK IS OFF · this list does nothing until it is on", 0xE0A93AFFL)
+                        }
+                    },
+                    wiki = { controller.openWiki(it) },
+                )
+                else -> null
+            }
         }
     }
 
     private fun UiBuilder.feedSheet(controller: OutofspaceController, stock: Stockpile) {
         val s = controller.state
-        val book = s.machineCovering(feedTile) as? FeedBook
-        val words = book?.let { FeedWords.of(it) } ?: FeedWords.OVERBOARD
+        val target = FeedTarget.of(controller, s.machineCovering(feedTile))
+        val words = target?.words ?: FeedWords.OVERBOARD
 
         val body: PanelBuilder.() -> Unit = {
-            if (book == null) {
+            if (target == null) {
                 // The machine was taken apart, or moved, while its list was open. Said rather than
                 // dismissed: a sheet that vanished mid-read would look like a misclick.
                 text("that machine is no longer there", 0x9A9A9AFFL)
             } else {
                 row(gapPx = 6f) {
-                    button("REFRESH", 0x2E5A6BFFL) { refreshFeedRows(book, stock) }
+                    button("REFRESH", 0x2E5A6BFFL) { refreshFeedRows(target.listed, target.ore, stock) }
                     // ⚠️ **Short enough to fit beside the button**, which a screenshot decided and no
                     // test could have: the sheet clips at its own edge rather than wrapping, and the
                     // first wording ran off it mid-word. See the counter's note about padding.
                     text("re-rank · drop spent rows", 0x7A7A7AFFL)
                 }
-                if (book is Ejector) keyValue("THROWN AWAY", mass(book.ventedMass), 0x9A9A9AFFL, 0xE0864AFFL)
+                target.summary?.invoke(this)
                 gap()
                 row(gapPx = 2f) {
                     text(EJECT_NAME_W.named("SPECIES"), 0x7A7A7AFFL)
                     text(EJECT_MASS_W.cell("ABOARD"), 0x7A7A7AFFL)
                 }
-                for (species in feedRows) feedRow(controller, book, words, stock, species)
-                if (feedRowsHaveOre) feedOreRow(controller, book, words, stock)
+                for (species in feedRows) feedRow(target, stock, species)
+                if (feedRowsHaveOre) feedOreRow(target, stock)
 
                 // ── What has come aboard since the list was taken ────────────
-                val arrived = newFeedSpecies(book, stock)
-                val newOre = newFeedOre(book, stock)
+                val arrived = newFeedSpecies(target.listed, stock)
+                val newOre = newFeedOre(target.ore, stock)
                 if (arrived.isNotEmpty() || newOre) {
                     gap()
                     text("NEW ABOARD  ·  REFRESH to file them", 0xE0C060FFL)
-                    for (species in arrived) feedRow(controller, book, words, stock, species)
-                    if (newOre) feedOreRow(controller, book, words, stock)
+                    for (species in arrived) feedRow(target, stock, species)
+                    if (newOre) feedOreRow(target, stock)
                 }
                 if (feedRows.isEmpty() && !feedRowsHaveOre && arrived.isEmpty() && !newOre) {
                     text("(nothing aboard, and nothing on the list)", 0x9A9A9AFFL)
@@ -1236,23 +1341,22 @@ class OutofspaceHud {
      * dissolved in a hold of rock is on the ORE row and nowhere else.
      */
     private fun PanelBuilder.feedRow(
-        controller: OutofspaceController,
-        book: FeedBook,
-        words: FeedWords,
+        target: FeedTarget,
         stock: Stockpile,
         species: Species,
     ) {
-        val on = book.takes(species)
+        val on = target.lit(species)
+        val words = target.words
         row(gapPx = 2f) {
-            button(EJECT_NAME_W.named(species.name.uppercase()), 0x00000000L) { controller.openWiki(species) }
+            button(EJECT_NAME_W.named(species.name.uppercase()), 0x00000000L) { target.wiki(species) }
             text(EJECT_MASS_W.cell(mass(stock.buildable(species))), speciesColor(species) or 0xFFL)
             // ⛔ **Each button SETS its side rather than flipping.** Pressing the lit one has to be a
             // no-op, or a double tap on the ON side would quietly take the species back off the list.
             button(words.on, if (on) words.onLit else EJECT_OFF, widthEm = EJECT_SWITCH_EM) {
-                controller.setFeeds(book, species, true)
+                target.press(species, true)
             }
-            button(words.off, if (on) EJECT_OFF else KEEP_ON, widthEm = EJECT_SWITCH_EM) {
-                controller.setFeeds(book, species, false)
+            button(words.off, if (on) EJECT_OFF else words.offLit, widthEm = EJECT_SWITCH_EM) {
+                target.press(species, false)
             }
         }
     }
@@ -1270,22 +1374,21 @@ class OutofspaceHud {
      * aboard would otherwise sit permanently at the top of a list of metals.
      */
     private fun PanelBuilder.feedOreRow(
-        controller: OutofspaceController,
-        book: FeedBook,
-        words: FeedWords,
+        target: FeedTarget,
         stock: Stockpile,
     ) {
-        val on = book.ore
+        val on = target.ore ?: return
+        val words = target.words
         row(gapPx = 2f) {
             // Inert, unlike a species name: there is no article about "ore", because ore is not a
             // thing — it is every lump aboard that is more than one thing.
             button(EJECT_NAME_W.named("ORE"), 0x00000000L) { }
             text(EJECT_MASS_W.cell(mass(stock.blended.total)), 0xC8A44AFFL)
             button(words.on, if (on) words.onLit else EJECT_OFF, widthEm = EJECT_SWITCH_EM) {
-                controller.setFeedsOre(book, true)
+                target.pressOre(true)
             }
-            button(words.off, if (on) EJECT_OFF else KEEP_ON, widthEm = EJECT_SWITCH_EM) {
-                controller.setFeedsOre(book, false)
+            button(words.off, if (on) EJECT_OFF else words.offLit, widthEm = EJECT_SWITCH_EM) {
+                target.pressOre(false)
             }
         }
         text("  everything aboard that is more than one species", 0x5A5A5AFFL)
@@ -2574,6 +2677,29 @@ class OutofspaceHud {
                 controller.toggleStorageAutoUnlock(storage)
             }
         }
+
+        // ── What auto-lock is allowed to settle on ───────────────────────────
+        //
+        // ⛔ **Only while the tank has not settled**, because that is the only time the shortlist
+        // decides anything — see [Storage.candidates]. A locked tank showing a control that cannot
+        // affect it is a control the player will press and then wonder about.
+        //
+        // ⚠️ **The empty case reads "anything", not "0 species".** A shortlist is the one list in
+        // the game whose empty state means *no restriction*, and a number would say the opposite of
+        // that to anyone who has met the ejector's.
+        if (storage.filter?.species == null) {
+            keyValue(
+                "MAY LOCK ONTO",
+                if (storage.candidates.isEmpty()) "anything" else "${storage.candidates.size} species",
+                0x9A9A9AFFL,
+                if (storage.candidates.isEmpty()) 0x9ED0B0FFL else 0x6EE08AFFL,
+            )
+            button("SHORTLIST", 0x2E5A6BFFL) {
+                FeedTarget.of(controller, storage)?.let {
+                    openFeedSheet(storage.center, it, controller.state.stockpile)
+                }
+            }
+        }
     }
 
     /**
@@ -2638,7 +2764,7 @@ class OutofspaceHud {
         // The stockpile is read HERE, in the press — see the ejector's note, which is the same sweep
         // for the same reason.
         button("FEED LIST", 0x2E5A6BFFL) {
-            openFeedSheet(tile, machine, controller.state.stockpile)
+            FeedTarget.of(controller, machine)?.let { openFeedSheet(tile, it, controller.state.stockpile) }
         }
 
         if (chamber != null && controller.state.buffers.resourceAt(chamber) != null) {
@@ -2949,29 +3075,6 @@ class OutofspaceHud {
         }
     }
 
-    /**
-     * Mass, read in grams whatever the sim's own unit currently is — the twin of [energy], and see
-     * its note for why the conversion belongs here.
-     *
-     * Tonnes earn a tier because a vessel is tens of them: a hull plate quoted in kilograms is six
-     * digits before it means anything to anyone.
-     */
-    private fun mass(v: Long): String {
-        // ⚠️ **Sign split off first, exactly as [tiles] does two functions down.** Written without
-        // it, `g < 10_000` is true of every negative number however large, so a tonne of deficit
-        // printed as "-1010624g" while a tonne of surplus printed as "1.0t"; and the kg and t
-        // branches would have made nonsense of a negative remainder if they had ever been reached.
-        // Invisible until the mass-balance row started showing a signed drift instead of the word
-        // LEAK, which is a fair argument for having made it show one.
-        val sign = if (v < 0L) "-" else ""
-        val g = (if (v < 0L) -v else v) / Budget.GRAM
-        return when {
-            g < 10_000L -> "$sign${g}g"
-            g < 10_000_000L -> "$sign${g / 1000}.${(g % 1000) / 100}kg"
-            else -> "$sign${g / 1_000_000}.${(g % 1_000_000) / 100_000}t"
-        }
-    }
-
     private fun time(ticks: Long, config: OutofspaceConfig): String {
         val sign = if (ticks < 0L) "-" else ""
         val ms = (if (ticks < 0L) -ticks else ticks) * 1000 / config.ticksPerSecond
@@ -3015,6 +3118,33 @@ class OutofspaceHud {
     private fun milliG(raw: Long): Long = raw * 1000L / Int.MAX_VALUE.toLong()
 
     companion object {
+        /**
+         * Mass, read in grams whatever the sim's own unit currently is — the twin of [energy], and see
+         * its note for why the conversion belongs here.
+         *
+         * Tonnes earn a tier because a vessel is tens of them: a hull plate quoted in kilograms is six
+         * digits before it means anything to anyone.
+         *
+         * ⚠️ **On the companion because it holds no state and [FeedTarget] needs it.** That descriptor
+         * is built in a nested companion, which cannot reach an instance member — and every existing
+         * caller inside the class still spells it exactly as it did.
+         */
+        internal fun mass(v: Long): String {
+            // ⚠️ **Sign split off first, exactly as [tiles] does two functions down.** Written without
+            // it, `g < 10_000` is true of every negative number however large, so a tonne of deficit
+            // printed as "-1010624g" while a tonne of surplus printed as "1.0t"; and the kg and t
+            // branches would have made nonsense of a negative remainder if they had ever been reached.
+            // Invisible until the mass-balance row started showing a signed drift instead of the word
+            // LEAK, which is a fair argument for having made it show one.
+            val sign = if (v < 0L) "-" else ""
+            val g = (if (v < 0L) -v else v) / Budget.GRAM
+            return when {
+                g < 10_000L -> "$sign${g}g"
+                g < 10_000_000L -> "$sign${g / 1000}.${(g % 1000) / 100}kg"
+                else -> "$sign${g / 1_000_000}.${(g % 1_000_000) / 100_000}t"
+            }
+        }
+
 
         /**
          * ⛔ **Wide enough for the longest species name in the game, plus a separator.**
@@ -3087,6 +3217,17 @@ class OutofspaceHud {
          * which *column* the lit cell sat in. Every other switch in this HUD says it twice.
          */
         private val EAT_ON = 0xA0662EFFL
+
+        /**
+         * A barred row on a store's shortlist: **amber, the HUD's word for "you have taken the pin
+         * out"** — the same colour AUTO-LOCK OFF wears two rows below it.
+         *
+         * ⛔ **Not [KEEP_ON]'s green**, which is what ALLOW is: on this switch the permissive side is
+         * the safe one and the restrictive side is the choice worth seeing, which is the reverse of
+         * the ejector's and the reason [FeedWords.offLit] exists at all. Not red either — barring a
+         * species costs nothing and can be undone by pressing the cell beside it.
+         */
+        private val BAR_ON = 0x8A6520FFL
 
         /** Nav view half-width (provisional — 20s debug thrust). */
         const val NAV_RANGE_TILES: Float = 256f

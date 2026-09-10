@@ -721,6 +721,13 @@ object Save {
                 val autoLock = if (m.autoLock)     0b01 else 0
                 val autoUnlock = if (m.autoUnlock) 0b10 else 0
                 put("auto", (autoLock+autoUnlock).toString())
+                // ⚠️ **Its own key, and NOT `eject`.** A book's field and a shortlist's look the
+                // same and mean opposite things when absent — an absent book is shut, an absent
+                // shortlist is *any* — so sharing a key would be one reader away from turning every
+                // unlocked tank in every save into a dead end. See [Storage.candidates].
+                if (m.candidates.isNotEmpty()) {
+                    put("shortlist", m.candidates.sortedBy { it.ordinal }.joinToString(",") { it.name })
+                }
             }
             is DockingPort -> {
                 // ⚠️ **One signed field, because the port holds one signed number per species.**
@@ -2083,6 +2090,14 @@ object Save {
                 },
                 autoLock = (f["auto"]?.toIntOrNull() ?: 0)%2==1,
                 autoUnlock = (f["auto"]?.toIntOrNull() ?: 0)/2%2==1,
+                // An unknown species name is a refusal, for `feedSpecies`' reason: a shortlist
+                // quietly shortened by one is a tank allowed to lock onto something the player
+                // struck off, and it would say nothing about having changed its mind.
+                candidates = f["shortlist"].orEmpty().split(',')
+                    .filter { it.isNotEmpty() }
+                    .mapTo(LinkedHashSet()) { name ->
+                        Species.ALL.firstOrNull { it.name == name } ?: fail("unknown species '$name'")
+                    },
             )
             DeckMachineKind.Sensor -> Sensor(
                 tile,

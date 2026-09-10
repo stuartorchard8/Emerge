@@ -10,8 +10,11 @@ import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.RailLayer
+import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.Segment
+import org.emerge.demo.outofspace.world.Acceptance
 import org.emerge.demo.outofspace.world.SpeciesFilter
+import org.emerge.demo.outofspace.world.Whitelist
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
@@ -160,6 +163,107 @@ class StorageAutoLockTest {
             "a decided tank took only $held g in thirty rail periods — the cap outlived the lock",
         )
         assertEquals(0L, onTrack(s)[Species.Nickel], "nickel set off toward a tank locked to iron")
+    }
+
+    // ── The shortlist: which of them it is allowed to settle on ──────────────
+
+    /** [undecidedTank] with a shortlist on it. */
+    private fun shortlisted(vararg species: Species): Storage =
+        undecidedTank().withCandidates(species.toSet())
+
+    /**
+     * ⭐ **The point of the shortlist.** A tank that would have taken the first pure thing to reach
+     * it takes the first pure thing *on the list*, and the network never sets off with anything else.
+     *
+     * ⛔ **Both halves again.** An empty corridor is the claim: nickel is not merely refused at the
+     * door, it is never justified in moving, because the appetite the tank published never mentioned
+     * it. A shortlist that only worked at the door would leave exactly the jam the one-packet cap
+     * was written to prevent.
+     */
+    @Test
+    fun `a shortlisted tank locks onto a species from its list`() {
+        val s = run(twoSourcesOneTank(shortlisted(Species.Iron)), 30 * RAIL_PERIOD)
+
+        assertEquals(SpeciesFilter(Species.Iron, pure = true), destination(s).filter)
+        assertEquals(0L, onTrack(s)[Species.Nickel], "nickel set off toward a tank that had barred it")
+        assertEquals(
+            10L * Capacity.PACKET_MASS,
+            s.inStore(s.grid.tile(2, 6), BufferRole.Inside)?.total,
+            "the barred store poured anyway",
+        )
+    }
+
+    /**
+     * ⛔ **An EMPTY shortlist means ANY, and it is the one list in the game that does.**
+     *
+     * A [org.emerge.demo.outofspace.world.machine.FeedBook]'s empty book refuses everything, because
+     * there the list is the machine's whole appetite. A shortlist narrows an appetite that already
+     * exists, so an empty one narrows nothing — and read the other way every unlocked tank in every
+     * save would become a dead end on load. The two look identical in the panel and are opposite
+     * here, which is why they are not the same type.
+     */
+    @Test
+    fun `an empty shortlist bars nothing`() {
+        val s = run(twoSourcesOneTank(shortlisted()), 30 * RAIL_PERIOD)
+
+        assertNotNull(destination(s).filter?.species, "an empty shortlist stopped the tank locking at all")
+    }
+
+    /**
+     * The shortlist is asked at the **door** as well as on the route.
+     *
+     * ⚠️ A tank shortlisted to something that never arrives stays undecided rather than settling on
+     * the first thing to reach it by some other road — see `lockedOnto`, where the same predicate is
+     * read a second time.
+     */
+    @Test
+    fun `a tank shortlisted to something absent never settles`() {
+        val s = run(twoSourcesOneTank(shortlisted(Species.Titanium)), 30 * RAIL_PERIOD)
+
+        assertEquals(null, destination(s).filter?.species, "the tank settled on something it had barred")
+        assertEquals(0L, onTrack(s).total, "and nothing should have set off toward it")
+    }
+
+    /**
+     * ⛔ **One appetite for the whole shortlist, not one per species.** Five acceptances would be
+     * five independent promises — [Whitelist.promised] is keyed per acceptance — so one packet of
+     * each shortlisted species could set off in a single step and all but one would strand. That is
+     * the one-packet cap walked back in through a door the fix left open, and it is why
+     * [Acceptance.shortlisted] is a single acceptance carrying both halves.
+     */
+    @Test
+    fun `a shortlist of both species still commits to only one`() {
+        val s = run(twoSourcesOneTank(shortlisted(Species.Iron, Species.Nickel)), 30 * RAIL_PERIOD)
+
+        val locked = assertNotNull(destination(s).filter?.species, "the tank never locked onto anything")
+        val loser = if (locked == Species.Iron) Species.Nickel else Species.Iron
+        assertEquals(
+            0L,
+            onTrack(s)[loser],
+            "both shortlisted species set off and $loser is stranded: ${onTrack(s)}",
+        )
+    }
+
+    /** The shortlist survives a round trip, and an empty one leaves no trace in the file. */
+    @Test
+    fun `the shortlist round-trips through a save`() {
+        val listed = twoSourcesOneTank(shortlisted(Species.Iron, Species.Nickel))
+        val back = Save.read(Save.write(listed))
+        assertEquals(
+            setOf(Species.Iron, Species.Nickel),
+            (back.deck[back.grid.tile(11, 4)] as Storage).candidates,
+        )
+
+        // ⛔ **And a store with no shortlist writes no field**, so a file written before shortlists
+        // existed is indistinguishable from one written today — which is what makes "absent means
+        // any" a reading rather than a migration.
+        val text = Save.write(twoSourcesOneTank(shortlisted()))
+        assertTrue(
+            text.lineSequence().none { it.startsWith("deckmachine") && it.contains("shortlist=") },
+            "an empty shortlist wrote a field",
+        )
+        val plain = Save.read(text)
+        assertTrue((plain.deck[plain.grid.tile(11, 4)] as Storage).candidates.isEmpty())
     }
 
     /**
