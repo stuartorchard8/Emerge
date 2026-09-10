@@ -184,18 +184,19 @@ import org.emerge.demo.outofspace.world.Ambient
  * Row-major walk order for determinism. Belt delivery: one step per advance (not instant),
  * so jams crawl backwards visually. */
 /**
- * A store that has yet to decide what it holds, as the rail step needs to see it.
+ * What one store told the network it would take this step, and where it stands.
  *
  * Three facts about one machine, gathered where they are known: the appetite it published (the key
- * everything downstream is rationed by — see `Whitelist.promised`), the machine to write the lock
- * onto, and the door material arrives at. The last two are both derivable from the first with a
- * search, which is what this replaced.
+ * everything downstream is rationed by — see `Whitelist.promised`), the machine to write a lock
+ * onto, and the door material arrives at. Two passes need it — the election of a nearest source for
+ * a tank that has yet to decide, and the question a tank asks before it lets go of its lock — and
+ * both would otherwise search the port map for what the `accepts` loop already had in its hand.
  */
-internal class ProvisionalStore(
+internal class StoreAppetite(
     val acceptance: Acceptance,
-    /** The machine's centre — where the lock is written. */
+    /** The machine's centre — where a lock is written. */
     val owner: TileIndex,
-    /** Its input port tile — where the walk upstream starts. */
+    /** Its input port tile — where a walk upstream starts. */
     val door: TileIndex,
 )
 
@@ -4243,7 +4244,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * the same corridor. So the test here is the one [pushOut] applies, asked in advance.
          */
         private fun electFeeds(
-            provisional: List<ProvisionalStore>,
+            provisional: List<StoreAppetite>,
             ports: Map<TileIndex, List<Port>>,
             flow: FlowGraph,
             signals: SignalField,
@@ -4521,12 +4522,72 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          */
         fun settled(store: TileIndex): Long = minOf(before.buffers.massAt(store), buffers.massAt(store))
 
+        /**
+         * Whether anything [m] would take is already **standing on a route to it**.
+         *
+         * ⛔ **The rails are read live, and the whitelist's own bookkeeping is not.** The obvious
+         * spelling is `Demand.covered` plus `Whitelist.promised` — what the walk saw standing, plus
+         * what sources have let go of since — and it is wrong in the one arrangement that matters:
+         * `promise` returns early whenever the tile [permitsAnything][Whitelist.permitsAnything], so
+         * a corridor that also reaches a vent books **nothing**, and `covered` is a snapshot taken
+         * before this step's dispatches. A tank draining overboard is exactly such a corridor. The
+         * load on the track is neither stale nor conditional: [pushOut] puts a packet down the
+         * instant it lets go of it, so a source earlier in the walk is already visible here.
+         *
+         * ⚠️ **Upstream over [FlowGraph.feeders]**, so only material that can actually reach this
+         * door counts — a lump on a branch that leads elsewhere is not on its way here.
+         *
+         * ⚠️ **Asked of the appetite the store published this step**, which is the only thing
+         * material was routed by, rather than of the filter alone: a store with no room left wants
+         * nothing, and nothing is what is coming.
+         *
+         * ⚠️ **A store with no appetite on record answers NO**, which is the safe reading: it stated
+         * nothing this step, so nothing was routed to it, so nothing can be coming. That covers a
+         * store whose input port is off the rails entirely — a tank the player fills by hand, and
+         * exactly the one auto-unlock was written for.
+         *
+         * ⚠️ Walked only when a store with the switch on runs dry, which is rare and on no hot path.
+         */
+        private fun anythingComingFor(m: Storage): Boolean {
+            val stated = storeAppetites[m.center] ?: return false
+            val flow = flowGraph
+            val seen = HashSet<TileIndex>()
+            var ring = listOf(stated.door)
+            seen += stated.door
+            while (ring.isNotEmpty()) {
+                for (tile in ring) {
+                    val load = rail.resourceAt(tile) ?: continue
+                    if (stated.acceptance.admits(load)) return true
+                }
+                val next = ArrayList<TileIndex>()
+                for (tile in ring) for (feeder in flow.feeders(tile)) if (seen.add(feeder)) next.add(feeder)
+                ring = next
+            }
+            return false
+        }
+
         /** Write back what is left in the buffer that drained through [port]. */
         private fun drained(m: DeckMachine, port: Port, rest: Mixture?) {
             val role = outputBufferRole(m, port.stream) ?: return
             val tile = bufferTile(grid, m, port.owner, role) ?: return
 
-            if (rest == null && m is Storage && m.autoUnlock) {
+            // ⛔ **Empty is not the same event as finished, and this used to treat them as one.** A
+            // store that is also a source passes *through* empty on its way back to full — it is a
+            // valve, filled from one side and drained from the other — and unlocking there throws
+            // away the only fact keeping the right material coming. Worse, the tank is then
+            // *undecided*, so it asks for a single packet while it makes up its mind, and loses
+            // every race to whatever locked sink is competing for the same species. Stu's
+            // `dump.txt`, the buffer at (10,6): locked to oxygen, drained overboard, unlocked, and
+            // three thousand ticks later still empty while the silo at (19,6) had taken two tonnes.
+            //
+            // ⛔ **And it could change what the tank IS.** A tank that unlocks between two packets of
+            // oxygen is a tank that will lock onto whatever happens to arrive next, so an empty
+            // moment could quietly turn an oxygen tank into a water one. What the switch is for is a
+            // tank the player has finished with; what it was firing on is a tank in mid-flow.
+            //
+            // ⚠️ **Asked of the appetite the store published this step**, which is the only thing
+            // material was routed by — see [storeAppetites].
+            if (rest == null && m is Storage && m.autoUnlock && !anythingComingFor(m)) {
                 val filter = m.filter
                 if (filter?.pure == true) {
                     // A pure lock unlocks the species but keeps the standard
@@ -4559,7 +4620,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * ⚠️ **Empty on nearly every vessel**, and [lockOnDispatch] leans on that: a tank locks once
          * in its life and is an ordinary sink for ever afterwards.
          */
-        var provisionalStores: List<ProvisionalStore> = emptyList()
+        var provisionalStores: List<StoreAppetite> = emptyList()
             private set
 
         /**
@@ -4568,6 +4629,26 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * Empty whenever [provisionalStores] is, which is nearly always.
          */
         var electedFeed: Map<Acceptance, TileIndex> = emptyMap()
+            private set
+
+        /**
+         * What each store told the network it would take this step, by the machine that said it.
+         *
+         * Read by [drained] alone, to ask whether anything is on its way before a tank lets go of
+         * its lock — see [Whitelist.anythingBoundFor], where that question is argued.
+         */
+        var storeAppetites: Map<TileIndex, StoreAppetite> = emptyMap()
+            private set
+
+        /**
+         * This step's flow graph, held for the passes that run after [advanceRails] has finished
+         * with it — [anythingComingFor] walks it upstream from a store's door.
+         *
+         * Empty until the first rail step, for [whitelist]'s reason and with the same consequence:
+         * a question asked before any flow has been worked out is answered "nothing", which is the
+         * safe way to be wrong.
+         */
+        var flowGraph: FlowGraph = FlowGraph.empty()
             private set
 
         /** How many tiles carry track, so the flow can be rebuilt only when something ceased to be. */
@@ -4711,7 +4792,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Which of those acceptances belong to a store that has yet to decide what it holds, and
             // where that store stands. Empty on any vessel with no undecided tank on it, which is
             // most of them — see [lockOnDispatch], the only reader.
-            val provisional = ArrayList<ProvisionalStore>()
+            val provisional = ArrayList<StoreAppetite>()
+            /** Every store's stated appetite, by the machine that stated it — see [storeAppetites]. */
+            val statedByStore = HashMap<TileIndex, StoreAppetite>()
             if (ghosts.isNotEmpty()) {
                 val stuff = tracks[Conduit.Rail]
                 for (tile in ghosts) {
@@ -4851,7 +4934,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // So the store is told **at dispatch**, not at delivery: the decision goes into the
                 // world where every route can see it, and the next step's walk has a *decided* tank
                 // in it. See [lockOnDispatch].
-                if (storage.speciesUndecided) provisional.add(ProvisionalStore(acceptance, input.owner, tile))
+                val stated = StoreAppetite(acceptance, input.owner, tile)
+                // ⚠️ **Every store is recorded, not only the undecided ones.** A tank about to
+                // auto-unlock is by definition still *locked*, so [provisionalStores] cannot answer
+                // for it — see [anythingComingFor].
+                statedByStore[input.owner] = stated
+                if (storage.speciesUndecided) provisional.add(stated)
             }
 
             // ── Motors: a fluid, or the one species the player locked it to ──
@@ -5137,6 +5225,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             this.whitelist = whitelist
             this.provisionalStores = provisional
             this.electedFeed = electFeeds(provisional, ports, flow, signals)
+            this.storeAppetites = statedByStore
+            this.flowGraph = flow
 
             // A construction site at [to] that stands **in the road** — unpaid track and nothing
             // else. Named once because both questions below need it and neither may answer it

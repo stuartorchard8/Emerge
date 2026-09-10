@@ -974,7 +974,13 @@ class FlowGraph internal constructor(
             }
         }
 
-        private fun empty(): FlowGraph =
+        /**
+         * A graph with nothing in it — what a pass reads before any flow has been worked out.
+         *
+         * ⚠️ **Visible now**, because [Work.flowGraph] holds this step's graph for the passes that
+         * run after `advanceRails`, and it needs something to hold before the first one.
+         */
+        fun empty(): FlowGraph =
             FlowGraph(ByteArray(0), emptySet(), emptySet(), emptyList(), emptyMap(), emptyMap(), Grid(0, 0))
     }
 }
