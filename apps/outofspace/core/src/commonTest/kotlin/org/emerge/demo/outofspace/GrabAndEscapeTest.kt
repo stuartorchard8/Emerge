@@ -146,6 +146,40 @@ class GrabAndEscapeTest {
         assertTrue(c.grab(OVEN))
 
         assertEquals(TUNED_KELVIN, (assertNotNull(c.stamped).setTemperature as Setting.Present).value)
+        // ⭐ And the panel follows the copy: the machine whose dials are worth reading is the one
+        // about to be put down again, not the one clicked before it.
+        assertEquals(OVEN, c.inspectTile, "the panel was left on the machine that was NOT copied")
+        assertEquals(InspectLayer.Deck, c.inspectLayer)
+    }
+
+    /**
+     * ⛔ **A press that copies nothing leaves the panel where it was.**
+     *
+     * The other half of the rule above, and the half worth writing down: moving the inspector onto
+     * bare floor would trade a machine the player is reading for a readout of the air they swept the
+     * mouse across on the way somewhere.
+     */
+    @Test
+    fun a_grab_that_takes_nothing_leaves_the_panel_alone() {
+        val c = controller()
+        c.inspect(OVEN, InspectLayer.Deck)
+
+        assertFalse(c.grab(EMPTY_FLOOR))
+
+        assertEquals(OVEN, c.inspectTile, "an empty-handed press moved the panel")
+        assertEquals(InspectLayer.Deck, c.inspectLayer)
+    }
+
+    /** A grab off a conduit points the panel at that conduit's layer, not at the tile's top one. */
+    @Test
+    fun a_grab_off_a_pinned_layer_leaves_the_panel_on_it() {
+        val c = controller()
+        c.inspect(THREADED, InspectLayer.Rail)
+
+        assertTrue(c.grab(THREADED))
+
+        assertEquals(THREADED, c.inspectTile)
+        assertEquals(InspectLayer.Rail, c.inspectLayer, "the panel stepped off the layer that was copied")
     }
 
     /**

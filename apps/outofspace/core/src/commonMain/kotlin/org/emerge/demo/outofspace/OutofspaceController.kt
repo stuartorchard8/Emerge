@@ -895,6 +895,15 @@ class OutofspaceController(
      * still takes the build tool out either way, with the palette empty: "build something" is what
      * the key means even when there is nothing to copy, and a key that did nothing at all would read
      * as broken. Returns whether anything was actually picked up.
+     *
+     * ⭐ **A successful grab points the inspector at what it took** (Stu, 2026-09-10), on the layer it
+     * took it from. The moment a player copies a machine is the moment they want to see how it is
+     * set up — they are about to put another one down — and leaving the panel on whatever was
+     * clicked last put the *wrong* machine's dials next to the words "copied from a furnace".
+     *
+     * ⛔ **Only on success**, which is the half worth stating: a press over bare deck empties the
+     * palette and leaves the panel alone. Moving it there would trade a machine the player was
+     * reading for a readout of the air they happened to sweep the mouse across.
      */
     fun grab(over: TileIndex = TileIndex.NONE): Boolean {
         tool = Tool.Build
@@ -914,6 +923,7 @@ class OutofspaceController(
                 reaimed = TileIndex.NONE
                 buildMaterial = state.deck.materialOf(machine)
                 (machine as? DirectedDeckMachine)?.let { brushFacing = it.facing }
+                inspect(tile, layer)
                 return true
             }
             InspectLayer.Rail -> Conduit.Rail
@@ -927,6 +937,7 @@ class OutofspaceController(
         val material = state.conduits.materialAt(conduit, tile) ?: return false
         brush = Brush.Run(conduit)
         buildMaterial = material
+        inspect(tile, layer)
         return true
     }
 

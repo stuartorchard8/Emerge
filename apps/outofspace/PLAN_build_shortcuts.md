@@ -15,6 +15,8 @@ one machine and walks to another — the panel holds the *last* thing clicked �
 machine meant remembering to click it first. `grab(over)` takes the pointer; the inspector's pinned
 layer still decides *which layer* of a tile is meant, but only on the tile it is pinned to. The
 inspect panel carries a **COPY** button for the same act aimed at the tile it is describing.
+⭐ **And a grab that lands points the inspector at what it took** — the moment you copy a machine is
+the moment you want its dials in front of you, since you are about to put another one down.
 See `project_oos_paste_over_machines` for the paste half.
 
 ## The idea

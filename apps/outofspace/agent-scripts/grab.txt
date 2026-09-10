@@ -15,11 +15,17 @@
 # which is what a first click of the inspector would have shown. And the panel carries a COPY button
 # for the same act aimed at the tile it is describing.
 #
+# ⭐ **A copy that lands POINTS THE PANEL at what it took.** The moment you copy a machine is the
+# moment you want its dials in front of you -- you are about to put another one down. A press that
+# copies nothing leaves the panel alone.
+#
 # What to read in the shots:
 #   `inspecting`   -- the DECK panel of a tuned furnace: the setpoint and dwell shown here are the
 #                     ones that have to come out the other end. ⚠️ And the COPY button under the
 #                     layer tabs, which is this key with a face on it.
 #   `holding`      -- the build panel with FURNACE picked and, in green, "copied from a furnace".
+#                     ⚠️ **And the inspector back on the tuned furnace**, which the line above put
+#                     deliberately on the OTHER one: the panel followed the copy.
 #                     ⛔ The green line is the whole of what tells a player they are holding a COPY
 #                     rather than a plain brush -- a stamped brush and an ordinary one are the same
 #                     entry in the palette and behave differently, so this line is not decoration.
@@ -56,9 +62,11 @@ run 10
 shot inspecting
 
 # ── C ────────────────────────────────────────────────────────────────────────
-# ⚠️ **Aimed.** The pointer goes on the tuned furnace first, because that is what C now reads -- the
-# panel above still says the same thing here, and the two only have to agree because the script has
-# not moved on yet.
+# ⚠️ **Aimed, and the panel is deliberately pointed somewhere else first.** C reads the POINTER, so
+# the untuned furnace in the panel is what a version reading the inspector would have copied -- and
+# the shot below shows the panel back on the tuned one, because a copy that lands takes the panel
+# with it.
+inspect 30 13 DECK
 hover 22 13
 grab
 shot holding
