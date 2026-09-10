@@ -565,6 +565,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             for ((tile, at) in ports) for (port in at) {
                 if (port.kind == PortKind.Output) w.pushOut(tile, port, state.signals)
             }
+            // ⚠️ **Last, so a tank that took delivery or shipped this step is judged on where it
+            // ended up** rather than on the moment in the middle of the pass it was looked at.
+            w.releaseSpentLocks(state.signals)
             w.readGauges()
             motion = w.motion.freeze(state.tick, RAIL_PERIOD)
         } else {
@@ -4285,6 +4288,78 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         /**
+         * **Who actually gets** a lump of [cargo] standing on [from] — the first door downstream of
+         * it that admits the material, or null when nothing does.
+         *
+         * ⛔ **A route reaching a sink is not the same as material arriving at it, and treating the
+         * two as one is what this exists to stop.** [Whitelist.leadsTo] answers "is that appetite on
+         * this tile's route list", which is a question about the *shape* of the network; a packet
+         * put down here does not consult the shape, it rolls, and the first thing on the way that
+         * will have it eats it. Where those two answers differ, every pass that reads the route list
+         * as a promise of delivery is wrong in the same direction — see [lockOnDispatch] and
+         * [anythingComingFor], the two that were.
+         *
+         * Stu's `prem.txt`, the silo at (9,14): a pure-water packet let go by the concentrator at
+         * (11,12) is on a route that reaches it, so it locked onto water — and was eaten three hops
+         * short by the silo at (9,11), which is locked to pure water with five tonnes of room and
+         * therefore intercepts *every* water packet that will ever enter that corridor. Not a race
+         * the tank sometimes loses: one it can never win.
+         *
+         * ⛔ **A bridge counts, and it is not an appetite.** A span states nothing in the acceptance
+         * map — appetite travels *backwards* across it, so the corridor leading to one is told what
+         * lies beyond rather than that a span takes things. But at the door a bridge grabs any solid
+         * packet that steps onto its tile whenever a slot is free, with no filter of any kind, and
+         * whether a slot is free at the moment a lump arrives some ticks hence is not knowable from
+         * here. So a span on the way means the lump *may* leave the corridor, and that is enough:
+         * this may not promise delivery past one. Stu's `prem.txt` again — over three thousand ticks
+         * eight different pure species come down that corridor and `Bridge@(9,13)` takes every one
+         * of them, one tile short of the tank at (9,14).
+         *
+         * ⚠️ **Being unsure is free and being wrong is not**, which is what makes the conservative
+         * answer the right one. A pre-lock this declines to make costs the tank only the in-flight
+         * protection: it stays undecided, and the delivery path locks it correctly the moment
+         * something actually lands. A pre-lock made wrongly strands the tank.
+         *
+         * ⚠️ **Breadth first, [from] included, over [FlowGraph.successorTiles] and
+         * [FlowGraph.hopTo]** — the mirror of [firstUpstream]. ⚠️ Rings are walked in ascending tile
+         * order, the tie-break the rest of this pass uses. ⚠️ [Acceptance.admits] is asked, so a
+         * nearer door that is *full* does not intercept: it is not a sink for this lump any more.
+         *
+         * ⚠️ **Walked only for an undecided tank** — at its dispatch, and when it is about to let a
+         * lock go. Both are off the hot path, and [Work.provisionalStores] is empty on nearly every
+         * vessel.
+         */
+        private fun eatenBy(from: TileIndex, cargo: Mixture): TileIndex? {
+            val seen = HashSet<TileIndex>()
+            var ring = listOf(from)
+            seen += from
+            while (ring.isNotEmpty()) {
+                for (tile in ring.sortedBy { it.index }) {
+                    if (doorAcceptances[tile]?.any { it.admits(cargo) } == true) return tile
+                    if (spanTakesFrom(tile)) return tile
+                }
+                val next = ArrayList<TileIndex>()
+                for (tile in ring) {
+                    for (to in flowGraph.successorTiles(tile)) if (seen.add(to)) next.add(to)
+                    flowGraph.hopTo(tile)?.let { if (seen.add(it)) next.add(it) }
+                }
+                ring = next
+            }
+            return null
+        }
+
+        /** Whether a bridge would lift a lump off [tile] — see [eatenBy], where this is argued. */
+        private fun spanTakesFrom(tile: TileIndex): Boolean =
+            railPorts[tile].orEmpty().any { it.kind == PortKind.Input && deck[it.owner] is Bridge }
+
+        /**
+         * Whether a lump of [cargo] let go at [from] would reach [door] rather than being eaten
+         * short of it — see [eatenBy], where the question is argued.
+         */
+        private fun reaches(from: TileIndex, door: TileIndex, cargo: Mixture): Boolean =
+            eatenBy(from, cargo) == door
+
+        /**
          * Whether the machine behind [port] could put something [acceptance] wants onto [tile] now.
          *
          * ⚠️ **[pushOut]'s own preconditions, asked early.** Kept in step with it by being the same
@@ -4320,11 +4395,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * recorded that every route sees on the next walk — so recording it there is not a second
          * mechanism, it is the existing one being told the truth a step earlier.
          *
-         * ⚠️ **A dispatch can be wrong, and that is the cheap side of the trade.** Nothing reserves
-         * a route, so the packet this locked onto may be eaten by something else on the way and the
-         * tank is left waiting for a species that never turns up. That costs the player one press of
-         * the lock — against a corridor of stranded material that costs them the branch. Underdraw
-         * over overdraw, as everywhere else in this pass.
+         * ⚠️ **A dispatch can still be wrong, and that is the cheap side of the trade.** Nothing
+         * reserves a route, so a packet this locked onto may be eaten by a sink that fills between
+         * here and there, and the tank is left waiting for a species that never turns up. That is
+         * why [drained] lets a lock go again when the store is empty and nothing is coming: the
+         * commitment is a prediction, and a prediction has to be revisable.
+         *
+         * ⛔ **But only where the packet was ever ours to predict.** [Whitelist.leadsTo] answers a
+         * question about the *shape* of the network — is that appetite on this tile's route list —
+         * and a route reaching a tank says nothing about a nearer door on the same corridor eating
+         * the lump first. Asked that way the lock was not occasionally unlucky but reliably wrong:
+         * a tank behind a hungrier one of the same species locked onto every packet it was never
+         * going to see, and locked onto it again the moment it let go. See [eatenBy].
          *
          * ⚠️ **The lock in `deliver` is still there and is still needed.** Material can arrive at a
          * store without ever having been rationed — from a tile that answers
@@ -4336,6 +4418,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (provisionalStores.isEmpty()) return
             for (p in provisionalStores) {
                 if (!whitelist.leadsTo(from, p.acceptance, cargo)) continue
+                // ⛔ **And it has to actually arrive.** The line above says a route exists; this one
+                // says the lump takes it — see [eatenBy].
+                if (!reaches(from, p.door, cargo)) continue
                 val store = deck[p.owner] as? Storage ?: continue
                 if (!store.speciesUndecided) continue
                 deck[p.owner] = store.withFilter(lockedOnto(store, cargo))
@@ -4553,10 +4638,24 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         private fun anythingComingFor(m: Storage, signals: SignalField): Boolean {
             val stated = storeAppetites[m.center] ?: return false
             return firstUpstream(stated.door) { tile ->
+                // ⛔ **Coming *here*, not merely coming.** Material upstream on a route that reaches
+                // this door is not material this door will get: the first thing on the way that
+                // admits it eats it, and a tank sitting behind a hungrier one of its own species is
+                // upstream of everything and downstream of nothing. Answering the loose question
+                // held such a tank locked for ever — it always had something to wait for, and it was
+                // never waiting for it. See [eatenBy].
                 val load = rail.resourceAt(tile)
-                if (load != null && stated.acceptance.admits(load)) return@firstUpstream true
+                if (load != null && stated.acceptance.admits(load) && reaches(tile, stated.door, load)) {
+                    return@firstUpstream true
+                }
                 railPorts[tile].orEmpty().any {
-                    it.kind == PortKind.Output && canFeed(tile, it, stated.acceptance, signals)
+                    it.kind == PortKind.Output &&
+                        canFeed(tile, it, stated.acceptance, signals) &&
+                        // What that port would put down, asked the same way — a source whose output
+                        // is spoken for nearer the front is not a source for this tank.
+                        outputStoreTile(deck[it.owner]!!, it)
+                            ?.let { store -> buffers.resourceAt(store) }
+                            ?.let { held -> reaches(tile, stated.door, held) } == true
                 }
             } != null
         }
@@ -4582,16 +4681,54 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             //
             // ⚠️ **Asked of the appetite the store published this step**, which is the only thing
             // material was routed by — see [storeAppetites].
-            if (rest == null && m is Storage && m.autoUnlock && !anythingComingFor(m, signals)) {
-                val filter = m.filter
-                if (filter?.pure == true) {
-                    // A pure lock unlocks the species but keeps the standard
-                    deck[m.center] = m.copy(filter = filter.copy(species = null))
-                } else {
-                    deck[m.center] = m.copy(filter = null)
-                }
-            }
+            if (rest == null && m is Storage) releaseIfSpent(m, signals)
             buffers.put(tile, rest)
+        }
+
+        /**
+         * A store with the switch on that is **empty with nothing coming** lets its lock go.
+         *
+         * ⛔ **A state, not an event, and that is the fix.** This used to fire only on the edge a
+         * store drained to empty — from inside [pushOut], which is reached only by a store that
+         * successfully *ships something out*. So the one tank the switch could never rescue was the
+         * tank that never received a gram: nothing to ship, [pushOut] returns early, and the lock
+         * stood for ever. That is precisely the tank [lockOnDispatch] can strand, since a dispatch
+         * lock is a prediction — so the switch was unreachable in exactly the case it was needed.
+         *
+         * Stated as a state it covers both: the valve that has drained dry, and the tank holding a
+         * commitment that evaporated. ⚠️ **[anythingComingFor] is what keeps a tank in mid-flow from
+         * letting go** — a store passes *through* empty on its way back to full, and unlocking there
+         * throws away the only fact keeping the right material coming.
+         */
+        private fun releaseIfSpent(m: Storage, signals: SignalField) {
+            if (!m.autoUnlock) return
+            val filter = m.filter ?: return
+            // A pure lock unlocks the species but keeps the standard.
+            val released = if (filter.pure == true) filter.copy(species = null) else null
+            // ⚠️ **Nothing to give up, so nothing to walk for.** A tank that has yet to decide is
+            // already in the state this would put it in, and it is the common one — the sweep reads
+            // this before it touches the graph.
+            if (released == filter) return
+            if (anythingComingFor(m, signals)) return
+            deck[m.center] = m.copy(filter = released)
+        }
+
+        /**
+         * Every store that is holding a lock it has nothing to show for lets it go — see
+         * [releaseIfSpent].
+         *
+         * ⚠️ **Only locked, empty stores with the switch on are looked at**, and only ones that
+         * stated an appetite this step, so an ordinary vessel walks nothing at all: a decided tank
+         * with matter in it is skipped on a field read, before any graph is touched.
+         */
+        fun releaseSpentLocks(signals: SignalField) {
+            if (storeAppetites.isEmpty()) return
+            for (tile in storeAppetites.keys) {
+                val m = deck[tile] as? Storage ?: continue
+                if (!m.autoUnlock || m.filter == null) continue
+                if ((buffers.resourceAt(m.center)?.total ?: 0L) > 0L) continue
+                releaseIfSpent(m, signals)
+            }
         }
 
         /**
@@ -4652,6 +4789,17 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * after [advanceRails] has finished with its parameter.
          */
         var railPorts: Map<TileIndex, List<Port>> = emptyMap()
+            private set
+
+        /**
+         * What each door will take, held for [eatenBy] — which asks it of tiles all along a route
+         * rather than of one sink.
+         *
+         * ⚠️ **The same lists the routing walk was built from**, and it has to be: a lump is eaten
+         * by whichever door admits it first, and a second opinion about what a door admits would be
+         * a second answer to "where did that packet go".
+         */
+        var doorAcceptances: Map<TileIndex, List<Acceptance>> = emptyMap()
             private set
 
         /** How many tiles carry track, so the flow can be rebuilt only when something ceased to be. */
@@ -5231,6 +5379,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // than through its own parameters — see [firstUpstream].
             this.flowGraph = flow
             this.railPorts = ports
+            this.doorAcceptances = accepts
             this.storeAppetites = statedByStore
             this.electedFeed = electFeeds(provisional, signals)
 

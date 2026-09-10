@@ -37,6 +37,7 @@ import org.emerge.demo.outofspace.world.machine.DockingPort
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
+import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.render.torus.ui.Ui
 import org.emerge.sim.core.physics.primitives.Frac
@@ -1115,6 +1116,21 @@ object OutofspaceAgentHarness {
                     "  ${fmt(grams(standing.tiles(state.grid).sumOf { state.deck.stuff.massAt(it) }))}g" +
                     (if (standing.center in state.scrapping) "  MARKED FOR DECONSTRUCTION" else "") +
                     (if (state.deck.isGhost(standing.center)) "  GHOST" else ""))
+            }
+            // ⚠️ **What a tank has decided, which no other readout carries.** A store's lock is
+            // the one piece of machine state the network routes by, and a tank locked onto a
+            // species that never turns up is invisible in mass, in flow and in the track: it reads
+            // as an empty silo on a live corridor. See `lockOnDispatch`.
+            if (standing is Storage) {
+                val f = standing.filter
+                println("[agent]   store     ${standing.kind}" +
+                    "  lock ${f?.let { "${it.species?.name ?: "any"}${when (it.pure) { true -> " pure"; false -> " mixed"; null -> "" }}" } ?: "OPEN"}" +
+                    (if (standing.speciesUndecided) "  UNDECIDED" else "") +
+                    "  auto-lock ${if (standing.autoLock) "on" else "off"}" +
+                    "  auto-unlock ${if (standing.autoUnlock) "on" else "off"}" +
+                    (if (!standing.allowsAnySpecies) "  shortlist ${standing.candidates.map { it.name }.sorted()}" else ""))
+                val held = state.buffers.resourceAt(standing.center)
+                println("[agent]             holds ${fmt(grams(held?.total ?: 0L))}g of ${fmt(grams(standing.capacity))}g  ${held?.let { composition(it) } ?: "-"}")
             }
             // ⚠️ **Whose ports stand here, and which way they face.** A tile is a *source* to the
             // flow graph because some machine's OUTPUT port happens to sit on it, and that machine
