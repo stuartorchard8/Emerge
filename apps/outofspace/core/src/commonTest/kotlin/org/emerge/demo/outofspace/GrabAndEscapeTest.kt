@@ -8,6 +8,7 @@ import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.Segment
+import org.emerge.demo.outofspace.world.Setting
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
@@ -47,6 +48,14 @@ class GrabAndEscapeTest {
     private val TRACK = grid.tile(2, 9)
 
     /**
+     * A tile that is **two things at once**: track threaded under the plain furnace.
+     *
+     * The only fixture that can tell the two halves of [OutofspaceController.layerToGrab] apart —
+     * on a tile with one layer, "the pinned one" and "the topmost one" are the same answer.
+     */
+    private val THREADED = grid.tile(11, 4)
+
+    /**
      * ⛔ **Deliberately not the material either furnace is made of.** Half the claims here are about
      * a material *not* travelling where it should not, and a fixture whose two substances were the
      * same would pass those tests with the feature ripped out.
@@ -63,6 +72,7 @@ class GrabAndEscapeTest {
         deck += Furnace(PLAIN_OVEN, Direction.Right)
         val rails = MutableList<Segment?>(grid.size) { null }
         rails[TRACK.index] = Segment(Conduit.Rail, material = TRACK_METAL)
+        rails[THREADED.index] = Segment(Conduit.Rail, material = TRACK_METAL)
         return VesselState(
             grid,
             deck,
@@ -121,11 +131,99 @@ class GrabAndEscapeTest {
     }
 
     /**
+     * ⭐ **C copies what the POINTER is over, not what the panel is showing** (Stu, 2026-09-10).
+     *
+     * The two disagree the moment a player looks at one machine and walks to another, and the panel
+     * is the wrong one of the pair: it is full of the *last* thing they clicked, so a C that read it
+     * copied something they had stopped looking at.
+     */
+    @Test
+    fun c_copies_what_the_pointer_is_over() {
+        val c = controller()
+        // The inspector deliberately left on the untuned one, which is what a copy must NOT take.
+        c.inspect(PLAIN_OVEN, InspectLayer.Deck)
+
+        assertTrue(c.grab(OVEN))
+
+        assertEquals(TUNED_KELVIN, (assertNotNull(c.stamped).setTemperature as Setting.Present).value)
+    }
+
+    /**
+     * ⛔ **And pointing at bare deck empties the palette**, with a machine still up in the panel.
+     *
+     * That is the whole of what "it reads the pointer" means. Left to fall back on the inspector,
+     * every press over empty floor would hand the player back the last thing they clicked, and which
+     * of the two places on screen C was about would be anyone's guess.
+     */
+    @Test
+    fun c_over_bare_deck_empties_the_palette_though_a_machine_is_inspected() {
+        val c = controller()
+        c.inspect(OVEN, InspectLayer.Deck)
+
+        assertFalse(c.grab(EMPTY_FLOOR), "something was picked up off bare deck")
+        assertEquals(Tool.Build, c.tool, "and C stopped taking the build tool out")
+        assertNull(c.brush)
+        assertNull(c.stamped)
+    }
+
+    /** With no pointer at all — off the grid, or a host without one — it is the inspected tile. */
+    @Test
+    fun c_with_no_pointer_falls_back_to_the_inspected_tile() {
+        val c = controller()
+        c.inspect(OVEN, InspectLayer.Deck)
+
+        assertTrue(c.grab())
+
+        assertEquals(TUNED_KELVIN, (assertNotNull(c.stamped).setTemperature as Setting.Present).value)
+    }
+
+    /**
+     * A tile with a belt under a furnace hands over **the furnace**, because that is the topmost
+     * thing on it — the same answer a first click of the inspector gives.
+     */
+    @Test
+    fun c_over_a_tile_of_two_layers_takes_the_top_one() {
+        val c = controller()
+
+        assertTrue(c.grab(THREADED))
+
+        assertEquals(Brush.Building(DeckMachineKind.Furnace), c.brush, "the belt won over the machine on it")
+    }
+
+    /**
+     * ⚠️ **Unless the inspector is pinned to that very tile**, which is how a player says they mean
+     * the belt. The pin is an answer about *one* tile and does not travel: see
+     * [c_over_a_tile_of_two_layers_takes_the_top_one], which is the same tile with the pin somewhere
+     * else.
+     */
+    @Test
+    fun a_layer_pinned_on_that_tile_wins() {
+        val c = controller()
+        c.inspect(THREADED, InspectLayer.Rail)
+
+        assertTrue(c.grab(THREADED))
+
+        assertEquals(Brush.Run(Conduit.Rail), c.brush)
+        assertEquals(TRACK_METAL, c.buildMaterial)
+    }
+
+    /** And a pin on some other tile does not reach this one. */
+    @Test
+    fun a_layer_pinned_elsewhere_does_not_travel() {
+        val c = controller()
+        c.inspect(TRACK, InspectLayer.Rail)
+
+        assertTrue(c.grab(THREADED))
+
+        assertEquals(Brush.Building(DeckMachineKind.Furnace), c.brush, "a pin on another tile followed the pointer")
+    }
+
+    /**
      * C on the RAIL layer hands over track, in the metal that track is made of — not the deck's.
      *
-     * ⚠️ **This is the layer doing the work.** The inspector has already made the player say which
-     * of a tile's several things they mean, so C never has to guess; a version that looked at the
-     * tile instead would answer "furnace" for every tile of track threaded under one.
+     * ⚠️ **This is the layer doing the work.** A tile is several things, so C has to be told which —
+     * by the pointer landing on a tile whose top layer is the track, or by the inspector being
+     * pinned to that tile's RAIL layer. What it must never do is guess.
      */
     @Test
     fun c_on_a_conduit_layer_takes_the_conduit_and_its_metal() {

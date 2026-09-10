@@ -654,7 +654,7 @@ class OutofspaceHud {
                 // the way in — point at a thing, get one of those — and ESC is the way back out of
                 // whatever C left you holding, one rung at a time, all the way to the menu. Neither
                 // is discoverable from a panel that only names the tool you are already in.
-                text("C copy what you're inspecting · ESC back out", 0x9A9A9AFFL)
+                text("C copy what you're pointing at · ESC back out", 0x9A9A9AFFL)
                 text("WASD or right-drag pan · wheel zoom", 0x9A9A9AFFL)
                 text("space pause", 0x9A9A9AFFL)
                 text("F8 fit grid", 0x9A9A9AFFL)
@@ -1751,6 +1751,20 @@ class OutofspaceHud {
                     ) { controller.inspect(tile, option) }
                 },
             )
+            // ⭐ **The C key with a face on it.** C copies whatever is under the *pointer* — see
+            // [OutofspaceController.grab] — and a key with no button anywhere is a key that is only
+            // ever found by reading a wall of text somewhere else. This one is aimed at the tile the
+            // panel is about, on the layer the panel is showing, so what it hands over is exactly
+            // what is being read above it.
+            //
+            // ⚠️ **Not offered for the air**, which is the one layer there is no brush for: a button
+            // that emptied the palette would be a button for undoing what the player is holding.
+            if (layer != InspectLayer.Atmosphere) {
+                row {
+                    button("COPY", 0x2E5A6BFFL) { controller.grab(tile) }
+                    text("· or press C over it", 0x9A9A9AFFL)
+                }
+            }
             when (layer) {
                 InspectLayer.Deck -> deckLayer(controller, tile)
                 InspectLayer.Rail -> conduitLayer(controller, tile, Conduit.Rail)

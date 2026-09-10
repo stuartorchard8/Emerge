@@ -9,6 +9,14 @@ obviously right and that every future key is bound by. Tests: `ToolKeysTest`. To
 Where it landed differently from the scope, the scope has been corrected in place and the change
 noted at the foot of this file.
 
+⚠️ **`C` reads the pointer, not the inspector** (Stu, 2026-09-10). It read `inspectTile` when this
+was written, and the table below still said so. The two tiles disagree the moment a player looks at
+one machine and walks to another — the panel holds the *last* thing clicked — so copying a second
+machine meant remembering to click it first. `grab(over)` takes the pointer; the inspector's pinned
+layer still decides *which layer* of a tile is meant, but only on the tile it is pinned to. The
+inspect panel carries a **COPY** button for the same act aimed at the tile it is describing.
+See `project_oos_paste_over_machines` for the paste half.
+
 ## The idea
 
 Right now the tools are reached by *cycling*: `Q` steps through all seven of them and `E` steps
@@ -21,7 +29,7 @@ The proposal replaces it with **a key per tool, and the same key aims it**:
 | key | opens | and cycles |
 |-----|-------|------------|
 | `B` | BUILD | the palette (`Brush.ALL`) |
-| `C` | BUILD **holding a copy** of what the inspector reads | — (already built) |
+| `C` | BUILD **holding a copy** of what the **pointer** is over | — (already built) |
 | `X` | DELETE | `DeleteLayer` — TOP / BRIDGE / RAIL / PIPE / WIRE / DECK / ALL |
 | `Z` | CANCEL | nothing; it has no sub-target |
 | `Q` | CUT | `Tool.CUTTABLE` — RAIL / PIPE / WIRE |

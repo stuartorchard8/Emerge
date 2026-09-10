@@ -858,8 +858,8 @@ class OutofspaceController(
     ))
 
     /**
-     * Takes the build tool out, holding a copy of **whatever layer of whatever tile the inspector is
-     * reading** — material, settings, facing and all. What **C** does.
+     * Takes the build tool out, holding a copy of **whatever is under the pointer** — material,
+     * settings, facing and all. What **C** does; [over] is the tile the pointer is on.
      *
      * ### The one gesture
      *
@@ -873,20 +873,35 @@ class OutofspaceController(
      * Putting it down somewhere empty builds one. Putting it down on another furnace tunes *that*
      * one — see [place]. There is nothing else to learn.
      *
-     * ⚠️ **It reads the inspector's layer, not the tile.** A tile is not one thing, and the inspector
-     * has already made the player say which of its things they mean — see [InspectLayer]. So C on
-     * the DECK layer hands over the building and B on the RAIL layer hands over a length of track in
-     * the metal that track is made of, and neither has to guess.
+     * ⭐ **The pointer, not the inspector** (Stu, 2026-09-10). It read [inspectTile] until then,
+     * which is a different tile from the one the hand is over as soon as the player looks at
+     * something and then moves on — so copying a second machine meant clicking it first, and the
+     * click was easy to forget precisely because the panel it opened was already full of the *last*
+     * thing. Pointing at a thing and pressing a key is the gesture every automation game spells the
+     * same way, and this is now that gesture and nothing else.
      *
-     * With nothing under the inspector it still takes the build tool out, with the palette empty:
-     * "build something" is what the key means even when there is nothing to copy, and a key that did
-     * nothing at all would read as broken. Returns whether anything was actually picked up.
+     * ⚠️ **A tile is not one thing, so the layer still has to be chosen** — see [layerToGrab]. The
+     * inspector's pinned layer wins on the tile it is pinned to, and everywhere else the topmost
+     * readable layer does, which is the same rule a first inspector click follows. So C on a belt
+     * threaded under a machine hands over the machine, and C on the same belt with the inspector
+     * pinned to its RAIL layer hands over a length of track in the metal that track is made of.
+     *
+     * ⛔ **Pointing at bare deck empties the palette**, even with a machine still up in the panel.
+     * That is the whole of what "it reads the pointer" means: the answer to *what am I holding* has
+     * to be the thing the player is aiming at, or the key is a lottery between two places on screen.
+     *
+     * With nothing under the pointer at all — off the grid, or a host with no pointer to speak of —
+     * it falls back to the inspected tile, which is also what the panel's own COPY button uses. It
+     * still takes the build tool out either way, with the palette empty: "build something" is what
+     * the key means even when there is nothing to copy, and a key that did nothing at all would read
+     * as broken. Returns whether anything was actually picked up.
      */
-    fun grab(): Boolean {
+    fun grab(over: TileIndex = TileIndex.NONE): Boolean {
         tool = Tool.Build
-        val tile = inspectTile
+        val tile = if (over != TileIndex.NONE) over else inspectTile
         if (tile == TileIndex.NONE) return false
-        val conduit = when (inspectLayer) {
+        val layer = layerToGrab(tile) ?: return false
+        val conduit = when (layer) {
             InspectLayer.Deck -> {
                 val machine = state.machineCovering(tile) ?: return false
                 // ⚠️ **Through the setter, and before the settings are written.** Assigning the brush
@@ -913,6 +928,27 @@ class OutofspaceController(
         brush = Brush.Run(conduit)
         buildMaterial = material
         return true
+    }
+
+    /**
+     * Which layer of [tile] a [grab] reads, or null if there is nothing there to read at all.
+     *
+     * ⭐ **The pinned layer wins on the tile it is pinned to, and nowhere else.** Those are the two
+     * halves of one rule: the inspector is how a player says *which* of a tile's several things they
+     * mean, so on that tile their answer stands — but it is an answer about that tile, and carrying
+     * it to the next one would have C hand over a length of track because the player once peeled a
+     * belt out from under something three machines ago.
+     *
+     * ⚠️ **Everywhere else it is [inspectableLayers]' first entry**, which is the topmost thing with
+     * something to say — the building, failing that the track, and in the end the air. The same rule
+     * a first click of the inspector follows, so what C picks up is what a click would have shown.
+     */
+    private fun layerToGrab(tile: TileIndex): InspectLayer? {
+        val layers = inspectableLayers(state, tile)
+        if (layers.isEmpty()) return null
+        // A pinned layer that has since stopped existing — the belt was deleted, the room was sealed
+        // — falls back to the top of the list, exactly as the panel does.
+        return if (tile == inspectTile && inspectLayer in layers) inspectLayer else layers[0]
     }
 
     /**

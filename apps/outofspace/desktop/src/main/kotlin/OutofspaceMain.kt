@@ -360,10 +360,10 @@ fun main() {
                 }
                 println("════════════════════════════════════════════════════════")
             }
-            // Take a copy of whatever the inspector is reading and go build it — see
+            // Take a copy of whatever is **under the pointer** and go build it — see
             // [OutofspaceController.grab]. It replaced C-then-V on the hovered tile, which was two
             // keys for one idea; this is the *copy* half of that pair kept, doing the whole job.
-            GLFW_KEY_C -> controller.grab()
+            GLFW_KEY_C -> controller.grab(hovered)
             // Through the controller's own ladder, so the keys and the HUD's buttons cannot reach
             // different speeds — see `OutofspaceController.SPEEDS`.
             GLFW_KEY_LEFT_BRACKET -> controller.nudgeSpeed(faster = false)

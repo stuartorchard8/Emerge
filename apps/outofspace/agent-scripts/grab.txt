@@ -9,9 +9,16 @@
 # It replaced C-then-V on the hovered tile: two keys, an invisible holding pen, and a rule ("same
 # kind of machine only") that could only be found by breaking it. C keeps its key and does the lot.
 #
+# ⭐ **C copies what the POINTER is over**, not what the panel is showing -- the two disagree the
+# moment you look at one machine and walk to another. The inspector still decides WHICH LAYER of a
+# tile is meant, but only on the tile it is pinned to; everywhere else C takes the topmost thing,
+# which is what a first click of the inspector would have shown. And the panel carries a COPY button
+# for the same act aimed at the tile it is describing.
+#
 # What to read in the shots:
-#   `inspecting`   -- the DECK panel of a tuned furnace. This is what C is pointed at; the setpoint
-#                     and dwell shown here are the ones that have to come out the other end.
+#   `inspecting`   -- the DECK panel of a tuned furnace: the setpoint and dwell shown here are the
+#                     ones that have to come out the other end. ⚠️ And the COPY button under the
+#                     layer tabs, which is this key with a face on it.
 #   `holding`      -- the build panel with FURNACE picked and, in green, "copied from a furnace".
 #                     ⛔ The green line is the whole of what tells a player they are holding a COPY
 #                     rather than a plain brush -- a stamped brush and an ordinary one are the same
@@ -49,6 +56,10 @@ run 10
 shot inspecting
 
 # ── C ────────────────────────────────────────────────────────────────────────
+# ⚠️ **Aimed.** The pointer goes on the tuned furnace first, because that is what C now reads -- the
+# panel above still says the same thing here, and the two only have to agree because the script has
+# not moved on yet.
+hover 22 13
 grab
 shot holding
 

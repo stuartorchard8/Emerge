@@ -262,7 +262,10 @@ object OutofspaceAgentHarness {
                  * four itself would be testing that it can set four fields.
                  */
                 "grab" -> {
-                    val got = controller.grab()
+                    // ⚠️ **The pointer, which is wherever `hover` left it** — and `TileIndex.NONE`
+                    // when a script has never called `hover`, which falls back to the inspected tile.
+                    // So `inspect` then `grab` goes on meaning what it always meant.
+                    val got = controller.grab(hovered)
                     settle()
                     println("[agent] grab -> " + if (!got) "nothing (palette empty)" else
                         "${controller.brush?.label} of ${controller.buildMaterial?.name} facing ${controller.brushFacing}" +
