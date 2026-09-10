@@ -1290,8 +1290,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
      * Booking one and not the other makes [VesselState.massBalance] and [VesselState.heatBalance]
      * wrong in unrelated-looking ways — see [VesselState.importedEnergy].
      *
-     * ⚠️ **Nothing happens without a counterparty.** A port with no market is a dead end that fills
-     * up, which is exactly what an undocked ship's docking port should be.
+     * ⚠️ **Nothing happens without a counterparty**, and nothing arrives without one either: an
+     * unberthed port states no demand at all, so the network stops routing cargo to it rather than
+     * packing a store that cannot be emptied. See the berth gate in the sell-side demand work. What
+     * is left in the mouth when the clamps open is whatever was already in flight, and it goes out
+     * on the first tick of the next berth.
      */
     private fun Work.trade(m: DockingPort, on: Boolean, tile: TileIndex): DockingPort {
         if (!on) return m
@@ -4635,6 +4638,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // port selling nothing is inert and the belts back up behind it — correct, and not a
             // failure to explain away.
             //
+            // ⛔ **And a port with nobody on the other side of it is selling nothing**, whatever the
+            // book says — see the berth gate below.
+            //
             // ✅ **One `Acceptance` per order, and the plural falls out for free.** `accepts` is
             // keyed tile → *list* and `Whitelist.room` admits a lump any demand at the tile wants,
             // so several filters at one tile already union. `PLAN_economy.md` §5.1 expected to have
@@ -4649,6 +4655,23 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // behalf is a demand nothing can satisfy.
                 if (deck.isGhost(input.owner)) continue
                 val list = accepts.getOrPut(tile) { mutableListOf() }
+                // ⛔ **An UNBERTHED port asks for nothing**, and the entry above is stated before
+                // this line rather than after it: an empty list refuses everything, and no entry at
+                // all would take anything for ever. A mouth with nobody on the far side of it is a
+                // closed door, not an open one — the crossroads case is exactly as live here as it
+                // is for a port whose book is empty.
+                //
+                // ⛔ **The same condition [Work.trade] sells on, deliberately the same one.** What
+                // the network delivers here is sold the tick it lands, so a demand the mouth cannot
+                // act on would draw cargo off the belts to *sit* in the store — where the next
+                // delivery blends into it, and a mixed store then sells as ore for a quarter of what
+                // the metal was worth. Demand and sale disagreeing is what that costs, so they read
+                // one field. Reported by Stu, 2026-09-10.
+                //
+                // ⚠️ **Which is a fact about the VESSEL and not about this port**, because
+                // [Work.market] is: one counterparty is on the far side of every mouth the ship has
+                // — see that field. A ship berthed anywhere trades through all of them.
+                if (market == null) continue
                 // ⚠️ **The permission itself is the appetite**, so a bounded one stops the network
                 // delivering more than was allowed — the same way a construction site's shortfall
                 // does. An unbounded one carries [Acceptance.UNLIMITED] because [DockingPort.ENDLESS]

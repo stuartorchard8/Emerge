@@ -34,6 +34,12 @@ column reports is therefore an expectation and not a receipt.
  * it. Put nothing on the list and the port is inert with the belts backed up behind it, which is
  * the correct behaviour and not a failure.
  *
+ * ⛔ **A port that is not berthed has no demand either**, whatever its book says. There is nobody to
+ * sell to, so a delivery would stand in the mouth until the ship docks again — and the delivery
+ * after it would blend into the first, which turns two pure lumps into ore and a quarter of the
+ * price. The sell list is a permission to trade, not a permission to accumulate; the mouth only
+ * opens when there is a counterparty behind it.
+ *
  * ⚠️ **A sell list is several species where a locked warehouse is one**, and that needed no new
  * machinery at all: the acceptance map is keyed tile → *list*, and `Whitelist.room` admits a lump
  * that any demand at the tile wants. So one [SpeciesFilter] per order, unioned by the walk that

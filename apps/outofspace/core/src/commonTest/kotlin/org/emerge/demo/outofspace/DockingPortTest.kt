@@ -189,13 +189,44 @@ class DockingPortTest {
     }
 
     @Test
-    fun `a port with no counterparty is inert`() {
-        // ⚠️ Not the same as having nothing to sell. The list admits the cargo, so the network
-        // delivers it — and then it sits in the mouth, because there is nobody on the other side.
-        val s = run(world(market = null), 60 * RAIL_PERIOD)
+    fun `a port with no counterparty is never sent anything`() {
+        // ⛔ **Stu, 2026-09-10.** The list used to be the whole of the demand, so an undocked port
+        // pulled cargo off the belts and held it — and the second delivery blended into the first,
+        // which turns two pure lumps into ore and sells for a quarter of the metal's price the next
+        // time the ship berths. A permission to trade is not a permission to accumulate.
+        //
+        // ⚠️ Same shape as an empty sell list, and that is the point: with nobody on the far side
+        // the mouth is closed, so the tank has nowhere to pour and holds on to its stock.
+        val start = world(market = null)
+        val s = run(start, 60 * RAIL_PERIOD)
         assertEquals(0L, s.credits, "an undocked port paid out")
         assertEquals(0L, s.exportedMass, "an undocked port sold something")
-        assertTrue((s.inStore(port, BufferRole.Input)?.total ?: 0L) > 0L, "the cargo never arrived")
+        assertEquals(
+            0L, s.inStore(port, BufferRole.Input)?.total ?: 0L,
+            "an undocked port filled its mouth with cargo it cannot sell",
+        )
+        assertEquals(0L, s.onTrack(), "the run filled up against a mouth with nobody behind it")
+        assertEquals(start.inTransitMass, s.inTransitMass, "matter moved for a trade that never happened")
+    }
+
+    @Test
+    fun `a closed mouth still refuses traffic passing over its door`() {
+        // ⛔ **The empty acceptance list is stated OUT LOUD even when the port is shut**, which is
+        // the whole reason the berth gate sits after the `getOrPut` and not before it: a tile with
+        // no entry takes anything for ever, so an unberthed port would swallow a lump merely
+        // crossing its input door — the `dock.txt` bug, back by a different route.
+        val cargo = 4L * Capacity.PACKET_MASS
+        val start = crossroads(
+            Species.Nickel,
+            Mixture.of(Species.Nickel to cargo, energy = 0L).atAmbient(),
+        ).copy(dockedMarket = null)
+        val s = run(start, 60 * RAIL_PERIOD)
+
+        assertEquals(
+            0L, s.inStore(port, BufferRole.Input)?.total ?: 0L,
+            "an undocked mouth swallowed traffic passing over it",
+        )
+        assertTrue(s.beyondThePort() > 0L, "nothing reached the warehouse the cargo was bound for")
     }
 
     // ── The mouth's own door ─────────────────────────────────────────────────
