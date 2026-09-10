@@ -388,6 +388,69 @@ class StorageAutoLockTest {
     }
 
     /**
+     * A near source with a **high** tile index and a far one with a **low** index — so that "nearest"
+     * and "lowest tile" cannot both be right.
+     *
+     *      (2,1) far  ──▼── (2,2)=34 ──▶ ─────────────▶ (8,4) the tank
+     *                                                     ▲
+     *      (8,6) near ─────────────────────────── (8,5)=88
+     *
+     * The near source is **one hop** from the tank's door and the far one is eight; their ports are
+     * 88 and 34, so ascending tile order picks the far one and proximity picks the near one.
+     */
+    private fun nearAndFar(near: Species, far: Species): VesselState {
+        val grid = cfg.initialGrid
+        val deck = DeckArray(grid)
+        deck += fixtureStorage(grid.tile(8, 6), Direction.Up, SpeciesFilter(near, pure = true))
+        deck += fixtureStorage(grid.tile(2, 1), Direction.Down, SpeciesFilter(far, pure = true))
+        deck += Storage(
+            grid.tile(8, 4), Direction.Right, DeckMachineKind.Buffer,
+            filter = SpeciesFilter(species = null, pure = true),
+            autoLock = true, autoUnlock = false,
+        )
+        val rails = arrayOfNulls<Segment>(grid.size)
+        joinCol(grid, rails, 8, 4, 5)   // the near source, one hop below the door
+        joinCol(grid, rails, 2, 2, 4)   // the far source, down its own column
+        joinRow(grid, rails, 2, 8, 4)   // and along row 4 to the door
+        return VesselState(
+            grid, deck,
+            conduits = Conduits.ofRails(rails.toList()),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+        )
+            .stocked(grid.tile(8, 6), pure(near, 10L * Capacity.PACKET_MASS))
+            .stocked(grid.tile(2, 1), pure(far, 10L * Capacity.PACKET_MASS))
+    }
+
+    /**
+     * ⭐ **The nearest source decides an undecided tank**, and it is the only sink in the game
+     * proximity decides anything for.
+     *
+     * ⛔ **Because the losers are not merely late.** Every other sink is served by whoever can reach
+     * it, which is right — a network with two feeds should use both. A sink that takes one packet and
+     * then changes what it wants is the exception: whatever the losers sent is refused for ever the
+     * instant the winner lands, and on Stu's ship that left a chromite silo one tile below the buffer
+     * at (19,15) holding all 100 kg of its contents for three thousand ticks, because a magnetite
+     * silo six tiles away had got there first and the buffer's lock shut the door behind it.
+     *
+     * ⚠️ **Run twice with the cargo swapped**, so "the near one wins" cannot pass as "iron wins".
+     */
+    @Test
+    fun `the nearest source decides an undecided tank`() {
+        assertEquals(
+            Species.Iron,
+            (run(nearAndFar(near = Species.Iron, far = Species.Nickel), 30 * RAIL_PERIOD)
+                .let { it.deck[it.grid.tile(8, 4)] as Storage }).filter?.species,
+        )
+        assertEquals(
+            Species.Nickel,
+            (run(nearAndFar(near = Species.Nickel, far = Species.Iron), 30 * RAIL_PERIOD)
+                .let { it.deck[it.grid.tile(8, 4)] as Storage }).filter?.species,
+            "the winner followed the species rather than the distance",
+        )
+    }
+
+    /**
      * A blend lock does **not** grow an opinion about purity when a pure lump turns up.
      *
      * ⛔ `SpeciesFilter.pure` says so in as many words — *"an opinion about purity here would refuse

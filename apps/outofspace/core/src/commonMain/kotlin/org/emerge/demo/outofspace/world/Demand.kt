@@ -450,6 +450,15 @@ class Whitelist private constructor(
      */
     private val promised = HashMap<Acceptance, Long>()
 
+    /**
+     * Every sink at a tile, which is what [room] weighs unless a caller says otherwise.
+     *
+     * ⛔ **Compared by identity in [room]**, so that the fast path can be taken for the callers that
+     * did not pass anything and skipped for the one that did. A fresh lambda per call would defeat
+     * that silently — hence a named constant rather than a default expression.
+     */
+    private val ALL_SINKS: (Acceptance) -> Boolean = { true }
+
     /** True when anything at all may leave [tile] — the common case, and free to ask. */
     fun permitsAnything(tile: TileIndex): Boolean =
         tile.index in unlimited.indices && unlimited[tile.index]
@@ -547,12 +556,16 @@ class Whitelist private constructor(
      *
      * So the answer is a quantity, and the source takes the smaller of it and what fits.
      */
-    fun room(tile: TileIndex, mixture: Mixture): Long {
-        if (permitsAnything(tile)) return Acceptance.UNLIMITED
+    fun room(tile: TileIndex, mixture: Mixture, serves: (Acceptance) -> Boolean = ALL_SINKS): Long {
+        // ⚠️ **The fast path is skipped when the caller is fussy about sinks**, because
+        // [permitsAnything] answers for the tile rather than for any particular appetite — and the
+        // whole point of [serves] is that one of them is not this source's to answer.
+        if (serves === ALL_SINKS && permitsAnything(tile)) return Acceptance.UNLIMITED
         val here = routes.getOrNull(tile.index) ?: return 0L
         var owed = 0L
         for (d in here) {
             if (!d.wants(mixture)) continue
+            if (!serves(d.acceptance)) continue
             if (d.acceptance.isUnlimited) return Acceptance.UNLIMITED
             val remaining = remaining(d)
             if (remaining > 0L) owed = saturated(owed, remaining)

@@ -183,6 +183,22 @@ import org.emerge.demo.outofspace.world.Ambient
  *
  * Row-major walk order for determinism. Belt delivery: one step per advance (not instant),
  * so jams crawl backwards visually. */
+/**
+ * A store that has yet to decide what it holds, as the rail step needs to see it.
+ *
+ * Three facts about one machine, gathered where they are known: the appetite it published (the key
+ * everything downstream is rationed by — see `Whitelist.promised`), the machine to write the lock
+ * onto, and the door material arrives at. The last two are both derivable from the first with a
+ * search, which is what this replaced.
+ */
+internal class ProvisionalStore(
+    val acceptance: Acceptance,
+    /** The machine's centre — where the lock is written. */
+    val owner: TileIndex,
+    /** Its input port tile — where the walk upstream starts. */
+    val door: TileIndex,
+)
+
 object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceInput> {
 
     /** Periods (ticks between activations). All must divide [OutofspaceConfig.ticksPerSecond] evenly. */
@@ -541,7 +557,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         if (shouldRun(state.tick, RAIL_PERIOD, RAIL_OFFSET, frozen)) {
             // Rails first: produced output can go on the track after it moves.
             val ports = w.portsByTile(Conduit.Rail)
-            w.advanceRails(ports)
+            w.advanceRails(ports, state.signals)
             // ⚠️ **After the rails, because [Work.whitelist] does not exist until they have run.**
             w.drawPurchases(state.signals)
 
@@ -4161,7 +4177,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // 70g left over stood at the end of the run for ever — which is only harmless while
             // something unlimited waits beyond, and a deadlock while that something is still being
             // built, because the residue comes to rest in front of the material that would build it.
-            val useful = whitelist.room(tile, buffer)
+            // ⛔ **An undecided store is fed by ONE port, and this is where the others are turned
+            // away.** Every sink but that kind is served by whoever can reach it, which is the whole
+            // design; a sink that will take one packet and then change what it wants is the one case
+            // where "whoever" has to become "which", because the losers are not merely late — the
+            // material they sent is refused for ever the instant the winner lands. See [electFeeds].
+            //
+            // ⚠️ **It does not stop this source shipping**, only shipping *for that tank*: a port
+            // with other appetites down the line goes on serving them, because `serves` is asked per
+            // sink rather than of the tile.
+            val useful =
+                if (electedFeed.isEmpty()) whitelist.room(tile, buffer)
+                else whitelist.room(tile, buffer) { acc -> electedFeed[acc]?.let { it == tile } ?: true }
             if (useful <= 0L) return
             // Only as much as will actually fit: an empty tile takes a whole packet, a partial one
             // takes what tops it up.
@@ -4185,6 +4212,99 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Only an empty tile counts as an appearance. Topping up a lump already standing there
             // is a change of mass, which draws itself from the mass the tile started the tick with.
             if (wasEmpty) motion.placedByPort(tile)
+        }
+
+        /**
+         * For each store that has yet to decide what it holds, **the nearest source that could
+         * decide it** — by hops along the flow graph, not by any straight line.
+         *
+         * ⛔ **The one place in the game where proximity decides anything, and it is deliberately
+         * the only one.** Demand is a fact about a *route*: what a sink states propagates upstream
+         * and every source that can reach it may act, which is right, because a network with two
+         * feeds should use both. The exception is a sink that will take **one packet and then change
+         * what it wants** — there, exactly one source gets to answer, and which one is the whole
+         * decision. Left to the walk order it was "the topmost, leftmost port", which is stable and
+         * explicable and still surprised Stu on his own ship: a chromite silo one tile below the
+         * buffer at (19,15) lost to a magnetite silo six tiles away, and then could never ship again,
+         * because the buffer had locked onto something else and its only route out leads there.
+         *
+         * ⚠️ **Bounded, and it costs nothing on a vessel with no undecided tank on it** — which is
+         * nearly all of them. A store locks once in its life; [provisional] is empty otherwise and
+         * this returns before walking anything.
+         *
+         * ⚠️ **Upstream over [FlowGraph.feeders], breadth first**, so the first source found is the
+         * fewest hops away — which is the distance that means something here, since it is how long
+         * the material will take to arrive. Ties within a ring keep ascending tile order, which is
+         * the rule everywhere else in this pass.
+         *
+         * ⛔ **A source that cannot ship this instant is passed over rather than elected.** Electing
+         * a silo that is switched off, or empty, or holding something the tank would refuse, would
+         * starve the tank for as long as that stayed true while a working source stood further down
+         * the same corridor. So the test here is the one [pushOut] applies, asked in advance.
+         */
+        private fun electFeeds(
+            provisional: List<ProvisionalStore>,
+            ports: Map<TileIndex, List<Port>>,
+            flow: FlowGraph,
+            signals: SignalField,
+        ): Map<Acceptance, TileIndex> {
+            if (provisional.isEmpty()) return emptyMap()
+            val elected = HashMap<Acceptance, TileIndex>(provisional.size)
+            for (p in provisional) {
+                elected[p.acceptance] = nearestFeed(p.door, p.acceptance, ports, flow, signals) ?: continue
+            }
+            return elected
+        }
+
+        /** Breadth-first upstream from [door] for the first port that could feed [acceptance]. */
+        private fun nearestFeed(
+            door: TileIndex,
+            acceptance: Acceptance,
+            ports: Map<TileIndex, List<Port>>,
+            flow: FlowGraph,
+            signals: SignalField,
+        ): TileIndex? {
+            val seen = HashSet<TileIndex>()
+            var ring = listOf(door)
+            seen += door
+            // ⚠️ **Bounded by the tiles on the network**, and every tile is entered once — the `seen`
+            // set is what makes a cycle in the corridors a walk that finishes rather than one that
+            // does not.
+            while (ring.isNotEmpty()) {
+                val next = ArrayList<TileIndex>()
+                for (tile in ring.sortedBy { it.index }) {
+                    for (port in ports[tile].orEmpty()) {
+                        if (port.kind != PortKind.Output) continue
+                        if (canFeed(tile, port, acceptance, signals)) return tile
+                    }
+                }
+                for (tile in ring) for (feeder in flow.feeders(tile)) if (seen.add(feeder)) next.add(feeder)
+                ring = next
+            }
+            return null
+        }
+
+        /**
+         * Whether the machine behind [port] could put something [acceptance] wants onto [tile] now.
+         *
+         * ⚠️ **[pushOut]'s own preconditions, asked early.** Kept in step with it by being the same
+         * three questions in the same order: is it running, is anything settled in the store the port
+         * drains, and is what it holds something the sink will take.
+         */
+        private fun canFeed(
+            tile: TileIndex,
+            port: Port,
+            acceptance: Acceptance,
+            signals: SignalField,
+        ): Boolean {
+            if (rails[tile.index] == null) return false
+            val m = deck[port.owner] ?: return false
+            if (m is Bridge) return false
+            if (m.kind.gatesOutput && !m.wiring.isOn(Action.Run, signals.at(port.owner))) return false
+            val store = outputStoreTile(m, port) ?: return false
+            val held = buffers.resourceAt(store) ?: return false
+            if (settled(store) <= 0L) return false
+            return acceptance.admits(held)
         }
 
         /**
@@ -4214,11 +4334,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          */
         private fun lockOnDispatch(from: TileIndex, cargo: Mixture) {
             if (provisionalStores.isEmpty()) return
-            for ((acceptance, at) in provisionalStores) {
-                if (!whitelist.leadsTo(from, acceptance, cargo)) continue
-                val store = deck[at] as? Storage ?: continue
+            for (p in provisionalStores) {
+                if (!whitelist.leadsTo(from, p.acceptance, cargo)) continue
+                val store = deck[p.owner] as? Storage ?: continue
                 if (!store.speciesUndecided) continue
-                deck[at] = store.withFilter(lockedOnto(store, cargo))
+                deck[p.owner] = store.withFilter(lockedOnto(store, cargo))
             }
         }
 
@@ -4439,7 +4559,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * ⚠️ **Empty on nearly every vessel**, and [lockOnDispatch] leans on that: a tank locks once
          * in its life and is an ordinary sink for ever afterwards.
          */
-        var provisionalStores: List<Pair<Acceptance, TileIndex>> = emptyList()
+        var provisionalStores: List<ProvisionalStore> = emptyList()
+            private set
+
+        /**
+         * Which single port may feed each undecided store this step — see [electFeeds].
+         *
+         * Empty whenever [provisionalStores] is, which is nearly always.
+         */
+        var electedFeed: Map<Acceptance, TileIndex> = emptyMap()
             private set
 
         /** How many tiles carry track, so the flow can be rebuilt only when something ceased to be. */
@@ -4532,7 +4660,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             else m.withOrder(species, (permitted - mass).coerceAtLeast(0L))
         }
 
-        fun advanceRails(ports: Map<TileIndex, List<Port>>) {
+        fun advanceRails(ports: Map<TileIndex, List<Port>>, signals: SignalField) {
             // ⛔ **What is finished coming apart goes before anything looks at the network.** Every
             // answer below — the flow graph, the whitelist, what each source is told it may let go
             // of — is computed once and read by the whole step, so the tile set has to stop moving
@@ -4583,7 +4711,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Which of those acceptances belong to a store that has yet to decide what it holds, and
             // where that store stands. Empty on any vessel with no undecided tank on it, which is
             // most of them — see [lockOnDispatch], the only reader.
-            val provisional = ArrayList<Pair<Acceptance, TileIndex>>()
+            val provisional = ArrayList<ProvisionalStore>()
             if (ghosts.isNotEmpty()) {
                 val stuff = tracks[Conduit.Rail]
                 for (tile in ghosts) {
@@ -4723,7 +4851,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // So the store is told **at dispatch**, not at delivery: the decision goes into the
                 // world where every route can see it, and the next step's walk has a *decided* tank
                 // in it. See [lockOnDispatch].
-                if (storage.speciesUndecided) provisional.add(acceptance to input.owner)
+                if (storage.speciesUndecided) provisional.add(ProvisionalStore(acceptance, input.owner, tile))
             }
 
             // ── Motors: a fluid, or the one species the player locked it to ──
@@ -5008,6 +5136,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // been told about the vanished road had already acted on it.
             this.whitelist = whitelist
             this.provisionalStores = provisional
+            this.electedFeed = electFeeds(provisional, ports, flow, signals)
 
             // A construction site at [to] that stands **in the road** — unpaid track and nothing
             // else. Named once because both questions below need it and neither may answer it
