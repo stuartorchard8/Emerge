@@ -72,15 +72,22 @@ data class Storage(
     val autoLock: Boolean,
     val autoUnlock: Boolean,
     /**
-     * The species auto-lock is allowed to settle on — a **shortlist**, not a whitelist.
+     * The species auto-lock is allowed to settle on — a **shortlist**.
      *
-     * ⛔ **EMPTY MEANS ANY, and this is the one place in the game where an empty list does.** A
-     * [org.emerge.demo.outofspace.world.machine.FeedBook]'s empty book refuses everything, because
-     * there the list *is* the machine's whole appetite; here it is an optional narrowing of an
-     * appetite that already exists, and a store with no shortlist is the ordinary store this game
-     * has always had. Reading it the other way would make every unlocked tank in every save a dead
-     * end. The two lists look identical in the panel and mean opposite things when empty, which is
-     * exactly why they are not the same type.
+     * ⛔ **EMPTY MEANS NOTHING, exactly as a [FeedBook]'s book does**, and what differs between them
+     * is the **default**: a fresh ejector or kiln is *empty* and therefore shut, and a fresh store is
+     * *full* and therefore takes anything. That is the whole of the difference, and it is a fact
+     * about how each machine starts rather than about what a list means.
+     *
+     * ⛔ **It was "empty means any" for one commit, and that was wrong twice over.** It made this the
+     * only list in the game whose empty state was permissive — the two sheets looked identical and
+     * meant opposite things — and it left BAR ALL with nowhere to put its answer, since the state it
+     * would have written was the one that means the opposite. A control the player cannot reach is a
+     * good sign the encoding is wrong. Stu, 2026-09-10.
+     *
+     * ⚠️ **So a store built or loaded without one gets [ANY_SPECIES]**, and the save writes nothing
+     * for it — which is what keeps an older file's tanks behaving exactly as they did. See
+     * `Save.writeDeckMachine`, where the three states are encoded.
      *
      * ⛔ **It does not widen what the store HOLDS.** A store's contents are one `Mixture` on one
      * tile and `takePacket` draws them proportionally, so a tank admitting two species does not hold
@@ -97,7 +104,7 @@ data class Storage(
      * five species and no blends at all, including no blend of two shortlisted species — see
      * [org.emerge.demo.outofspace.world.Acceptance.shortlisted], where the two halves are composed.
      */
-    val candidates: Set<Species> = emptySet(),
+    val candidates: Set<Species> = ANY_SPECIES,
 ) : DirectedDeckMachine {
     /**
      * How much this one holds — [WAREHOUSE_CAP], [SILO_CAP] or [BUFFER_CAP].
@@ -136,17 +143,31 @@ data class Storage(
 
     /**
      * Whether auto-lock may settle this store on [species] — the shortlist, read the way the door
-     * reads it.
-     *
-     * ⚠️ **An empty shortlist says yes**, which is [candidates]'s rule and the one that has to be
-     * stated in the predicate rather than at each call site.
+     * reads it. Plain membership: an empty shortlist says no to everything.
      */
-    fun mayLockOnto(species: Species): Boolean = candidates.isEmpty() || species in candidates
+    fun mayLockOnto(species: Species): Boolean = species in candidates
+
+    /**
+     * Whether the shortlist bars nothing — the ordinary store, and the state a fresh one is in.
+     *
+     * ⚠️ **A size test, so it costs nothing on the hot path.** The demand pass reads it every rail
+     * step to decide whether an undecided tank needs the per-species walk at its door at all, and an
+     * unrestricted store is the overwhelmingly common case.
+     */
+    val allowsAnySpecies: Boolean get() = candidates.size >= Species.COUNT
 
     /** This store with a new shortlist. */
     fun withCandidates(candidates: Set<Species>): Storage = copy(candidates = candidates)
 
     companion object {
+        /**
+         * Every species there is — what [candidates] holds when the player has barred nothing.
+         *
+         * ⚠️ **Shared rather than built per store**, because it is the default of a `data class`
+         * whose every `copy` would otherwise allocate a hundred-odd element set to say "no opinion".
+         */
+        val ANY_SPECIES: Set<Species> = Species.ALL.toSet()
+
         /**
          * How much a warehouse holds: **twenty tonnes**.
          *

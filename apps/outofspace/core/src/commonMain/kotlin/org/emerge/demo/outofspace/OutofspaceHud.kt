@@ -1216,6 +1216,14 @@ class OutofspaceHud {
         val listed: (Species) -> Boolean,
         /** One press. Sets the named side rather than flipping — see [FeedBook.switched]. */
         val press: (Species, Boolean) -> Unit,
+        /**
+         * **Every species in the game** at once, in the named direction.
+         *
+         * ⛔ **The rule, not the view.** The sheet's rows are what is aboard plus what is named; a
+         * bulk press that stopped at those would be a list that changed its mind the first time a
+         * new species arrived. See `OutofspaceController.setAllFeeds`.
+         */
+        val pressAll: (Boolean) -> Unit,
         /** The ORE row's state, or null when this machine has no ore row at all. */
         val ore: Boolean?,
         val pressOre: (Boolean) -> Unit,
@@ -1232,6 +1240,7 @@ class OutofspaceHud {
                     lit = { machine.takes(it) },
                     listed = { machine.takes(it) },
                     press = { sp, on -> controller.setFeeds(machine, sp, on) },
+                    pressAll = { on -> controller.setAllFeeds(machine, on) },
                     ore = machine.ore,
                     pressOre = { on -> controller.setFeedsOre(machine, on) },
                     summary = { keyValue("THROWN AWAY", mass(machine.ventedMass), 0x9A9A9AFFL, 0xE0864AFFL) },
@@ -1242,6 +1251,7 @@ class OutofspaceHud {
                     lit = { machine.takes(it) },
                     listed = { machine.takes(it) },
                     press = { sp, on -> controller.setFeeds(machine, sp, on) },
+                    pressAll = { on -> controller.setAllFeeds(machine, on) },
                     ore = machine.ore,
                     pressOre = { on -> controller.setFeedsOre(machine, on) },
                     summary = { keyValue("HOLD AT", "${machine.setTemperature} K", 0x9A9A9AFFL, 0xE0864AFFL) },
@@ -1249,22 +1259,18 @@ class OutofspaceHud {
                 )
                 is Storage -> FeedTarget(
                     FeedWords.SHORTLIST,
-                    lit = { machine.candidates.isEmpty() || it in machine.candidates },
-                    listed = { it in machine.candidates },
+                    lit = { it in machine.candidates },
+                    // ⚠️ **Only a RESTRICTED shortlist earns rows for species that are not aboard.**
+                    // An unrestricted one names every species in the game, and reading that as
+                    // "the player said something about it" would hand a fresh tank a row apiece for
+                    // all hundred-odd of them.
+                    listed = { !machine.allowsAnySpecies && it in machine.candidates },
                     press = { sp, on -> controller.setShortlisted(machine, sp, on) },
+                    pressAll = { on -> controller.setAllShortlisted(machine, on) },
                     ore = null,
                     pressOre = { },
                     summary = {
-                        // ⛔ **Both of these are the sentence a player needs and neither is a
-                        // number.** An empty shortlist lights every row, which looks identical to
-                        // one the player has ticked everything on and means something different the
-                        // moment they bar one; and a shortlist under a store with auto-lock off is a
-                        // dial that does nothing at all.
-                        if (machine.candidates.isEmpty()) {
-                            text("nothing barred — this tank may lock onto anything", 0x9A9A9AFFL)
-                        } else {
-                            keyValue("MAY LOCK ONTO", "${machine.candidates.size} species", 0x9A9A9AFFL, 0x6EE08AFFL)
-                        }
+                        keyValue("MAY LOCK ONTO", shortlistReading(machine), 0x9A9A9AFFL, shortlistColor(machine))
                         if (!machine.autoLock) {
                             text("AUTO-LOCK IS OFF · this list does nothing until it is on", 0xE0A93AFFL)
                         }
@@ -1293,6 +1299,22 @@ class OutofspaceHud {
                     // test could have: the sheet clips at its own edge rather than wrapping, and the
                     // first wording ran off it mid-word. See the counter's note about padding.
                     text("re-rank · drop spent rows", 0x7A7A7AFFL)
+                }
+                // ── Both sides of every row at once ──────────────────────────
+                //
+                // ⛔ **Without this the extremes are unreachable, and one of them was.** A list of a
+                // hundred-odd species is not a thing anyone sets a row at a time: the useful gesture
+                // is "clear it, then name the three I want", and it needs a press for the clearing.
+                // The store's shortlist could not even *hold* "bar everything" until this existed —
+                // its empty state meant the opposite — which is a good sign that a missing control
+                // and a wrong encoding are the same bug. Stu, 2026-09-10.
+                //
+                // ⚠️ **Both wear their lit colours at full strength**, unlit switches being the only
+                // other thing on this sheet: an EJECT ALL that looked like REFRESH is a button that
+                // empties the ship's holds and dresses it as housekeeping.
+                row(gapPx = 6f) {
+                    button("${words.on} ALL", words.onLit, weight = 1f) { target.pressAll(true) }
+                    button("${words.off} ALL", words.offLit, weight = 1f) { target.pressAll(false) }
                 }
                 target.summary?.invoke(this)
                 gap()
@@ -2688,12 +2710,7 @@ class OutofspaceHud {
         // the game whose empty state means *no restriction*, and a number would say the opposite of
         // that to anyone who has met the ejector's.
         if (storage.filter?.species == null) {
-            keyValue(
-                "MAY LOCK ONTO",
-                if (storage.candidates.isEmpty()) "anything" else "${storage.candidates.size} species",
-                0x9A9A9AFFL,
-                if (storage.candidates.isEmpty()) 0x9ED0B0FFL else 0x6EE08AFFL,
-            )
+            keyValue("MAY LOCK ONTO", shortlistReading(storage), 0x9A9A9AFFL, shortlistColor(storage))
             button("SHORTLIST", 0x2E5A6BFFL) {
                 FeedTarget.of(controller, storage)?.let {
                     openFeedSheet(storage.center, it, controller.state.stockpile)
@@ -3118,6 +3135,30 @@ class OutofspaceHud {
     private fun milliG(raw: Long): Long = raw * 1000L / Int.MAX_VALUE.toLong()
 
     companion object {
+        /**
+         * What a store's shortlist says, in words — **the panel and the sheet read this same one**.
+         *
+         * ⛔ **Three states and none of them is a bare count.** "Anything" and "115 species" are the same
+         * fact and only one of them is a sentence; "nothing" is a tank that can never lock, which is a
+         * thing a player will do by accident with BAR ALL and needs to be told about in the one place
+         * they are looking.
+         *
+         * ⚠️ **On the companion for `mass`'s reason** — [FeedTarget] is built in a nested companion,
+         * which cannot reach an instance member, and the panel reads the identical function.
+         */
+        internal fun shortlistReading(store: Storage): String = when {
+            store.allowsAnySpecies -> "anything"
+            store.candidates.isEmpty() -> "nothing"
+            else -> "${store.candidates.size} species"
+        }
+
+        /** Green for a real shortlist, pale for none, amber for a tank that can never lock. */
+        internal fun shortlistColor(store: Storage): Long = when {
+            store.allowsAnySpecies -> 0x9ED0B0FFL
+            store.candidates.isEmpty() -> 0xE0A93AFFL
+            else -> 0x6EE08AFFL
+        }
+
         /**
          * Mass, read in grams whatever the sim's own unit currently is — the twin of [energy], and see
          * its note for why the conversion belongs here.

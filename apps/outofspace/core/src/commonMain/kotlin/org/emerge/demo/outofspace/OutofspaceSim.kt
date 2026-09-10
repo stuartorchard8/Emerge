@@ -4672,7 +4672,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // the *only* thing an undecided tank could say — which is a demand on every source
                 // aboard for a decision that concerns one branch. See [Acceptance.shortlisted].
                 val acceptance = when {
-                    storage.speciesUndecided && storage.candidates.isNotEmpty() ->
+                    // ⚠️ **The restricted case only.** An unrestricted shortlist admits exactly what
+                    // the two branches below already admit, and stating it as a mask would put a
+                    // per-species walk at the door of every ordinary tank on the vessel.
+                    storage.speciesUndecided && !storage.allowsAnySpecies ->
                         Acceptance.shortlisted(storage.candidates, filter?.pure, wanted)
                     filter == null -> Acceptance.upTo(wanted)
                     else -> Acceptance.filtered(filter, wanted)

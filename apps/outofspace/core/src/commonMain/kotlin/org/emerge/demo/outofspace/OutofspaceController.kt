@@ -829,11 +829,32 @@ class OutofspaceController(
      * switch of its own because a shortlist has no second half to disagree about: there is no ore
      * row, and no "off" that means anything but absence from the set.
      */
+    /** The same press on a store's shortlist — see [setAllFeeds], whose rule this shares. */
+    fun setAllShortlisted(store: Storage, listed: Boolean) =
+        pending.add(Edit.ShortlistStorage(
+            store.center,
+            if (listed) Storage.ANY_SPECIES else emptySet(),
+        ))
+
     fun setShortlisted(store: Storage, species: Species, listed: Boolean) =
         pending.add(Edit.ShortlistStorage(
             store.center,
             if (listed) store.candidates + species else store.candidates - species,
         ))
+
+    /**
+     * **Every row at once**, in the named direction — see the sheet's bulk pair.
+     *
+     * ⛔ **Every species in the GAME, not every row on the sheet.** The sheet lists what is aboard
+     * plus what is named, which is a *view*; a player pressing ALL means the rule, not the view, and
+     * a bulk press that quietly excluded a species nobody has mined yet would be a list that changed
+     * its mind the first time one arrived.
+     *
+     * ⚠️ **The ore switch goes with it** where the machine has one, because ore is a row on the same
+     * sheet and a player who has just pressed KEEP ALL has said something about it too.
+     */
+    fun setAllFeeds(book: FeedBook, taking: Boolean) =
+        retune(book.withFeed(if (taking) Species.ALL.toSet() else emptySet(), taking))
 
     private fun retune(book: FeedBook) =
         pending.add(Edit.TuneFeed(book.center, book.whitelist, book.ore))

@@ -194,19 +194,34 @@ class StorageAutoLockTest {
     }
 
     /**
-     * ⛔ **An EMPTY shortlist means ANY, and it is the one list in the game that does.**
+     * ⛔ **An EMPTY shortlist bars EVERYTHING**, exactly as a
+     * [org.emerge.demo.outofspace.world.machine.FeedBook]'s empty book does. One rule for every list
+     * in the game; what differs between them is only the **default** a fresh machine starts with.
      *
-     * A [org.emerge.demo.outofspace.world.machine.FeedBook]'s empty book refuses everything, because
-     * there the list is the machine's whole appetite. A shortlist narrows an appetite that already
-     * exists, so an empty one narrows nothing — and read the other way every unlocked tank in every
-     * save would become a dead end on load. The two look identical in the panel and are opposite
-     * here, which is why they are not the same type.
+     * ⛔ **It read the other way for one commit**, and BAR ALL is what proved it wrong: the state
+     * that button has to write was the state that meant the opposite, so the control had nowhere to
+     * put its answer. A missing control and a wrong encoding turned out to be the same bug.
      */
     @Test
-    fun `an empty shortlist bars nothing`() {
+    fun `an empty shortlist bars everything`() {
         val s = run(twoSourcesOneTank(shortlisted()), 30 * RAIL_PERIOD)
 
-        assertNotNull(destination(s).filter?.species, "an empty shortlist stopped the tank locking at all")
+        assertEquals(null, destination(s).filter?.species, "a tank barred from everything locked anyway")
+        assertEquals(0L, onTrack(s).total, "and nothing should have set off toward it")
+    }
+
+    /**
+     * The control, and the reason the *default* is what it is: a store nobody has touched behaves
+     * exactly as it did before shortlists existed.
+     *
+     * ⚠️ [undecidedTank] states no shortlist at all, so this is asserting on [Storage.ANY_SPECIES] —
+     * the value a fresh store and an older file's store both get.
+     */
+    @Test
+    fun `a store with no shortlist stated is unrestricted`() {
+        assertTrue(undecidedTank().allowsAnySpecies, "a fresh store started out restricted")
+        val s = run(twoSourcesOneTank(undecidedTank()), 30 * RAIL_PERIOD)
+        assertNotNull(destination(s).filter?.species, "an unrestricted tank never locked")
     }
 
     /**
@@ -244,26 +259,61 @@ class StorageAutoLockTest {
         )
     }
 
-    /** The shortlist survives a round trip, and an empty one leaves no trace in the file. */
+    private fun reloadedTank(store: Storage): Storage {
+        val back = Save.read(Save.write(twoSourcesOneTank(store)))
+        return back.deck[back.grid.tile(11, 4)] as Storage
+    }
+
+    /**
+     * All three states of the shortlist survive a round trip — and the **unrestricted** one leaves
+     * no trace in the file.
+     *
+     * ⛔ **Which is what makes "absent means every species" a reading rather than a migration.** A
+     * file written before shortlists existed is byte-identical to one written today by a store
+     * nobody has touched, so the two cannot be told apart and do not need to be. The state that
+     * needs a spelling is the *empty* one, and it gets `NONE`.
+     */
     @Test
-    fun `the shortlist round-trips through a save`() {
-        val listed = twoSourcesOneTank(shortlisted(Species.Iron, Species.Nickel))
-        val back = Save.read(Save.write(listed))
+    fun `all three shortlist states round-trip through a save`() {
         assertEquals(
             setOf(Species.Iron, Species.Nickel),
-            (back.deck[back.grid.tile(11, 4)] as Storage).candidates,
+            reloadedTank(shortlisted(Species.Iron, Species.Nickel)).candidates,
         )
+        assertTrue(reloadedTank(shortlisted()).candidates.isEmpty(), "BAR ALL did not survive the file")
+        assertTrue(reloadedTank(undecidedTank()).allowsAnySpecies, "an unrestricted tank came back restricted")
 
-        // ⛔ **And a store with no shortlist writes no field**, so a file written before shortlists
-        // existed is indistinguishable from one written today — which is what makes "absent means
-        // any" a reading rather than a migration.
-        val text = Save.write(twoSourcesOneTank(shortlisted()))
+        val text = Save.write(twoSourcesOneTank(undecidedTank()))
         assertTrue(
             text.lineSequence().none { it.startsWith("deckmachine") && it.contains("shortlist=") },
-            "an empty shortlist wrote a field",
+            "an unrestricted shortlist wrote a field; an older file is supposed to be indistinguishable",
         )
-        val plain = Save.read(text)
-        assertTrue((plain.deck[plain.grid.tile(11, 4)] as Storage).candidates.isEmpty())
+    }
+
+    /**
+     * ⛔ **The bulk pair means every species in the GAME, not every row on the sheet.**
+     *
+     * The sheet lists what is aboard plus what is named, which is a *view*. A player pressing ALLOW
+     * ALL means the rule, and a bulk press that quietly stopped at the view would be a list that
+     * changed its mind the first time something new was mined. Asserted on a species the fixture has
+     * none of and has never shown a row for.
+     *
+     * ⚠️ Driven through the controller and a real tick, because the edit is the thing under test —
+     * `setAllShortlisted` builds a set and `Edit.ShortlistStorage` carries it whole.
+     */
+    @Test
+    fun `the bulk pair reaches species that are not aboard`() {
+        val controller = OutofspaceController(cfg, twoSourcesOneTank(undecidedTank()))
+        fun tank() = controller.state.deck[cfg.initialGrid.tile(11, 4)] as Storage
+
+        controller.setAllShortlisted(tank(), false)
+        controller.stepOnce()
+        assertTrue(tank().candidates.isEmpty(), "BAR ALL left something on the list")
+
+        controller.setAllShortlisted(tank(), true)
+        controller.stepOnce()
+        assertTrue(tank().allowsAnySpecies, "ALLOW ALL did not reach every species")
+        // Nothing of this is aboard the fixture, so it has never had a row on any sheet.
+        assertTrue(tank().mayLockOnto(Species.Zircon), "ALLOW ALL stopped at what was aboard")
     }
 
     /**

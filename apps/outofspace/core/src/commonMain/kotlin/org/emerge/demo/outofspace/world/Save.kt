@@ -140,6 +140,14 @@ object Save {
     const val EJECT_ORE = "ORE"
 
     /**
+     * A store whose shortlist bars **everything** — see [Storage.candidates].
+     *
+     * ⚠️ **Not a species, and it must never collide with one**, which is [EJECT_ORE]'s rule and
+     * uppercase is what keeps it: every [Species] name is written in its own mixed case.
+     */
+    const val SHORTLIST_NONE = "NONE"
+
+    /**
      * ⚠️ **27 adds `charge`** — what every tile of [Conduit.Power] is holding, written sparsely in
      * the same `tag tile=value` form as the heat fields. A file written before it loads with an
      * empty field, which is the *true* state of a world that has never had a solar panel: charge has
@@ -632,6 +640,27 @@ object Save {
                 Species.ALL.firstOrNull { it.name == name } ?: fail("unknown species '$name'")
             }
 
+    /**
+     * A store's auto-lock shortlist — see [Storage.candidates], and `writeDeckMachine` for the three
+     * states this decodes.
+     *
+     * ⛔ **An absent field is EVERY species, not none**, which is the opposite of what an absent
+     * `eject` means and the reason the two are not one function. A file written before shortlists
+     * existed says nothing about them, and what it means by saying nothing is that its tanks were
+     * unrestricted.
+     *
+     * ⛔ **An unknown species name is a refusal**, for `feedSpecies`' reason: a shortlist quietly
+     * shortened by one is a tank barred from something the player allowed, and it would say nothing
+     * about having changed its mind.
+     */
+    private fun shortlist(f: Map<String, String>, fail: (String) -> Nothing): Set<Species> {
+        val raw = f["shortlist"] ?: return Storage.ANY_SPECIES
+        if (raw == SHORTLIST_NONE) return emptySet()
+        return raw.split(',').filter { it.isNotEmpty() }.mapTo(LinkedHashSet()) { name ->
+            Species.ALL.firstOrNull { it.name == name } ?: fail("unknown species '$name'")
+        }
+    }
+
     /** The ore half of the same field, which rides the list under the name [EJECT_ORE]. */
     private fun feedOre(f: Map<String, String>): Boolean =
         f["eject"].orEmpty().split(',').any { it == EJECT_ORE }
@@ -721,12 +750,22 @@ object Save {
                 val autoLock = if (m.autoLock)     0b01 else 0
                 val autoUnlock = if (m.autoUnlock) 0b10 else 0
                 put("auto", (autoLock+autoUnlock).toString())
-                // ⚠️ **Its own key, and NOT `eject`.** A book's field and a shortlist's look the
-                // same and mean opposite things when absent — an absent book is shut, an absent
-                // shortlist is *any* — so sharing a key would be one reader away from turning every
-                // unlocked tank in every save into a dead end. See [Storage.candidates].
-                if (m.candidates.isNotEmpty()) {
-                    put("shortlist", m.candidates.sortedBy { it.ordinal }.joinToString(",") { it.name })
+                // ── The shortlist, in three states ───────────────────────
+                //
+                // ⚠️ **Absent means EVERY species, and that is what makes an older file's tanks
+                // behave exactly as they did.** An empty shortlist bars everything — the same
+                // reading a `FeedBook`'s empty book takes — so it needs a spelling of its own rather
+                // than the absence, and [SHORTLIST_NONE] is it. The asymmetry is deliberate: the
+                // common state is "nothing barred", and the common state is the one that should
+                // cost a save file nothing.
+                //
+                // ⚠️ **Its own key, and NOT `eject`.** A book's list and a shortlist differ in what
+                // their absence means, and sharing a key would be one reader away from shutting
+                // every tank in every save.
+                when {
+                    m.allowsAnySpecies -> {}
+                    m.candidates.isEmpty() -> put("shortlist", SHORTLIST_NONE)
+                    else -> put("shortlist", m.candidates.sortedBy { it.ordinal }.joinToString(",") { it.name })
                 }
             }
             is DockingPort -> {
@@ -2090,14 +2129,7 @@ object Save {
                 },
                 autoLock = (f["auto"]?.toIntOrNull() ?: 0)%2==1,
                 autoUnlock = (f["auto"]?.toIntOrNull() ?: 0)/2%2==1,
-                // An unknown species name is a refusal, for `feedSpecies`' reason: a shortlist
-                // quietly shortened by one is a tank allowed to lock onto something the player
-                // struck off, and it would say nothing about having changed its mind.
-                candidates = f["shortlist"].orEmpty().split(',')
-                    .filter { it.isNotEmpty() }
-                    .mapTo(LinkedHashSet()) { name ->
-                        Species.ALL.firstOrNull { it.name == name } ?: fail("unknown species '$name'")
-                    },
+                candidates = shortlist(f, fail),
             )
             DeckMachineKind.Sensor -> Sensor(
                 tile,
