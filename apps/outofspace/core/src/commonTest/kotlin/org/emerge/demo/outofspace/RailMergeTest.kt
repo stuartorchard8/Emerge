@@ -14,7 +14,8 @@ import org.emerge.demo.outofspace.world.Squash
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
-import org.emerge.demo.outofspace.world.machine.Storage
+import org.emerge.demo.outofspace.world.BufferRole
+import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -147,21 +148,26 @@ class RailMergeTest {
     }
 
     /**
-     * And the same thing through the reducer: a run backed up against a tank that has no room left
-     * compacts instead of standing as a line of runts.
+     * And the same thing through the reducer: a run backed up against a consumer that cannot take
+     * another gram compacts instead of standing as a line of runts.
      *
-     * ⚠️ **The tank is full but its appetite is not**, which is the ordinary way a line jams —
-     * `Acceptance.wanted` is what a sink wants before it is done for good and deliberately not
-     * "room right now", so the network keeps routing at a warehouse that can no longer take a
-     * delivery.
+     * ⚠️ **The sink is full but its appetite is not**, which is the ordinary way a line jams: the
+     * network keeps routing the length of the run while the door refuses at the brim, so the lumps
+     * converge and there is something to merge.
+     *
+     * ⛔ **This used to be a full warehouse and cannot be any more.** A store states the room it has
+     * — see `Acceptance.upTo` — so a full one stops being a destination at all and the queue never
+     * moves off the tiles it was placed on. Nothing converges, so nothing merges, and the test
+     * passed or failed on a property it was not about. [fixtureStalledSink] is a jam that is still a
+     * jam.
      */
     @Test
-    fun `a run jammed against a full tank compacts itself`() {
+    fun `a run jammed against a full sink compacts itself`() {
         val grid = Grid(14, 6)
         val cfg = OutofspaceConfig(initialGrid = grid)
         val deck = DeckArray(grid)
         val tank = grid.tile(10, 3)
-        deck += fixtureStorage(tank, Direction.Right)          // input port at (9,3)
+        deck += fixtureStalledSink(tank, Direction.Right)      // input port at (9,3)
 
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 3, 9, 3)
@@ -172,7 +178,13 @@ class RailMergeTest {
             conduits = Conduits.ofRails(rails.toList()),
             buffers = BufferLayer.forDeck(grid, deck),
             rail = RailLayer.empty(grid.size),
-        ).stocked(tank, Mixture.of(Species.Iron to Storage.WAREHOUSE_CAP, energy = 0L).atAmbient())
+        )
+            // ⛔ **Both stores, or it is not full.** A stalled furnace still does the one thing that
+            // needs no signal: it slides a waiting charge from the input into the empty chamber. Fill
+            // only the input and the first tick empties it again, and the run is fed rather than
+            // jammed. A chamber with anything at all in it is a chamber that takes nothing.
+            .stocked(tank, Mixture.of(Species.Iron to MACHINE_BUFFER_CAP, energy = 0L).atAmbient())
+            .stocked(tank, Mixture.of(Species.Iron to MACHINE_BUFFER_CAP, energy = 0L).atAmbient(), BufferRole.Inside)
         for (t in queued) s = s.riding(t, pure(Species.Iron, 25L * kg))
 
         val before = queued.sumOf { s.rail.massAt(it) }

@@ -128,6 +128,189 @@ class DemandTest {
         assertTrue(movedLate > movedEarly, "the tank stopped feeding a vent: $movedEarly then $movedLate")
     }
 
+
+    // ── 3½. A store asks for the room it has, and no more ─────────────────────
+    //
+    // ⛔ **The fourth face of the same rule, and the one that was missing.** Sections 1–3 all say
+    // "nothing travels toward a place that cannot use it", and a store used to be exempt: its
+    // appetite was endless, so every source on the vessel poured at it for ever and the corridor
+    // leading to it filled solid with lumps it would refuse at its own door. The exemption was
+    // deliberate — a machine's fullness is momentary — and wrong for the one machine whose fullness
+    // is not. See `Acceptance.upTo`.
+
+    /**
+     * A tank at (2,3) pouring right along row 3 into a second store centred at (9,3), in at (8,3).
+     *
+     * [destStock] is what the receiving store already holds, which is the whole variable here: the
+     * same run is a live route or a dead end depending only on whether there is room at the end of it.
+     */
+    private fun tankToTank(destStock: Long, destKind: DeckMachineKind = DeckMachineKind.Warehouse): VesselState {
+        val grid = cfg.initialGrid
+        val deck = DeckArray(grid)
+        deck += fixtureStorage(grid.tile(2, 3), Direction.Right)                 // out at (3,3)
+        deck += fixtureStorage(grid.tile(9, 3), Direction.Right, kind = destKind) // in at (8,3)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        joinRow(grid, rails, 3, 8, 3)
+        return VesselState(
+            grid, deck,
+            conduits = Conduits.ofRails(rails.toList()),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+        )
+            .stocked(grid.tile(2, 3), iron(10L * Capacity.PACKET_MASS))
+            .stocked(grid.tile(9, 3), iron(destStock).takeIf { destStock > 0L })
+    }
+
+    private fun heldAt(s: VesselState, x: Int, y: Int): Long =
+        s.inStore(s.grid.tile(x, y), BufferRole.Inside)?.total ?: 0L
+
+    /**
+     * **The headline.** A full store is a dead end, and a dead end is somewhere material does not go.
+     *
+     * This is section 2 read the other way round: that test says a tank does not empty itself down a
+     * run with no consumer, and a full store is exactly such a run — it is a consumer that has
+     * stopped consuming. Told otherwise, the source poured, six packets came to rest nose to tail
+     * against a door that would refuse every one of them, and the corridor was solid until the
+     * player emptied the tank by hand.
+     */
+    @Test
+    fun `a full store is a dead end and nothing sets off toward it`() {
+        val s = run(tankToTank(destStock = Storage.WAREHOUSE_CAP), 20 * RAIL_PERIOD)
+
+        assertEquals(0L, onTrack(s), "the source poured onto a run whose only destination is full")
+        assertEquals(
+            10L * Capacity.PACKET_MASS,
+            heldAt(s, 2, 3),
+            "and every gram of it should still be in the source tank",
+        )
+    }
+
+    /**
+     * A store one and a half packets from full takes one and a half packets, not ten.
+     *
+     * ⚠️ **The surplus stays at the SOURCE, which is the point.** Sending it and letting the door
+     * refuse it would leave the difference standing in the corridor for ever — the jam this whole
+     * file is about. `Whitelist.room` slices the lump at the fork instead, so what sets off is what
+     * can be eaten.
+     */
+    @Test
+    fun `a store part full takes what fits and leaves the rest at home`() {
+        val roomLeft = 3L * Capacity.PACKET_MASS / 2
+        val s = run(tankToTank(destStock = Storage.WAREHOUSE_CAP - roomLeft), 30 * RAIL_PERIOD)
+
+        assertEquals(Storage.WAREHOUSE_CAP, heldAt(s, 9, 3), "the destination should be exactly full")
+        assertEquals(0L, onTrack(s), "and nothing should be left standing in the corridor")
+        assertEquals(
+            10L * Capacity.PACKET_MASS - roomLeft,
+            heldAt(s, 2, 3),
+            "the source should have parted with the room that existed and not a gram more",
+        )
+    }
+
+    /**
+     * ⛔ **A store's appetite comes BACK, which is what makes it different from a construction site.**
+     *
+     * `Acceptance.wanted` is one number for both, and for a site it means "before it is done for
+     * good". Read that way for a store it would be a one-way ratchet: a warehouse that ever filled
+     * would be written off for the rest of the game. It is not, because the whitelist is rebuilt
+     * from the world every rail step — so this is the test that would catch anyone caching it.
+     */
+    @Test
+    fun `a store that is emptied starts pulling again`() {
+        var s = run(tankToTank(destStock = Storage.WAREHOUSE_CAP), 20 * RAIL_PERIOD)
+        assertEquals(10L * Capacity.PACKET_MASS, heldAt(s, 2, 3), "nothing should have moved yet")
+
+        // Empty the destination by hand — the player carting it off, or a line drawn out of it.
+        s = s.stocked(s.grid.tile(9, 3), null)
+        s = run(s, 30 * RAIL_PERIOD)
+
+        assertTrue(
+            heldAt(s, 2, 3) < 10L * Capacity.PACKET_MASS,
+            "the source never noticed the destination had emptied",
+        )
+        assertTrue(heldAt(s, 9, 3) > 0L, "and nothing arrived")
+    }
+
+    /**
+     * A fork with a full silo down one branch and room down the other: everything turns the way it
+     * can be used.
+     *
+     * ⚠️ **This is the logistics failure Stu hit**, and it is not about the full store at all — it is
+     * about the branch beside it. A source facing two ways splits its output between them, so a full
+     * tank on one side did not merely waste the material sent to it, it *halved* the feed to the side
+     * that was still working, and the wasted half sat in the branch it could never leave.
+     */
+    @Test
+    fun `at a fork the material goes to the branch with room`() {
+        val grid = cfg.initialGrid
+        val deck = DeckArray(grid)
+        deck += fixtureStorage(grid.tile(2, 3), Direction.Right)                                  // out at (3,3)
+        deck += fixtureStorage(grid.tile(8, 1), Direction.Right, kind = DeckMachineKind.Buffer)   // in at (8,1)
+        deck += fixtureStorage(grid.tile(8, 5), Direction.Right, kind = DeckMachineKind.Buffer)   // in at (8,5)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        joinRow(grid, rails, 3, 7, 3)   // out of the source to the fork
+        joinCol(grid, rails, 7, 1, 3)   // up to the full one
+        joinCol(grid, rails, 7, 3, 5)   // down to the empty one
+        joinRow(grid, rails, 7, 8, 1)
+        joinRow(grid, rails, 7, 8, 5)
+        var s = VesselState(
+            grid, deck,
+            conduits = Conduits.ofRails(rails.toList()),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+        )
+            .stocked(grid.tile(2, 3), iron(10L * Capacity.PACKET_MASS))
+            .stocked(grid.tile(8, 1), iron(Storage.BUFFER_CAP))
+
+        s = run(s, 60 * RAIL_PERIOD)
+
+        assertEquals(Storage.BUFFER_CAP, heldAt(s, 8, 1), "the full branch took more, or lost some")
+        // Everything the source had, and not a share of it: ten packets is one tonne, which fits in
+        // the two-tonne buffer whole. Half of it arriving would be the fork splitting its output
+        // between a live branch and a dead one, which is the failure this is here for.
+        assertEquals(
+            10L * Capacity.PACKET_MASS,
+            heldAt(s, 8, 5),
+            "the branch with room should have had the lot",
+        )
+        assertEquals(0L, heldAt(s, 2, 3), "and the source should have emptied")
+        assertEquals(0L, s.rail.massAt(grid.tile(7, 2)), "a lump was sent up the branch it cannot leave")
+    }
+
+    /**
+     * The lock says *what* and the tank says *how much*, and a locked store answers both at once.
+     *
+     * ⚠️ **One [Acceptance] with both fields set, never two.** Two would be OR'd at the door — that
+     * is what a list of acceptances means — so a locked, part-full warehouse would advertise "iron,
+     * for ever" beside "anything, up to the brim" and the network would route gravel at it.
+     */
+    @Test
+    fun `a locked store that is full stops asking for the thing it is locked to`() {
+        val grid = cfg.initialGrid
+        val deck = DeckArray(grid)
+        deck += fixtureStorage(grid.tile(2, 3), Direction.Right)
+        deck += fixtureStorage(
+            grid.tile(9, 3), Direction.Right,
+            filter = SpeciesFilter(Species.Iron, pure = true),
+        )
+        val rails = arrayOfNulls<Segment>(grid.size)
+        joinRow(grid, rails, 3, 8, 3)
+        val s = run(
+            VesselState(
+                grid, deck,
+                conduits = Conduits.ofRails(rails.toList()),
+                buffers = BufferLayer.forDeck(grid, deck),
+                rail = RailLayer.empty(grid.size),
+            )
+                .stocked(grid.tile(2, 3), iron(10L * Capacity.PACKET_MASS))
+                .stocked(grid.tile(9, 3), iron(Storage.WAREHOUSE_CAP)),
+            20 * RAIL_PERIOD,
+        )
+
+        assertEquals(0L, onTrack(s), "iron set off toward a locked tank with no room in it")
+        assertEquals(10L * Capacity.PACKET_MASS, heldAt(s, 2, 3), "and the source should still be full")
+    }
+
     // ── The door IS the acceptance ────────────────────────────────────────────
 
     /**

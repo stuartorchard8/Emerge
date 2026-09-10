@@ -15,14 +15,15 @@ import org.emerge.demo.outofspace.num.scaledRatio
  * So a sink states it, and the door reads the statement. Two shapes, and the difference between them
  * is not fussiness but **whether the appetite ever ends**:
  *
- *  - [ANYTHING] — takes any matter, for ever. Every machine is this. A storage fills up and a
- *    concentrator's buffer backs up, but those are *momentary*: drain them and they take more. Over its
- *    life a machine will accept an unbounded amount, which is what makes it useless as a thing to
- *    ration a network by.
+ *  - [ANYTHING] — takes any matter, for ever. Every *working* machine is this. A concentrator's
+ *    buffer backs up, but that is *momentary*: drain it and it takes more. Over its life a machine
+ *    will accept an unbounded amount, which is what makes it useless as a thing to ration a network
+ *    by.
  *  - [forBill] — takes only what it can be built from, and only until it is built. A construction
  *    site is the one sink in the game with a **final** total. That is what makes it the sink worth
  *    metering, and it is why this type exists at all.
- *  - [filtered] — takes one species at a stated purity, for ever. A locked warehouse.
+ *  - [filtered] — takes one species at a stated purity. A locked warehouse.
+ *  - [upTo] — takes any matter, and only so much of it. An unlocked store.
  *
  * ⛔ **Fussy and endless are two independent questions, and [filtered] is what proves it.** Until it
  * existed the two always agreed — everything unlimited took anything, everything finite was picky —
@@ -30,10 +31,25 @@ import org.emerge.demo.outofspace.num.scaledRatio
  * read as taking everything. Ask [takesAnything] for the fussiness question and [isUnlimited] for
  * the quantity one; they are never the same question again.
  *
- * ⚠️ **Momentary fullness is deliberately not modelled here.** "The tank is full right now" is a
- * question for the delivery path, which already answers it and already backs the belt up correctly.
- * Conflating it with "this sink will never want more" would make every tank on the network look
- * finite and every network look nearly satisfied.
+ * ⚠️ **A working machine's momentary fullness is still not modelled here**, and that half of the old
+ * rule stands: "the furnace's hopper is full right now" is a question for the delivery path, which
+ * already answers it and already backs the belt up correctly, and folding it in would make every
+ * network look nearly satisfied a tick at a time.
+ *
+ * ⛔ **A store is the exception, because for a store it is not momentary.** A warehouse is where
+ * material *stops*; nothing downstream drains it but the player, so "full" is a state it sits in
+ * rather than passes through. Left endless it told every source on the network to pour for ever,
+ * and the corridors leading to it filled solid with material it would refuse at the door — which is
+ * precisely the failure this whole file exists to prevent, and it was exempting the one sink most
+ * likely to hit it. So a store states [upTo] its remaining room and is rationed like anything else.
+ * Stu, 2026-09-10.
+ *
+ * ⚠️ **[wanted] is therefore no longer "before it is done for good" for every sink** — a store's is
+ * "before it is full", and it goes back up when the store drains. Nothing downstream cared: the
+ * whitelist is rebuilt from the world every rail step, so every number in it was already only true
+ * for the step that read it. What it does mean is that [Whitelist.promised], which is keyed by
+ * identity and dies with the whitelist, must never be handed a store acceptance that outlives a
+ * step. See [upTo].
  *
  * Read on the hot path — [admits] is asked of every candidate direction of every loaded tile on
  * every step — so it must not allocate.
@@ -85,13 +101,16 @@ class Acceptance private constructor(
      */
     val stopsTraffic: Boolean,
     /**
-     * Mass still wanted before this sink is done for good, or [UNLIMITED].
+     * Mass still wanted before this sink stops wanting, or [UNLIMITED].
      *
-     * Not "room right now". See the class note.
+     * ⚠️ **What "stops wanting" means is the sink's business, not this field's.** A construction
+     * site is done for good; a store is merely full and will want more when it drains. Both are one
+     * number here because the whitelist that reads it lives for a single rail step and is rebuilt
+     * from the world — see the class note.
      */
     val wanted: Long,
 ) {
-    /** True when this sink's appetite has no end — every machine, and a locked warehouse. */
+    /** True when this sink's appetite has no end — every working machine. */
     val isUnlimited: Boolean get() = wanted == UNLIMITED
 
     /**
@@ -111,7 +130,12 @@ class Acceptance private constructor(
      */
     val takesAnything: Boolean get() = bill == null && filter == null && only == null
 
-    /** True when this sink is finite and will never take anything again. */
+    /**
+     * True when this sink is finite and wants nothing more — a built site, or a full store.
+     *
+     * ⚠️ **"For now" for a store**, which reads as the same thing everywhere this is asked because
+     * everywhere this is asked is inside one rail step.
+     */
     val isSatisfied: Boolean get() = !isUnlimited && wanted <= 0L
 
     /**
@@ -137,8 +161,15 @@ class Acceptance private constructor(
 
     override fun toString(): String =
         when {
-            filter != null -> "Acceptance(${when (filter.pure) { true -> "pure "; false -> "mixed "; null -> "" }}${filter.species?.name ?: "anything"})"
+            // ⚠️ The quantity is named whenever there is one, filter or no filter. A locked store
+            // is metered now, and a reading that showed only its lock looked identical whether it
+            // had twenty tonnes of room or none.
+            filter != null -> {
+                val kind = "${when (filter.pure) { true -> "pure "; false -> "mixed "; null -> "" }}${filter.species?.name ?: "anything"}"
+                if (isUnlimited) "Acceptance($kind)" else "Acceptance(${wanted}g of $kind)"
+            }
             isUnlimited -> "Acceptance(anything)"
+            bill == null && only == null -> "Acceptance(${wanted}g of anything)"
             else -> "Acceptance(${wanted}g of $bill)"
         }
 
@@ -146,8 +177,24 @@ class Acceptance private constructor(
         /** An appetite with no end. Not a large number — a different kind of number. */
         const val UNLIMITED: Long = Long.MAX_VALUE
 
-        /** Takes any matter, for ever: every machine on the vessel. */
+        /** Takes any matter, for ever: every working machine on the vessel. */
         val ANYTHING: Acceptance = Acceptance(null, null, null, stopsTraffic = false, wanted = UNLIMITED)
+
+        /**
+         * Takes any matter, but only [wanted] more grams of it: **a store with room left in it.**
+         *
+         * ⛔ **Unfussy and finite, which is the pairing that did not exist before.** [ANYTHING] is
+         * unfussy and endless, [forBill] is fussy and finite, [filtered] is fussy and endless — the
+         * fourth corner is an unlocked storage, which will take absolutely anything and then stop.
+         * [Whitelist.of] already reads the two questions separately (`takesAnything && isUnlimited`
+         * is one branch, not two names for one thing), so this needed a factory and nothing else.
+         *
+         * ⚠️ **A fresh instance per store per rail step, and it has to be.** [Whitelist.promised] is
+         * keyed by identity and a store's room is a different number every step, so sharing one of
+         * these between two silos would have them promise against each other's tank.
+         */
+        fun upTo(wanted: Long): Acceptance =
+            Acceptance(null, null, null, stopsTraffic = false, wanted = wanted)
 
         /**
          * Takes lumps made **entirely of** [species], in any proportions — and refuses a lump with
@@ -164,8 +211,13 @@ class Acceptance private constructor(
         }
 
         /**
-         * Takes [filter]'s species in [SpeciesFilter.pure] condition, for ever: a locked
-         * warehouse.
+         * Takes [filter]'s species in [SpeciesFilter.pure] condition, and [wanted] more grams of it:
+         * a locked store.
+         *
+         * ⚠️ **Both dials, and they are independent.** The lock says *what* and the tank says *how
+         * much*; a warehouse locked to iron with two tonnes of room wants two tonnes of iron. Stating
+         * that as two acceptances would not say it — a tile's acceptances are OR'd at the door, so
+         * "iron, for ever" beside "anything, up to the brim" admits gravel.
          *
          * ⛔ **Never a plug.** A warehouse is a building on finished, paid-for track; refusing what
          * it cannot use at its own door is all it is entitled to do. Made to stand in the road it

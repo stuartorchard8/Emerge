@@ -151,12 +151,22 @@ class MotionTest {
     // ── Bridges ───────────────────────────────────────────────────────────────
 
     /** A run that crosses a bridge at (6,3), hopping the tile at (6,3) itself. */
-    private fun bridged(): VesselState {
+    /**
+     * An extractor feeding a bridged run into a receiver at (11,3).
+     *
+     * [stalledReceiver] is what makes the line pack solid: a machine switched off is endlessly
+     * hungry and permanently full, so demand keeps running the length of the line while nothing can
+     * actually be delivered. A warehouse used to do this and no longer does — it meters itself now,
+     * so a full one starves the line rather than jamming it, and the bridge stands empty instead of
+     * packed. See [fixtureStalledSink].
+     */
+    private fun bridged(stalledReceiver: Boolean = false): VesselState {
         val grid = cfg.initialGrid
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
         val feed = feedExtractor(grid, deck, 2, 3)
-        deck += fixtureStorage(grid.tile(11, 3), Direction.Right)
+        deck += if (stalledReceiver) fixtureStalledSink(grid.tile(11, 3), Direction.Right)
+        else fixtureStorage(grid.tile(11, 3), Direction.Right)
         deck += Bridge(grid.tile(6, 3), Direction.Right)
         joinRow(grid, rails, 4, 5, 3)
         joinRow(grid, rails, 7, 10, 3)
@@ -192,8 +202,8 @@ class MotionTest {
      */
     @Test
     fun `a jammed bridge is not reported as moving`() {
-        // Long enough to fill the 20 kg tank and pack the line solid all the way back.
-        val s = run(bridged(), 500*RAIL_PERIOD)
+        // Long enough to fill the receiver's two stores and pack the line solid all the way back.
+        val s = run(bridged(stalledReceiver = true), 500*RAIL_PERIOD)
         val tile = cfg.initialGrid.tile(6, 3)
         assertNotNull(s.deck[tile] as? Bridge)
         val filled = listOf(BufferRole.Input, BufferRole.Inside, BufferRole.Product)

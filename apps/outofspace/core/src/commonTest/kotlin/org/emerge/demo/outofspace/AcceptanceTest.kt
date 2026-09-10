@@ -49,6 +49,42 @@ class AcceptanceTest {
 
     // ── An appetite that ends ─────────────────────────────────────────────────
 
+    /**
+     * A store: unfussy and finite, which is the corner of the grid nothing occupied before.
+     *
+     * ⛔ **Both questions have to be answered separately here or the fast path is wrong.**
+     * `Whitelist.of` marks a tile "welcome anywhere" on `takesAnything && isUnlimited`; a store
+     * satisfies the first and not the second, so it must be carried as an ordinary metered route.
+     * Reading either flag alone gets one of the two cases wrong — an endless dump, or a tank the
+     * network refuses to send anything to at all.
+     */
+    @Test
+    fun `a store takes anything and still runs out`() {
+        val store = Acceptance.upTo(500L)
+        assertTrue(store.takesAnything, "a store refuses nothing while it has room")
+        assertFalse(store.isUnlimited, "but its room is a quantity, not a kind of number")
+        assertFalse(store.isSatisfied)
+        assertTrue(store.admits(iron(1_000L)), "kind is not the question a store asks")
+        assertTrue(
+            store.admits(Mixture.of(Species.Quartz to 1_000L, energy = 0)),
+            "an unlocked store takes gravel as readily as iron",
+        )
+    }
+
+    /**
+     * ⚠️ **A full store refuses at its own door**, which is what keeps the door and the route
+     * saying one thing. The network stops routing at it because `wanted` is nought; it also stops
+     * *accepting* for the same reason and by the same read, rather than by a second opinion in the
+     * delivery path.
+     */
+    @Test
+    fun `a full store admits nothing`() {
+        val full = Acceptance.upTo(0L)
+        assertTrue(full.isSatisfied, "no room left is the same shape as a finished site")
+        assertFalse(full.admits(iron(1L)), "a full store took a delivery")
+        assertTrue(full.takesAnything, "and it is still unfussy — it is full, not picky")
+    }
+
     @Test
     fun `a construction site wants exactly what it is short by`() {
         val site = Acceptance.forBill(railBill, 400L)

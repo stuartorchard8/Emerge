@@ -93,21 +93,27 @@ class VesselSimTest {
     // ── Track ─────────────────────────────────────────────────────────────────
 
     /**
-     * An extractor at (2,2) with a run of track from its output port to a **full** tank at [toX] + 1.
+     * An extractor at (2,2) with a run of track from its output port to a consumer at [toX] + 1 that
+     * fills up and then refuses everything.
      *
-     * The tank is what makes this a jam. Material is pulled toward a consumer, so a run that simply
-     * stopped would not fill up — nothing would ever leave the extractor at all. A jam is now a
-     * destination that has stopped accepting, which is both a truer picture of a factory backing up
-     * and a more useful thing to be able to see.
+     * The consumer is what makes this a jam. Material is pulled toward demand, so a run that simply
+     * stopped would not fill up — nothing would ever leave the extractor at all. A jam is a
+     * destination that still *wants* material and has stopped *accepting* it, which is both a truer
+     * picture of a factory backing up and a more useful thing to be able to see.
+     *
+     * ⛔ **A [fixtureStalledSink] rather than a warehouse, and the difference is the whole of why.**
+     * A store meters itself now — it asks for the room it has left — so a full one is a dead end, not
+     * a jam: demand stops running up the line, and the extractor holds its bite instead of packing
+     * the track. Correct, and no use at all for watching a jam.
      */
     private fun oreLine(grid: Grid, toX: Int): VesselState {
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
         val feed = feedExtractor(grid, deck, 2, 2)
         // Empty to begin with, and filled by the extractor. Starting it full would be quicker but the
-        // conservation ledger counts everything aboard as extracted, and 20kg conjured into a tank is
-        // exactly the sort of leak that ledger exists to catch.
-        deck += fixtureStorage(grid.tile(toX + 1, 2), Direction.Right)
+        // conservation ledger counts everything aboard as extracted, and matter conjured into a
+        // buffer is exactly the sort of leak that ledger exists to catch.
+        deck += fixtureStalledSink(grid.tile(toX + 1, 2), Direction.Right)
         // The plate is five tiles across, so the port is at x=4 and the run starts there.
         joinRow(grid, rails, 4, toX, 2)
         // Creative: one of these tears the tank out mid-run to watch the jam clear, and a marked
@@ -122,11 +128,11 @@ class VesselSimTest {
 
     @Test
     fun `a jam fills the track from the far end backwards and stays visible`() {
-        // A full tank at the end of the run. It should pack solid from the end nearest the tank.
+        // A consumer that fills up at the end of the run. It should pack solid from that end back.
         val grid = Grid(12, 5)
         var s = oreLine(grid, toX = 7)
-        // Long enough to fill the tank and then back the line up behind it.
-        s = run(s, ticksToMove(Storage.WAREHOUSE_CAP + Extractor.BUFFER_CAP))
+        // Long enough to fill the sink's two stores and then back the line up behind it.
+        s = run(s, ticksToMove(2L * MACHINE_BUFFER_CAP + Extractor.BUFFER_CAP))
 
         val carried = (4..7).map { s.rail.massAt(grid.tile(it, 2)) }
         assertTrue(carried.all { it > 0L }, "every tile should be carrying something: $carried")
@@ -301,9 +307,9 @@ class VesselSimTest {
     fun `a jam clears from the front when the blockage is removed`() {
         val grid = Grid(12, 5)
         var s = oreLine(grid, toX = 7)
-        s = run(s, ticksToMove(Storage.WAREHOUSE_CAP + Extractor.BUFFER_CAP))
+        s = run(s, ticksToMove(2L * MACHINE_BUFFER_CAP + Extractor.BUFFER_CAP))
 
-        // Tear out the full tank and put an ejector on the end of the run instead.
+        // Tear out the stalled sink and put an ejector on the end of the run instead.
         //
         // ⚠️ **And name what it may throw away, in the same breath.** A freshly placed ejector has an
         // empty whitelist and is a dead end, not a drain — see `Ejector`. Placing one and expecting

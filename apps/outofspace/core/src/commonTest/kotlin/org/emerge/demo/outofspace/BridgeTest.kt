@@ -21,7 +21,7 @@ import org.emerge.demo.outofspace.DeleteLayer
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.PortKind
-import org.emerge.demo.outofspace.world.machine.Storage
+import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
@@ -61,13 +61,25 @@ class BridgeTest {
      * The horizontal line runs left to right along row 5, from a full tank to an empty one. The
      * vertical line runs top to bottom down column 9. They meet at (9, 5).
      */
-    private fun crossing(bridged: Boolean = false, horizontalSupply: Mixture? = ingots): VesselState {
+    private fun crossing(
+        bridged: Boolean = false,
+        horizontalSupply: Mixture? = ingots,
+        /**
+         * Whether the far receiver is a machine that jams rather than a tank that fills.
+         *
+         * Only `a bridge backs up three deep` wants this, and it wants it because a full tank stopped
+         * being congestion — see the note there. Everything else in this file is about where material
+         * *goes*, and a tank is the clearer place to look for it.
+         */
+        stalledReceiver: Boolean = false,
+    ): VesselState {
         val deck = DeckArray(grid)
 
         // Emptying the horizontal source is how the merge is caught: with nothing of its own to
         // send, anything arriving at its tank must have come off the *other* line.
         deck += fixtureStorage(grid.tile(3, 5), Direction.Right)   // out at (4, 5)
-        deck += fixtureStorage(grid.tile(15, 5), Direction.Right)      // in at (14, 5)
+        deck += if (stalledReceiver) fixtureStalledSink(grid.tile(15, 5), Direction.Right)
+        else fixtureStorage(grid.tile(15, 5), Direction.Right)         // in at (14, 5)
         deck += fixtureStorage(grid.tile(9, 2), Direction.Down)       // out at (9, 3)
         deck += fixtureStorage(grid.tile(9, 9), Direction.Down)        // in at (9, 8)
 
@@ -236,14 +248,25 @@ class BridgeTest {
         // delete the far tank, and that no longer congests anything — it starves. A span asks for
         // what lies beyond it now, so a bridge with nothing past it is offered nothing and stands
         // empty (see `a bridge asks for what lies beyond it`). What fills a span is a consumer that
-        // still wants material and cannot take it this tick: a warehouse's appetite never ends, so
-        // demand runs the length of the line while its door refuses at the brim, and everything
-        // between backs up. That is congestion, which is what this test was always about.
-        var s = crossing(bridged = true)
-        s.buffers.put(
-            bufferTile(grid, s.deck[grid.tile(15, 5)]!!, grid.tile(15, 5), BufferRole.Inside)!!,
-            Mixture.of(Species.Iron to Storage.WAREHOUSE_CAP, energy = 0),
-        )
+        // still wants material and cannot take it this tick: demand runs the length of the line
+        // while its door refuses at the brim, and everything between backs up. That is congestion,
+        // which is what this test was always about.
+        //
+        // ⛔ **A full warehouse is no longer such a consumer.** It was — "a warehouse's appetite
+        // never ends" is what this note used to say, and it was the reason a full tank congested
+        // rather than starved. A store meters itself now (`Acceptance.upTo`), so a full one is a
+        // dead end and the span beyond it is starved exactly as if the tank had been deleted. Same
+        // failure, arrived at from the other side. [fixtureStalledSink] is a machine that is
+        // switched off: endlessly hungry, permanently full.
+        var s = crossing(bridged = true, stalledReceiver = true)
+        // Both of the sink's stores, so that the tick which slides a waiting charge into an empty
+        // chamber cannot make room. See [fixtureStalledSink].
+        for (role in listOf(BufferRole.Input, BufferRole.Inside)) {
+            s.buffers.put(
+                bufferTile(grid, s.deck[grid.tile(15, 5)]!!, grid.tile(15, 5), role)!!,
+                Mixture.of(Species.Iron to MACHINE_BUFFER_CAP, energy = 0),
+            )
+        }
         s = run(s, RAIL_PERIOD * 20)
         assertEquals(Bridge.SLOTS, s.slotsFilled(grid.tile(9, 5)), "all three slots loaded")
     }

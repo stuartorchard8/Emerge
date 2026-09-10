@@ -115,6 +115,7 @@ import org.emerge.demo.outofspace.world.tileCentre
 import org.emerge.demo.outofspace.world.airCoupling
 import org.emerge.demo.outofspace.world.atmosphereDistribution
 import org.emerge.demo.outofspace.world.torqueAbout
+import org.emerge.demo.outofspace.world.massIn
 import org.emerge.demo.outofspace.world.fullness
 import org.emerge.demo.outofspace.world.vesselMass
 import org.emerge.demo.outofspace.world.heatOfWorking
@@ -4169,10 +4170,16 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * cannot come to rest on a tile, so it cannot clog the thing this rule protects. Holding it
          * back stranded the site for ever, in front of the material that would have finished it —
          * the same shape as the surplus [Whitelist.room] was written to stop, arriving from the
-         * other end. ⚠️ **Finite is the test, not small.** [Acceptance.wanted] is what a sink still
-         * wants *before it is done for good* and is deliberately not "room right now", so a
-         * warehouse filling up never presents a short appetite; only a bill or a bounded sell order
-         * does, and both are consumed by definition.
+         * other end.
+         *
+         * ⚠️ **The test is "will it be eaten where it lands", and finiteness is how that is
+         * known.** A sink with a bounded appetite consumes a runt sized to that appetite by
+         * definition: it cannot come to rest on a tile, so it cannot clog the thing this rule
+         * protects. That covers a bill, a bounded sell order, **and now a store with less than a
+         * packet of room left** — [Acceptance.wanted] used to be "before it is done for good", so a
+         * warehouse filling up never presented a short appetite and this case could not arise. It
+         * arises now, and the reasoning holds unchanged: a silo 60 g from full is handed 60 g and
+         * swallows it. See [Acceptance.wanted], where the widened reading is written down.
          */
         private fun holdsBack(
             m: DeckMachine,
@@ -4462,9 +4469,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // is the hottest path in the sim and because a sink's appetite is a fact about the sink
             // rather than about the lump being offered. See [Acceptance].
             //
-            // ⚠️ Every machine is [Acceptance.ANYTHING] and that is deliberate, not a stub: a
-            // machine's buffer filling up is momentary, and the delivery path already backs the belt
-            // up correctly when it does. Only a construction site has an appetite that ends.
+            // ⚠️ Every *working* machine is [Acceptance.ANYTHING] and that is deliberate, not a
+            // stub: a machine's buffer filling up is momentary, and the delivery path already backs
+            // the belt up correctly when it does. A construction site and a **store** are the two
+            // kinds whose appetite ends — the site's for good, the store's until it drains.
             //
             val accepts = HashMap<TileIndex, MutableList<Acceptance>>()
             if (ghosts.isNotEmpty()) {
@@ -4494,33 +4502,65 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     .add(Acceptance.forBill(bill, machineShortfall(m), stopsTraffic = false))
             }
 
-            // ── Locked warehouses ────────────────────────────────────────────
+            // ── Stores: what they will take, and how much room is left ───────
             //
-            // The one **permanent** fussy sink on the network, and the first appetite here that is
-            // endless and picky at once — see [Acceptance.takesAnything]. Stated at the input port
-            // rather than at the machine's centre because the port tile is where the track arrives,
-            // which is the tile every other acceptance here is keyed by.
+            // ⛔ **A store is a sink with an END, and it is the only machine that is.** Every other
+            // kind here is [Acceptance.ANYTHING] because its fullness is momentary — a furnace's
+            // hopper drains itself by working — and rationing a network by a number that always goes
+            // back up is rationing it by nothing. A warehouse is where material *stops*: nothing
+            // downstream drains it but the player, so "full" is a state it sits in. Told it was
+            // endless, every source on the vessel poured at it for ever and the corridor leading to
+            // it filled solid with lumps it would refuse at its own door — the exact failure the
+            // demand pass exists to prevent, exempting the one sink most likely to hit it.
             //
-            // ⚠️ **The fast path goes with it.** A tile that can reach a locked warehouse can never
-            // answer [Whitelist.permitsAnything] again, so the per-route walk is no longer confined
-            // to vessels with construction going on. Deliberate, and measured rather than guessed at:
-            // see `PLAN` notes. Lock nothing and the cost is exactly what it was.
+            // ⚠️ **Room now, not room for ever**, which is a different reading of [Acceptance.wanted]
+            // than a construction site's and is safe for the same reason a site's `covered` is: this
+            // whole picture is rebuilt from the world every rail step, so no number in it outlives
+            // the step that read it. A store that drains is hungry again next step.
+            //
+            // ⚠️ **Both dials at once.** A lock says *what*, the tank says *how much*, and they are
+            // independent: a warehouse locked to iron and 2 t from full wants 2 t of iron and
+            // nothing else. That is one [Acceptance] with both fields set, not two — two would be
+            // OR'd at the door and the network would route gravel at a locked tank.
+            //
+            // Stated at the input port rather than at the machine's centre because the port tile is
+            // where the track arrives, which is the tile every other acceptance here is keyed by.
+            //
+            // ⚠️ **The fast path goes with it, and now for every store rather than only locked
+            // ones.** A tile that can reach a store can no longer answer [Whitelist.permitsAnything]
+            // on the store's account. It still can on anything else's: a corridor that also reaches
+            // a furnace is unlimited by way of the furnace and costs exactly what it did. What pays
+            // for the walk is a branch whose only destination is a tank — which is precisely the
+            // branch that needed rationing, so the cost lands where the benefit is.
             for ((tile, at) in ports) {
                 if (rails[tile.index] == null) continue
                 val input = at.firstOrNull { it.kind == PortKind.Input } ?: continue
                 val storage = deck[input.owner] as? Storage ?: continue
                 // ⛔ **A construction site is not a warehouse.** A ghost's dials are already set —
                 // the player picks them when they place it — but the shell cannot hold a gram until
-                // it is paid for, so an appetite stated on its behalf is an endless demand nothing
-                // can ever satisfy. Stu's save, `source_27_12`: a 29%-built storage locked at 100%
-                // purity sat at the far end of a corridor and told a tank of pure Enstatite eleven
-                // tiles away that it would take everything for ever. The tank poured, the ghost
-                // refused it at its own door (it is being built out of Ferrosilite), and seven
-                // packets filled the corridor solid. The site's own bill is stated above, which is
-                // the only appetite it has while it is a site.
+                // it is paid for, so an appetite stated on its behalf is a demand nothing can ever
+                // satisfy. Stu's save, `source_27_12`: a 29%-built storage locked at 100% purity sat
+                // at the far end of a corridor and told a tank of pure Enstatite eleven tiles away
+                // that it would take everything for ever. The tank poured, the ghost refused it at
+                // its own door (it is being built out of Ferrosilite), and seven packets filled the
+                // corridor solid. The site's own bill is stated above, which is the only appetite it
+                // has while it is a site.
                 if (deck.isGhost(input.owner)) continue
-                val filter = storage.filter ?: continue
-                accepts.getOrPut(tile) { mutableListOf() }.add(Acceptance.filtered(filter))
+                // ⛔ **[massIn], never the store tile alone.** It sums every buffer role the machine
+                // has, which for a store is the one tile [BufferRole.Inside] names — but reaching
+                // for that tile directly here would be the second statement of "where a storage
+                // keeps its contents", and the first one already moved once.
+                //
+                // ⚠️ Clamped at nought: `acceptInto` admits a lump that takes a store *over* its
+                // tank, so a full one can be a few grams past its capacity and a bare subtraction
+                // would hand [Acceptance] a negative appetite. `isSatisfied` reads `<= 0` and would
+                // have got the right answer anyway; the clamp is so that nothing downstream has to
+                // wonder.
+                val room = maxOf(0L, storage.capacity - massIn(storage, input.owner, grid, buffers))
+                val filter = storage.filter
+                accepts.getOrPut(tile) { mutableListOf() }.add(
+                    if (filter == null) Acceptance.upTo(room) else Acceptance.filtered(filter, room),
+                )
             }
 
             // ── Motors: a fluid, or the one species the player locked it to ──

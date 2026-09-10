@@ -8,10 +8,12 @@ import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
+import org.emerge.demo.outofspace.world.machine.Furnace
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.SignalField
 import org.emerge.demo.outofspace.world.SpeciesFilter
+import org.emerge.demo.outofspace.world.Wiring
 import org.emerge.demo.outofspace.world.conduitBillOfMaterials
 import org.emerge.demo.outofspace.world.conductanceOf
 import org.emerge.demo.outofspace.world.fillPermille
@@ -151,6 +153,35 @@ fun fixtureStorage(
     /** Which of the three sizes — see [Storage]. A fixture that does not say means the 3×3. */
     kind: DeckMachineKind = DeckMachineKind.Warehouse,
 ): Storage = Storage(center, facing, kind, filter = filter, autoLock = false, autoUnlock = false)
+
+/**
+ * **A consumer that will never stop wanting and will never take another gram** — what a jam is made
+ * of, when a test needs one.
+ *
+ * ⛔ **A full warehouse is not this, and used to be.** Four tests built their jam by filling a tank,
+ * because a store's appetite was endless: demand ran the length of the line while its door refused
+ * at the brim, and everything between backed up. A store meters itself now — it asks for the room it
+ * has and no more — so a full one is not congestion, it is a **dead end**, and material bound for it
+ * simply never leaves the source. That is the whole point of the change, and it took the old jam
+ * fixture with it.
+ *
+ * So the jam is built out of the thing the demand pass still calls momentarily full: a **working
+ * machine that is switched off**. It states [org.emerge.demo.outofspace.world.Acceptance.ANYTHING]
+ * like every other machine, so the network routes at it the length of the line; its input fills to
+ * `MACHINE_BUFFER_CAP` and stays there, because a machine told to stop does no work. Hungry for
+ * ever, and unable to take anything this tick or any other.
+ *
+ * ⚠️ **A [Furnace] because its footprint and its doors are a warehouse's** — 3×3, in at
+ * `-behind` and out at `+ahead` — so it drops into a fixture where a `fixtureStorage` stood without
+ * moving a rail. Nothing about the heat matters here: switched off it never lights, so it conserves
+ * what it is handed and the balance ledger sees an ordinary machine holding an ordinary buffer.
+ *
+ * ⚠️ **[Wiring] with no terms at all, which is off.** Not `RUNNING`, and not a wire that happens to
+ * be dead — "no terms means off" is [Wiring.isOn]'s own rule, so this cannot be switched back on by
+ * anything the world does.
+ */
+fun fixtureStalledSink(center: TileIndex, facing: Direction): Furnace =
+    Furnace(center, facing, wiring = Wiring(emptyMap()))
 
 /**
  * A sensor with the dials wide open — as near as there is to what `Sensor(tile, facing)` used to be.
