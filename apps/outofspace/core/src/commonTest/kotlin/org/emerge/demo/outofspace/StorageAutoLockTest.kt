@@ -18,6 +18,7 @@ import org.emerge.demo.outofspace.world.Whitelist
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
@@ -314,6 +315,76 @@ class StorageAutoLockTest {
         assertTrue(tank().allowsAnySpecies, "ALLOW ALL did not reach every species")
         // Nothing of this is aboard the fixture, so it has never had a row on any sheet.
         assertTrue(tank().mayLockOnto(Species.Zircon), "ALLOW ALL stopped at what was aboard")
+    }
+
+    // ── Which of two sources gets there first ─────────────────────────────────
+
+    /**
+     * Two sources feeding one undecided tank down corridors that merge, with their **output ports
+     * chosen so that tile order and hash-bucket order disagree**.
+     *
+     * `(10,1)` is index 26 and `(2,3)` is index 50 on this 16-wide grid. [TileIndex] is a value class
+     * over `Int`, so its hash *is* the index and a `HashMap` iterates `index & (capacity - 1)`: at
+     * the capacity a map this size takes, 50 lands in bucket 2 and 26 in bucket 10, so the **higher**
+     * tile went first. Sorted, the lower one does.
+     *
+     * ⚠️ The sources are locked to what they hold so that neither is hungry for the other's cargo —
+     * an unlocked store is a sink with room, and two of them facing each other is a second race the
+     * fixture is not asking about.
+     */
+    private fun raceOfTwoPorts(lowPort: Species, highPort: Species): VesselState {
+        val grid = cfg.initialGrid
+        val deck = DeckArray(grid)
+        deck += fixtureStorage(grid.tile(9, 1), Direction.Right, SpeciesFilter(lowPort, pure = true))
+        deck += fixtureStorage(grid.tile(1, 3), Direction.Right, SpeciesFilter(highPort, pure = true))
+        deck += Storage(
+            grid.tile(13, 5), Direction.Right, DeckMachineKind.Buffer,
+            filter = SpeciesFilter(species = null, pure = true),
+            autoLock = true, autoUnlock = false,
+        )
+        val rails = arrayOfNulls<Segment>(grid.size)
+        joinRow(grid, rails, 10, 12, 1)   // out of the low port, right
+        joinRow(grid, rails, 2, 12, 3)    // out of the high port, right
+        joinCol(grid, rails, 12, 1, 5)    // the two corridors merge on this column
+        joinRow(grid, rails, 12, 13, 5)   // and into the tank's door
+        return VesselState(
+            grid, deck,
+            conduits = Conduits.ofRails(rails.toList()),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+        )
+            .stocked(grid.tile(9, 1), pure(lowPort, 10L * Capacity.PACKET_MASS))
+            .stocked(grid.tile(1, 3), pure(highPort, 10L * Capacity.PACKET_MASS))
+    }
+
+    private fun raceWinner(s: VesselState): Species? =
+        (s.deck[s.grid.tile(13, 5)] as Storage).filter?.species
+
+    /**
+     * ⭐ **The source on the lower tile goes first, and that is now a rule rather than a coincidence.**
+     *
+     * ⛔ **It was a hash bucket.** `portsByTile` returned a bare `HashMap`, so the tie-break between
+     * two sources was `index & (capacity - 1)` — deterministic, but unstable under a resize and
+     * matching no rule anybody could be told. Stu's `dump.txt`: the buffer at (19,15) has a chromite
+     * silo one tile below it and a nickel silo eleven tiles away, and nickel won every time, because
+     * its port at 518 wrapped to bucket 6 while chromite's sat at 500. The chromite silo's only route
+     * out leads to that buffer, so once it locked, chromite could never ship again — it still held
+     * all 100 kg of it three thousand ticks later.
+     *
+     * ⚠️ **Run twice with the cargo swapped**, because "the lower tile wins" and "iron wins" look the
+     * same in one direction. The winner has to follow the *port*, not the species.
+     */
+    @Test
+    fun `the source on the lower tile wins the race to an undecided tank`() {
+        assertEquals(
+            Species.Iron,
+            raceWinner(run(raceOfTwoPorts(lowPort = Species.Iron, highPort = Species.Nickel), 30 * RAIL_PERIOD)),
+        )
+        assertEquals(
+            Species.Nickel,
+            raceWinner(run(raceOfTwoPorts(lowPort = Species.Nickel, highPort = Species.Iron), 30 * RAIL_PERIOD)),
+            "the winner followed the species rather than the tile",
+        )
     }
 
     /**

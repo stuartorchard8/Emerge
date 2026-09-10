@@ -437,6 +437,12 @@ class Whitelist private constructor(
      * Ascending tile order means the near end of a marked run comes apart before the far end, which
      * is also the order a player would expect to watch it go.
      *
+     * ⛔ **And for one pass that sentence was simply untrue.** `scrapDeconstructing` walks tiles, so
+     * it held there; `pushOut` walked a `HashMap` keyed by [TileIndex], whose hash is the index, so
+     * it iterated in bucket order and a port at 518 went before one at 500. See
+     * `OutofspaceSim.portsByTile`, which now sorts — a claim in a comment is not a guarantee, and
+     * this one was load-bearing for every race between two sources.
+     *
      * ⚠️ **A promise can be wrong, and it costs a step.** Nothing reserves a route, so a lump
      * promised to one site may be eaten by another on the way; the sink that was counted on then
      * reads short next step and the source that held back pours after all. Self-correcting, because

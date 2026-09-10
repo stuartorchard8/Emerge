@@ -4080,7 +4080,36 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             solidityChanged = true
         }
 
-        /** Ports by tile (bridges folded in — indistinguishable from buildings with ports). */
+        /**
+         * Ports by tile, **in ascending tile order** (bridges folded in — indistinguishable from
+         * buildings with ports).
+         *
+         * ⛔ **The order is the tie-break for every race between two sources, and it used to be a
+         * hash bucket.** This was a bare `HashMap`, [TileIndex] is a value class over `Int` so its
+         * hash *is* the index, and the JVM iterates `index & (capacity - 1)` — so a port at 518
+         * wrapped to bucket 6 and went before a port at 500. Stu's `dump.txt`: the buffer at (19,15)
+         * had a chromite silo one tile below it and a nickel silo eleven tiles away, and the nickel
+         * won every time, for no reason available to anyone looking at the ship. Then it locked, and
+         * the chromite silo — whose only route out leads to that buffer — could never ship again.
+         *
+         * ⛔ **Deterministic was never the problem; it was already that.** The problem is that the
+         * answer moved when the map resized, so adding a machine anywhere aboard could silently
+         * change which tank wins an auto-lock race on the far side of the vessel. And it was
+         * *inexplicable*: no rule a player could be told matched it.
+         *
+         * ⚠️ **[Whitelist.promised] already claimed this in as many words** — "ascending tile order
+         * means the near end of a marked run comes apart before the far end". That was true of
+         * `scrapDeconstructing`, which walks tiles, and false here, which walks a map. Now they
+         * agree.
+         *
+         * ⚠️ **Sorted by the PORT tile, not the machine's centre**, because the port tile is the one
+         * the lump is actually placed on and the one this map is keyed by. In practice the two
+         * barely differ: a port sits one tile off its centre and no two machines' centres are closer
+         * than that.
+         *
+         * ⚠️ Once per rail step, over a couple of hundred ports. The sweep of the whole deck that
+         * builds the map is the expensive half and it was already here.
+         */
         fun portsByTile(conduit: Conduit): Map<TileIndex, List<Port>> {
             val out = HashMap<TileIndex, MutableList<Port>>()
             fun add(port: Port) {
@@ -4098,7 +4127,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // routing cannot form two opinions.
                 for (port in standingPortsOf(grid, deck, buffers, scrapping, m)) add(port)
             }
-            return out
+            val ordered = LinkedHashMap<TileIndex, List<Port>>(out.size)
+            for (tile in out.keys.sortedBy { it.index }) ordered[tile] = out.getValue(tile)
+            return ordered
         }
 
         /** Place output packet at port tile (ports behind buildings). Tops up partial packets where possible. */
