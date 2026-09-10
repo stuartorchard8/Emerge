@@ -4209,7 +4209,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // appetite this packet has already been taken out of — see [Whitelist.promise].
             whitelist.promise(tile, packet.contents, packet.contents.total)
             lockOnDispatch(tile, packet.contents)
-            drained(m, port, rest.orNull())
+            drained(m, port, rest.orNull(), signals)
             // Only an empty tile counts as an appearance. Topping up a lump already standing there
             // is a change of mass, which draws itself from the mass the tile started the tick with.
             if (wasEmpty) motion.placedByPort(tile)
@@ -4245,41 +4245,40 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          */
         private fun electFeeds(
             provisional: List<StoreAppetite>,
-            ports: Map<TileIndex, List<Port>>,
-            flow: FlowGraph,
             signals: SignalField,
         ): Map<Acceptance, TileIndex> {
             if (provisional.isEmpty()) return emptyMap()
             val elected = HashMap<Acceptance, TileIndex>(provisional.size)
             for (p in provisional) {
-                elected[p.acceptance] = nearestFeed(p.door, p.acceptance, ports, flow, signals) ?: continue
+                elected[p.acceptance] = firstUpstream(p.door) { tile ->
+                    railPorts[tile].orEmpty().any {
+                        it.kind == PortKind.Output && canFeed(tile, it, p.acceptance, signals)
+                    }
+                } ?: continue
             }
             return elected
         }
 
-        /** Breadth-first upstream from [door] for the first port that could feed [acceptance]. */
-        private fun nearestFeed(
-            door: TileIndex,
-            acceptance: Acceptance,
-            ports: Map<TileIndex, List<Port>>,
-            flow: FlowGraph,
-            signals: SignalField,
-        ): TileIndex? {
+        /**
+         * The nearest tile upstream of [door] that [wanted] holds of, or null — **breadth first over
+         * [FlowGraph.feeders]**, so "nearest" is fewest hops along the route material would take.
+         *
+         * ⛔ **Two passes ask this and they must ask it the same way**: which source may feed a tank
+         * that has yet to decide, and whether a tank about to unlock still has anything to wait for.
+         * Written twice they were one edit away from disagreeing about what "upstream" means.
+         *
+         * ⚠️ **Rings are walked in ascending tile order**, so a tie at equal distance falls to the
+         * rule the rest of this pass uses. ⚠️ `seen` is what makes a loop in the corridors a walk
+         * that finishes.
+         */
+        private inline fun firstUpstream(door: TileIndex, wanted: (TileIndex) -> Boolean): TileIndex? {
             val seen = HashSet<TileIndex>()
             var ring = listOf(door)
             seen += door
-            // ⚠️ **Bounded by the tiles on the network**, and every tile is entered once — the `seen`
-            // set is what makes a cycle in the corridors a walk that finishes rather than one that
-            // does not.
             while (ring.isNotEmpty()) {
+                for (tile in ring.sortedBy { it.index }) if (wanted(tile)) return tile
                 val next = ArrayList<TileIndex>()
-                for (tile in ring.sortedBy { it.index }) {
-                    for (port in ports[tile].orEmpty()) {
-                        if (port.kind != PortKind.Output) continue
-                        if (canFeed(tile, port, acceptance, signals)) return tile
-                    }
-                }
-                for (tile in ring) for (feeder in flow.feeders(tile)) if (seen.add(feeder)) next.add(feeder)
+                for (tile in ring) for (feeder in flowGraph.feeders(tile)) if (seen.add(feeder)) next.add(feeder)
                 ring = next
             }
             return null
@@ -4523,51 +4522,47 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         fun settled(store: TileIndex): Long = minOf(before.buffers.massAt(store), buffers.massAt(store))
 
         /**
-         * Whether anything [m] would take is already **standing on a route to it**.
+         * Whether [m] still has anything to wait for: material **standing on a route to it**, or a
+         * source upstream that **could send some now**.
          *
-         * ⛔ **The rails are read live, and the whitelist's own bookkeeping is not.** The obvious
-         * spelling is `Demand.covered` plus `Whitelist.promised` — what the walk saw standing, plus
-         * what sources have let go of since — and it is wrong in the one arrangement that matters:
-         * `promise` returns early whenever the tile [permitsAnything][Whitelist.permitsAnything], so
-         * a corridor that also reaches a vent books **nothing**, and `covered` is a snapshot taken
-         * before this step's dispatches. A tank draining overboard is exactly such a corridor. The
-         * load on the track is neither stale nor conditional: [pushOut] puts a packet down the
-         * instant it lets go of it, so a source earlier in the walk is already visible here.
+         * ⛔ **Both, and the second is the one that matters.** In-transit alone is not enough, and
+         * Stu's `dump.txt` shows why in one rail step: [pushOut] walks output ports in tile order, so
+         * the buffer at (10,6) — whose outlet is tile 189 — drains and asks this question *before*
+         * the tank feeding it, at tile 198, has had its turn. Nothing is standing yet. Nothing is
+         * standing because nobody has been asked to send anything, and the tank unlocked into a
+         * corridor whose supplier was sitting on 1.2 tonnes of exactly what it wanted.
          *
-         * ⚠️ **Upstream over [FlowGraph.feeders]**, so only material that can actually reach this
-         * door counts — a lump on a branch that leads elsewhere is not on its way here.
+         * ⛔ **So the question is "is there anything left for me", not "is anything moving".** A tank
+         * is finished when nothing upstream can send it another gram — which is what the switch is
+         * for, and what a player means by a tank they have done with. It is a *sticky* reading on
+         * purpose: while a silo upstream still holds the species, a tank downstream keeps its lock.
          *
-         * ⚠️ **Asked of the appetite the store published this step**, which is the only thing
-         * material was routed by, rather than of the filter alone: a store with no room left wants
-         * nothing, and nothing is what is coming.
+         * ⛔ **The whitelist's own bookkeeping cannot answer either half.** `Demand.covered` is a
+         * snapshot taken before this step's dispatches, and `Whitelist.promised` returns early
+         * whenever the tile [permitsAnything][Whitelist.permitsAnything] — so a corridor that also
+         * reaches a vent books nothing, and a tank draining overboard is exactly such a corridor.
          *
-         * ⚠️ **A store with no appetite on record answers NO**, which is the safe reading: it stated
-         * nothing this step, so nothing was routed to it, so nothing can be coming. That covers a
-         * store whose input port is off the rails entirely — a tank the player fills by hand, and
-         * exactly the one auto-unlock was written for.
+         * ⚠️ **Upstream over [FlowGraph.feeders]**, so a lump or a silo on a branch that leads
+         * elsewhere does not count. ⚠️ Asked of the appetite the store published this step, which is
+         * the only thing material was routed by. ⚠️ A store with no appetite on record answers NO —
+         * it stated nothing, so nothing can reach it: a tank the player fills by hand, and exactly
+         * the one the switch was written for.
          *
-         * ⚠️ Walked only when a store with the switch on runs dry, which is rare and on no hot path.
+         * ⚠️ Walked only when a store with the switch on runs dry, which is on no hot path.
          */
-        private fun anythingComingFor(m: Storage): Boolean {
+        private fun anythingComingFor(m: Storage, signals: SignalField): Boolean {
             val stated = storeAppetites[m.center] ?: return false
-            val flow = flowGraph
-            val seen = HashSet<TileIndex>()
-            var ring = listOf(stated.door)
-            seen += stated.door
-            while (ring.isNotEmpty()) {
-                for (tile in ring) {
-                    val load = rail.resourceAt(tile) ?: continue
-                    if (stated.acceptance.admits(load)) return true
+            return firstUpstream(stated.door) { tile ->
+                val load = rail.resourceAt(tile)
+                if (load != null && stated.acceptance.admits(load)) return@firstUpstream true
+                railPorts[tile].orEmpty().any {
+                    it.kind == PortKind.Output && canFeed(tile, it, stated.acceptance, signals)
                 }
-                val next = ArrayList<TileIndex>()
-                for (tile in ring) for (feeder in flow.feeders(tile)) if (seen.add(feeder)) next.add(feeder)
-                ring = next
-            }
-            return false
+            } != null
         }
 
         /** Write back what is left in the buffer that drained through [port]. */
-        private fun drained(m: DeckMachine, port: Port, rest: Mixture?) {
+        private fun drained(m: DeckMachine, port: Port, rest: Mixture?, signals: SignalField) {
             val role = outputBufferRole(m, port.stream) ?: return
             val tile = bufferTile(grid, m, port.owner, role) ?: return
 
@@ -4587,7 +4582,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             //
             // ⚠️ **Asked of the appetite the store published this step**, which is the only thing
             // material was routed by — see [storeAppetites].
-            if (rest == null && m is Storage && m.autoUnlock && !anythingComingFor(m)) {
+            if (rest == null && m is Storage && m.autoUnlock && !anythingComingFor(m, signals)) {
                 val filter = m.filter
                 if (filter?.pure == true) {
                     // A pure lock unlocks the species but keeps the standard
@@ -4649,6 +4644,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * safe way to be wrong.
          */
         var flowGraph: FlowGraph = FlowGraph.empty()
+            private set
+
+        /**
+         * This step's ports by tile, held for the same reason [flowGraph] is: the passes that walk
+         * upstream from a store's door need to know which tiles carry an output port, and they run
+         * after [advanceRails] has finished with its parameter.
+         */
+        var railPorts: Map<TileIndex, List<Port>> = emptyMap()
             private set
 
         /** How many tiles carry track, so the flow can be rebuilt only when something ceased to be. */
@@ -5224,9 +5227,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // been told about the vanished road had already acted on it.
             this.whitelist = whitelist
             this.provisionalStores = provisional
-            this.electedFeed = electFeeds(provisional, ports, flow, signals)
-            this.storeAppetites = statedByStore
+            // ⚠️ **Before the election**, which walks the graph through these fields now rather
+            // than through its own parameters — see [firstUpstream].
             this.flowGraph = flow
+            this.railPorts = ports
+            this.storeAppetites = statedByStore
+            this.electedFeed = electFeeds(provisional, signals)
 
             // A construction site at [to] that stands **in the road** — unpaid track and nothing
             // else. Named once because both questions below need it and neither may answer it

@@ -129,9 +129,72 @@ class StorageAutoUnlockTest {
     }
 
     /**
-     * The control: **with nothing coming, the switch still does what it is for.** A tank drained dry
-     * on a line whose source has nothing left unlocks, which is the whole point of it — it is a tank
-     * the player has finished with.
+     * ⭐ **The supplier has not had its turn yet, and the tank must still wait for it.**
+     *
+     * ⛔ **The case in-transit alone cannot see, and the one on Stu's ship.** [pushOut] walks output
+     * ports in ascending tile order, so a tank whose outlet sits at a *lower* tile than its
+     * supplier's drains and asks the question first — and nothing is standing on the corridor,
+     * because nobody has been asked to send anything yet. `dump.txt`, the buffer at (10,6): outlet
+     * at tile 189, supplier's outlet at 198, and it unlocked every time into a corridor whose source
+     * was holding 1.2 tonnes of exactly what it wanted.
+     *
+     * Here the tank's outlet is **(9,3) = 57** and the source's is **(12,3) = 60**, so the tank goes
+     * first and the corridor is empty at the moment it asks.
+     */
+    @Test
+    fun `a tank keeps its lock when its supplier has not had its turn yet`() {
+        val grid = cfg.initialGrid
+        val deck = DeckArray(grid)
+        // The tank: fed from the right, drained to the left, outlet at (9,3).
+        deck += Storage(
+            grid.tile(10, 3), Direction.Left,
+            filter = SpeciesFilter(Species.Oxygen, pure = true),
+            autoLock = true, autoUnlock = true,
+        )
+        deck += openEjector(grid.tile(8, 3))
+        // The source: further right, so its outlet at (12,3) is visited after the tank's.
+        deck += fixtureStorage(grid.tile(13, 3), Direction.Left, SpeciesFilter(Species.Oxygen, pure = true))
+        val rails = arrayOfNulls<Segment>(grid.size)
+        joinRow(grid, rails, 8, 9, 3)      // the tank's outlet, overboard
+        joinRow(grid, rails, 11, 12, 3)    // the source's outlet, into the tank's door
+        val state = VesselState(
+            grid, deck,
+            conduits = Conduits.ofRails(rails.toList()),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+        )
+            .stocked(grid.tile(10, 3), Mixture.of(Species.Oxygen to Capacity.PACKET_MASS, energy = 0).atAmbient())
+            .stocked(
+                grid.tile(13, 3),
+                Mixture.of(Species.Oxygen to 4L * Capacity.PACKET_MASS, energy = 0).atAmbient(),
+            )
+
+        var s = state
+        var sawTheGap = false
+        repeat(20 * RAIL_PERIOD) {
+            s = run(s, 1)
+            // ⚠️ **Only while the supplier still has something.** Once it is empty the tank has
+            // genuinely nothing to wait for and unlocking is the switch working, not failing — which
+            // is the control below.
+            val supplierHas = s.inStore(grid.tile(13, 3), BufferRole.Inside)?.total ?: 0L
+            if (supplierHas <= 0L) return@repeat
+            val tankHas = s.inStore(grid.tile(10, 3), BufferRole.Inside)?.total ?: 0L
+            if (tankHas == 0L) sawTheGap = true
+            assertEquals(
+                Species.Oxygen,
+                (s.deck[grid.tile(10, 3)] as Storage).filter?.species,
+                "the tank unlocked while its supplier still held oxygen for it",
+            )
+        }
+        assertTrue(sawTheGap, "the tank never stood empty while the supplier had stock — nothing was tested")
+    }
+
+    /**
+     * The control: **with nothing left anywhere, the switch still does what it is for.**
+     *
+     * ⚠️ The rule is deliberately *sticky* — a tank keeps its lock while any source upstream could
+     * still send it a gram — so this is the assertion that stops it being sticky for ever. The
+     * source here is empty, so there is nothing to wait for and the tank is genuinely finished.
      */
     @Test
     fun `a tank that runs dry with nothing coming still unlocks`() {
