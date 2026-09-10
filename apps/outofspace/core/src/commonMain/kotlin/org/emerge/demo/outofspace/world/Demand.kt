@@ -414,6 +414,30 @@ class Whitelist private constructor(
     fun permitsAnything(tile: TileIndex): Boolean =
         tile.index in unlimited.indices && unlimited[tile.index]
 
+    /**
+     * Whether [mixture] leaving [tile] could have been let go of for **this particular** [sink].
+     *
+     * ⛔ **The one question a source cannot answer for itself.** [room] and [permits] both fold every
+     * sink at a tile into a single number, which is right for deciding *how much* to send and
+     * useless for the caller who needs to know *who* it went to. A store that has yet to decide what
+     * it holds has to be told the moment something is committed to it — see
+     * `Storage.speciesUndecided` — and "committed" means exactly this: there was a route from here
+     * to that sink, and it wanted what went past.
+     *
+     * ⚠️ **Identity, not equality.** Two sinks stating the same appetite are two sinks, and
+     * [Acceptance] is compared by reference everywhere in this file for that reason — [promised] is
+     * keyed by it. Asking for one and being told about its twin would lock the wrong tank.
+     *
+     * ⚠️ **[permitsAnything] is deliberately not consulted.** That fast path answers "will *someone*
+     * take this", and someone is not this sink. A corridor that also reaches a furnace answers yes
+     * to it while the tank at the far end has already been satisfied.
+     */
+    fun leadsTo(tile: TileIndex, sink: Acceptance, mixture: Mixture): Boolean {
+        val here = routes.getOrNull(tile.index) ?: return false
+        for (d in here) if (d.acceptance === sink && d.wants(mixture)) return true
+        return false
+    }
+
     /** True when nothing downstream of [tile] wants anything: a dead end. */
     fun permitsNothing(tile: TileIndex): Boolean =
         !permitsAnything(tile) && routes.getOrNull(tile.index).isNullOrEmpty()

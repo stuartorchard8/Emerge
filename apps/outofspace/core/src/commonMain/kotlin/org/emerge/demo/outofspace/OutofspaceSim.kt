@@ -4142,10 +4142,59 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Booked against what wanted it, so the next port to ship this step is looking at an
             // appetite this packet has already been taken out of — see [Whitelist.promise].
             whitelist.promise(tile, packet.contents, packet.contents.total)
+            lockOnDispatch(tile, packet.contents)
             drained(m, port, rest.orNull())
             // Only an empty tile counts as an appearance. Topping up a lump already standing there
             // is a change of mass, which draws itself from the mass the tile started the tick with.
             if (wasEmpty) motion.placedByPort(tile)
+        }
+
+        /**
+         * A store that has yet to decide what it holds **decides now**, on the strength of a packet
+         * that has just been let go for it.
+         *
+         * ⛔ **The decision has to enter the world at dispatch, not at delivery, and this is the
+         * whole fix.** Everything that rations a network here is either per-step ([Whitelist
+         * .promised], which dies with the whitelist) or per-route ([Demand.covered], which counts
+         * what stands between one tile and one sink). Neither can stop a *second* corridor from
+         * committing its own packet to the same undecided tank, because that corridor holds nothing
+         * and the step has turned over. The tank's own filter is the one place a commitment can be
+         * recorded that every route sees on the next walk — so recording it there is not a second
+         * mechanism, it is the existing one being told the truth a step earlier.
+         *
+         * ⚠️ **A dispatch can be wrong, and that is the cheap side of the trade.** Nothing reserves
+         * a route, so the packet this locked onto may be eaten by something else on the way and the
+         * tank is left waiting for a species that never turns up. That costs the player one press of
+         * the lock — against a corridor of stranded material that costs them the branch. Underdraw
+         * over overdraw, as everywhere else in this pass.
+         *
+         * ⚠️ **The lock in `deliver` is still there and is still needed.** Material can arrive at a
+         * store without ever having been rationed — from a tile that answers
+         * [Whitelist.permitsAnything], or straight out of a machine beside it — and such a packet
+         * was never promised to anybody. Both sites read [Storage.speciesUndecided], so whichever
+         * fires first the other is a no-op.
+         */
+        private fun lockOnDispatch(from: TileIndex, cargo: Mixture) {
+            if (provisionalStores.isEmpty()) return
+            for ((acceptance, at) in provisionalStores) {
+                if (!whitelist.leadsTo(from, acceptance, cargo)) continue
+                val store = deck[at] as? Storage ?: continue
+                if (!store.speciesUndecided) continue
+                deck[at] = store.withFilter(lockedOnto(store, cargo))
+            }
+        }
+
+        /**
+         * What a store locks onto, given the lump that decided it.
+         *
+         * ⚠️ **The species is captured and the purity is inferred**, which is [SpeciesFilter]'s rule
+         * — a blend names the species alone, because what arrived is one sample of an ore body and
+         * the next lump of it will assay differently. Written here rather than twice, since both the
+         * dispatch and the delivery can be the moment a tank makes up its mind.
+         */
+        private fun lockedOnto(store: Storage, cargo: Mixture): SpeciesFilter? {
+            val dominant = cargo.dominant ?: return store.filter
+            return SpeciesFilter(dominant, pure = if (cargo[dominant] == cargo.total) true else null)
         }
 
         /**
@@ -4337,6 +4386,17 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         var whitelist: Whitelist = Whitelist.empty()
             private set
 
+        /**
+         * The stores that have yet to decide what they hold, paired with the appetite they stated —
+         * see [Storage.speciesUndecided]. Held beside [whitelist] and for its reason: [pushOut] runs
+         * as a separate pass and needs the same picture the routing walk was built from.
+         *
+         * ⚠️ **Empty on nearly every vessel**, and [lockOnDispatch] leans on that: a tank locks once
+         * in its life and is an ordinary sink for ever afterwards.
+         */
+        var provisionalStores: List<Pair<Acceptance, TileIndex>> = emptyList()
+            private set
+
         /** How many tiles carry track, so the flow can be rebuilt only when something ceased to be. */
         /** Advance all conduits one step (flow derived from input ports). */
         /**
@@ -4475,6 +4535,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // kinds whose appetite ends — the site's for good, the store's until it drains.
             //
             val accepts = HashMap<TileIndex, MutableList<Acceptance>>()
+            // Which of those acceptances belong to a store that has yet to decide what it holds, and
+            // where that store stands. Empty on any vessel with no undecided tank on it, which is
+            // most of them — see [lockOnDispatch], the only reader.
+            val provisional = ArrayList<Pair<Acceptance, TileIndex>>()
             if (ghosts.isNotEmpty()) {
                 val stuff = tracks[Conduit.Rail]
                 for (tile in ghosts) {
@@ -4558,9 +4622,50 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // wonder.
                 val room = maxOf(0L, storage.capacity - massIn(storage, input.owner, grid, buffers))
                 val filter = storage.filter
-                accepts.getOrPut(tile) { mutableListOf() }.add(
-                    if (filter == null) Acceptance.upTo(room) else Acceptance.filtered(filter, room),
-                )
+                // ⛔ **A store about to auto-lock asks for ONE PACKET, however much room it has.**
+                // Stu's save `dump.txt`, the buffer at (19,15): auto-lock on and locked to "anything
+                // pure", so it stated a two-tonne appetite for *every* pure lump on the vessel.
+                // Every source on the network let go at once; the first arrival narrowed the filter
+                // to that one species; and everything else that had already committed came to rest
+                // in a corridor whose only sink now refuses it. Nothing pushed it there and nothing
+                // can pull it back — the network has no reverse gear — so the branch is dead until
+                // the player unlocks the tank by hand.
+                //
+                // ⛔ **The appetite was a lie about the future, and that is the bug.** Every other
+                // number in this pass describes a sink that will still want the same *kind* of thing
+                // when the material arrives; this one describes a sink that is about to change its
+                // mind, and the whole demand design rests on a stated appetite being honourable when
+                // it is honoured. One packet is the largest appetite it can state truthfully,
+                // because one packet is all it takes to decide.
+                //
+                // ⚠️ **[Demand.covered] and [Whitelist.promise] do the rest and nothing new was
+                // needed.** `remaining` is `wanted - covered - promised`: the promise shuts the door
+                // for the rest of this step, and the lump standing on the route shuts it for every
+                // step until it lands. Then the lock has fired, [Storage.speciesUndecided] is false,
+                // and the tank reopens at its full width for the species it settled on.
+                //
+                // ⚠️ **It costs one packet of latency, once per lock**, and nothing after that.
+                //
+                // ⚠️ Not a proof: two sources whose routes only converge close to the store each see
+                // `covered = 0` on their own route and can each commit a packet. That is one packet
+                // per convergent branch instead of every source on the vessel, and it is the
+                // underdraw side of the trade this file takes everywhere else.
+                val wanted = if (storage.speciesUndecided) minOf(room, Capacity.PACKET_MASS) else room
+                val acceptance =
+                    if (filter == null) Acceptance.upTo(wanted) else Acceptance.filtered(filter, wanted)
+                accepts.getOrPut(tile) { mutableListOf() }.add(acceptance)
+                // ⛔ **And the cap alone is not enough, which a two-branch feed proves in three rail
+                // steps.** [Whitelist.promise] closes the appetite for the rest of a step and
+                // [Demand.covered] closes it for as long as the lump is on *that route* — but a
+                // second source down a corridor of its own shares neither. Its route to the tank
+                // holds nothing, so it reads the full cap and commits a packet too, and one of the
+                // two species is stranded exactly as before. Two disjoint corridors meeting at a
+                // junction is not an exotic layout; it is what a feed looks like.
+                //
+                // So the store is told **at dispatch**, not at delivery: the decision goes into the
+                // world where every route can see it, and the next step's walk has a *decided* tank
+                // in it. See [lockOnDispatch].
+                if (storage.speciesUndecided) provisional.add(acceptance to input.owner)
             }
 
             // ── Motors: a fluid, or the one species the player locked it to ──
@@ -4833,6 +4938,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // ever half a fix anyway: it came after both passes, so the sources that had already
             // been told about the vanished road had already acted on it.
             this.whitelist = whitelist
+            this.provisionalStores = provisional
 
             // A construction site at [to] that stands **in the road** — unpaid track and nothing
             // else. Named once because both questions below need it and neither may answer it
@@ -5295,20 +5401,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     val store = bufferTile(grid, destination, destination.center, role) ?: return false
                     val merged = acceptInto(destination, buffers.resourceAt(store), packet) ?: return false
                     buffers.put(store, merged)
-                    if (destination.autoLock && (destination.filter?.species == null || destination.filter.pure != true)) {
-                        val dominant = packet.contents.dominant
-                        if (dominant != null) {
-                            val isPure = packet.contents[dominant] == packet.contents.total
-                            deck[destination.center] = destination.copy(
-                                filter = SpeciesFilter(
-                                    species = packet.contents.dominant,
-                                    // A blend locks the species only: what arrived is one sample of
-                                    // an ore body and the next lump of it will assay differently, so
-                                    // an opinion about purity here would refuse the rest of the seam.
-                                    pure = if (isPure) true else null,
-                                )
-                            )
-                        }
+                    // ⛔ **[Storage.speciesUndecided], which is the same statement the demand pass
+                    // sizes the appetite from.** These two were written separately — "no species, or
+                    // no opinion about purity" here against "no species" there — and a lock that can
+                    // fire when the appetite was *not* capped is the stranding bug all over again,
+                    // one rung down: a store locked to iron at any purity states a two-tonne
+                    // appetite for iron-bearing rock, takes one pure lump, tightens itself to
+                    // `pure = true`, and the seam behind it is stranded. `SpeciesFilter.pure` says
+                    // in as many words that a blend lock must not grow an opinion about purity for
+                    // exactly that reason; the code here did it anyway. Now a decided store stays
+                    // decided.
+                    if (destination.speciesUndecided) {
+                        deck[destination.center] =
+                            destination.withFilter(lockedOnto(destination, packet.contents))
                     }
                     true
                 }

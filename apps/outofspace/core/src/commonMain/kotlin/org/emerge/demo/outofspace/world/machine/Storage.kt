@@ -81,6 +81,24 @@ data class Storage(
      */
     val capacity: Long get() = capacityOf(kind)
 
+    /**
+     * Whether this store has yet to decide **what** it holds — auto-lock is on and no species has
+     * been captured.
+     *
+     * ⛔ **This is one statement read twice, and it has to be.** The delivery path locks the filter
+     * and the demand pass sizes the appetite, and the two are answering the same question: is the
+     * species this store will settle on still unknown? Written down once here after they were
+     * written down separately and disagreed — see the appetite cap in `OutofspaceSim`'s `accepts`
+     * build, and the auto-lock in `deliver`.
+     *
+     * ⚠️ **Species only, never purity.** A store already locked to iron is *decided*, whatever it
+     * still thinks about purity: everything the network could send it is iron, so no arrival can
+     * narrow it in a way that strands what is already rolling. A store at
+     * `SpeciesFilter(null, pure = true)` — "anything pure", which is what a player who wants one
+     * clean tank of *something* sets — is the undecided case and the one this exists for.
+     */
+    val speciesUndecided: Boolean get() = autoLock && filter?.species == null
+
     override fun rotated(): DeckMachine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
     override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
