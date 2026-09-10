@@ -125,7 +125,7 @@ data class Rocket(
          * engine that is two tiles and a tank of whatever was lying around. If the big one were not
          * obviously the big one there would be no reason to build it.
          */
-        val MASS_PER_TICK: Long = Capacity.PACKET_MASS / 5L
+        val MASS_PER_TICK: Long = Capacity.PACKET_MASS / 40L
 
         /**
          * How much the chamber holds.
@@ -137,7 +137,7 @@ data class Rocket(
          * is in it, so this number is also the answer to "how badly does a running engine cook the
          * ship".
          */
-        val CHAMBER_CAP: Long = MASS_PER_TICK * 4L
+        val CHAMBER_CAP: Long = MASS_PER_TICK * 2L
 
         /**
          * Where `2 H₂ + O₂ → 2 H₂O` lights — **read off the reaction table, not restated**.
