@@ -34,6 +34,7 @@ import org.emerge.demo.outofspace.world.machine.Furnace
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.ThrusterControl
 import org.emerge.demo.outofspace.world.machine.TileEnergy
+import org.emerge.demo.outofspace.world.machine.FeedBook
 import org.emerge.demo.outofspace.world.machine.Ejector
 import org.emerge.demo.outofspace.world.machine.WireButton
 import org.emerge.sim.core.physics.primitives.Coord
@@ -617,10 +618,52 @@ object Save {
         else -> "oxid"
     }
 
+    /**
+     * The species half of a [FeedBook]'s field — see `putFeed`, which writes it.
+     *
+     * ⛔ **An unknown species name is a refusal, not a silent drop.** A list quietly shortened by one
+     * is a machine that keeps something the player told it to throw away, or cooks something they
+     * told it to leave alone, and it would say nothing about having changed its mind.
+     */
+    private fun feedSpecies(f: Map<String, String>, fail: (String) -> Nothing): Set<Species> =
+        f["eject"].orEmpty().split(',')
+            .filter { it.isNotEmpty() && it != EJECT_ORE }
+            .mapTo(LinkedHashSet()) { name ->
+                Species.ALL.firstOrNull { it.name == name } ?: fail("unknown species '$name'")
+            }
+
+    /** The ore half of the same field, which rides the list under the name [EJECT_ORE]. */
+    private fun feedOre(f: Map<String, String>): Boolean =
+        f["eject"].orEmpty().split(',').any { it == EJECT_ORE }
+
     private fun writeDeckMachine(m: DeckMachine, grid: Grid, buffers: BufferLayer): String {
         val f = StringBuilder(m.kind.name)
         fun put(key: String, value: String?) {
             if (value != null) f.append(' ').append(key).append('=').append(value)
+        }
+        /**
+         * A [FeedBook]'s two switches, as one field.
+         *
+         * ⚠️ **Ordinal order, so that one book has one spelling.** A `Set` has no order of its own
+         * and a save has to be diffable — two identical machines must not write two different lines
+         * because their sets were built by different button presses.
+         *
+         * Written only when something is on it, which is the same economy the storage lock's fields
+         * keep: a shut machine is the common case and adds nothing to the line. An older file with
+         * no field loads shut, which is what a file written before the list existed genuinely says.
+         *
+         * ⚠️ **The ore switch rides the same list under the name `ORE`**, which is the docking
+         * port's spelling for the same thing — see its `orders` field. A second key for one bit
+         * would be a second thing to remember to read.
+         *
+         * ⚠️ **The key is still `eject`**, for the machine that had it first and for every file
+         * already written under that name. It is the wrong word for a kiln and renaming it would
+         * cost every existing ejector its list, which is a worse thing than a stale key.
+         */
+        fun putFeed(book: FeedBook) {
+            val list = book.whitelist.sortedBy { it.ordinal }.map { it.name } +
+                (if (book.ore) listOf(EJECT_ORE) else emptyList())
+            if (list.isNotEmpty()) put("eject", list.joinToString(","))
         }
         if (m is DirectedDeckMachine) put("facing", m.facing.name)
         when (m) {
@@ -641,20 +684,7 @@ object Save {
             }
             is Ejector -> {
                 put("vented", m.ventedMass.toString())
-                // ⚠️ **Ordinal order, so that one whitelist has one spelling.** A `Set` has no order
-                // of its own and a save has to be diffable — two identical ejectors must not write
-                // two different lines because their sets were built by different button presses.
-                //
-                // Written only when something is on it, which is the same economy the storage lock's
-                // fields keep: a fresh ejector is the common case and adds nothing to the line. An
-                // older file with no field loads with an empty list, which is what a file written
-                // before the list existed genuinely says — see `canonicalKindName`.
-                // ⚠️ **The ore switch rides the same list under the name `ORE`**, which is the
-                // docking port's spelling for the same thing — see its `orders` field. A second key
-                // for one bit would be a second thing to remember to read.
-                val book = m.whitelist.sortedBy { it.ordinal }.map { it.name } +
-                    (if (m.ore) listOf(EJECT_ORE) else emptyList())
-                if (book.isNotEmpty()) put("eject", book.joinToString(","))
+                putFeed(m)
             }
             // A warehouse holds nothing itself: its contents are a tile of the buffer layer, and
             // the store loop below writes them under the key the record has always used.
@@ -668,6 +698,7 @@ object Save {
             // longer decides anything, the same disposal the `Extractor` note below describes.
             is Furnace -> {
                 put("temp", m.setTemperature.toString())
+                putFeed(m)
                 // Both halves of the dwell, because a charge part-way through its residence time is
                 // a real state: dropping `held` would silently restart every hold on every load.
                 put("dwell", m.dwellTicks.toString())
@@ -2019,12 +2050,8 @@ object Save {
                 // ⛔ **An unknown species name is a refusal, not a silent drop.** A list quietly
                 // shortened by one is an ejector that keeps something the player told it to throw
                 // away, and it would say nothing about having changed its mind.
-                whitelist = f["eject"].orEmpty().split(',')
-                    .filter { it.isNotEmpty() && it != EJECT_ORE }
-                    .mapTo(LinkedHashSet()) { name ->
-                        Species.ALL.firstOrNull { it.name == name } ?: fail("unknown species '$name'")
-                    },
-                ore = f["eject"].orEmpty().split(',').any { it == EJECT_ORE },
+                whitelist = feedSpecies(f, fail),
+                ore = feedOre(f),
             )
             // Two lists, each one field. ⚠️ `wiring` is applied after this `when` for every kind
             // (see `withWiring` below), so it is not passed here.
@@ -2083,12 +2110,21 @@ object Save {
                 progress = num("actionProgress", 0L).toInt(),
                 efficiencyPermille = num("eff", 900L).toInt(),
             )
+            // ⛔ **A file written before the decomposer had a book loads SHUT**, exactly as an
+            // older ejector does, and that is the reading rather than a migration gap: an absent
+            // field says "nothing on the list", and an empty list refuses everything. Every kiln in
+            // an existing save therefore stands idle until its panel is opened — accepted rather
+            // than papered over, Stu's call, 2026-09-10. The alternative is a fourth state meaning
+            // "never been told", and a first tick on such a machine would silently switch it from
+            // everything to one species.
             DeckMachineKind.Furnace -> Furnace(
                 tile,
                 facing = facing(),
                 setTemperature = num("temp", 900L).toInt(),
                 dwellTicks = num("dwell", 0L).toInt(),
                 heldTicks = num("held", 0L).toInt(),
+                whitelist = feedSpecies(f, fail),
+                ore = feedOre(f),
             )
             // ⚠️ An older file's `carry`, `rate` and `in` (the cell in its jaws) are simply not read.
             // The first two no longer exist, and the third is a hopper's worth of ore that a loaded

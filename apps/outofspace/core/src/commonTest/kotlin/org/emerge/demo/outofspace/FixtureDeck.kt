@@ -166,22 +166,29 @@ fun fixtureStorage(
  * fixture with it.
  *
  * So the jam is built out of the thing the demand pass still calls momentarily full: a **working
- * machine that is switched off**. It states [org.emerge.demo.outofspace.world.Acceptance.ANYTHING]
- * like every other machine, so the network routes at it the length of the line; its input fills to
- * `MACHINE_BUFFER_CAP` and stays there, because a machine told to stop does no work. Hungry for
- * ever, and unable to take anything this tick or any other.
+ * machine that is switched off**. Its appetite never ends, so the network routes at it the length of
+ * the line; its input fills to `MACHINE_BUFFER_CAP` and stays there, because a machine told to stop
+ * does no work. Hungry for ever, and unable to take anything this tick or any other.
  *
  * ⚠️ **A [Furnace] because its footprint and its doors are a warehouse's** — 3×3, in at
  * `-behind` and out at `+ahead` — so it drops into a fixture where a `fixtureStorage` stood without
  * moving a rail. Nothing about the heat matters here: switched off it never lights, so it conserves
  * what it is handed and the balance ledger sees an ordinary machine holding an ordinary buffer.
  *
+ * ⛔ **The book has to be stated OUT LOUD, and this used to be a bare `Furnace()`.** A decomposer is
+ * a [org.emerge.demo.outofspace.world.machine.FeedBook] now: it asks for what the player named and a
+ * fresh one names nothing, so an unstated fixture is a **dead end** rather than a jam and four tests
+ * went quietly green-then-red proving it. That is the same trap the note above records about the
+ * full warehouse, arriving from a different direction, and the same answer — a jam fixture must say
+ * what it is hungry *for*. `Species.ALL` plus ore is the widest thing a book can say, which is what
+ * `openEjector` says for the same reason.
+ *
  * ⚠️ **[Wiring] with no terms at all, which is off.** Not `RUNNING`, and not a wire that happens to
  * be dead — "no terms means off" is [Wiring.isOn]'s own rule, so this cannot be switched back on by
  * anything the world does.
  */
 fun fixtureStalledSink(center: TileIndex, facing: Direction): Furnace =
-    Furnace(center, facing, wiring = Wiring(emptyMap()))
+    Furnace(center, facing, wiring = Wiring(emptyMap()), whitelist = Species.ALL.toSet(), ore = true)
 
 /**
  * A sensor with the dials wide open — as near as there is to what `Sensor(tile, facing)` used to be.

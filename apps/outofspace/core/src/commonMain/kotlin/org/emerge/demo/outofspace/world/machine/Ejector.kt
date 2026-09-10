@@ -18,31 +18,15 @@ import org.emerge.demo.outofspace.world.Wiring
  *
  * ### The whitelist is the whole of its appetite
  *
- * ⛔ **Nothing is thrown away that the player has not named.** An ejector's [whitelist] becomes an
- * [org.emerge.demo.outofspace.world.Acceptance] at its own tile, so the network only ever *routes*
- * here what is on the list — nothing travels toward a place that cannot use it. It is the docking
- * port's sell list by another name and for the same reason: both destroy the ship's cargo from the
- * player's point of view, and neither may do it on the player's behalf.
+ * ⛔ **Nothing is thrown away that the player has not named.** An ejector is a [FeedBook] — see that
+ * interface for what a book is, why an empty one refuses everything, and why a ticked species means
+ * that species *pure*. It is the docking port's sell list by another name and for the same reason:
+ * both destroy the ship's cargo from the player's point of view, and neither may do it on the
+ * player's behalf.
  *
- * ⛔ **An EMPTY list refuses everything; it does not mean "no opinion".** That is the one thing this
- * machine cannot be allowed to get wrong. A tile that states no acceptance at all takes anything for
- * ever — see `sinkAdmits`, where "nothing stated means anything" is written down — so a fresh
- * ejector has to state its emptiness out loud or it would be the old vent wearing a list. Place one
- * and the belts back up behind it until a row is ticked, which is correct and not a failure to
- * explain away.
- *
- * ### Pure and mixed are two categories, and the counter drew the line first
- *
- * ⛔ **A species on the [whitelist] means that species PURE**, and a blend of anything is [ore] —
- * one switch of its own. This is `DockingPort`'s partition, taken whole and for its reasons: a tile
- * holding one species is deliverable *as* that species and a tile holding two is deliverable only as
- * ore, so that is the only line the network can honour. Ticking IRON therefore does not consent to
- * throwing away rock that happens to have iron in it — which is what a set-membership reading of a
- * blend would have meant, and what would have quietly destroyed the metal along with the gangue.
- *
- * ⚠️ **The two never compete for the same lump**, because pure and mixed are complementary — see
- * [org.emerge.demo.outofspace.world.SpeciesFilter.MIXED], where that argument is written down for
- * the mouth that needed it first.
+ * ⚠️ **"Takes" means "destroys" here**, which is the one place this machine's reading of the shared
+ * vocabulary differs from a furnace's. Ticking IRON does not consent to throwing away rock that
+ * happens to have iron in it — that is the ORE switch, and the partition is the interface's.
  */
 data class Ejector(
     override val center: TileIndex,
@@ -56,7 +40,7 @@ data class Ejector(
      *
      * ⚠️ **Says nothing about blends.** See [ore], and the class note above.
      */
-    val whitelist: Set<Species> = emptySet(),
+    override val whitelist: Set<Species> = emptySet(),
     /**
      * Whether mixed ore may go overboard — the same switch for the same reason the counter has one.
      *
@@ -65,29 +49,13 @@ data class Ejector(
      * switch a player actually reaches for — tailings are the thing an ejector exists to be rid of,
      * and every one of them is a blend.
      */
-    val ore: Boolean = false,
+    override val ore: Boolean = false,
     override val wiring: Wiring = Wiring.RUNNING,
-) : DeckMachine {
+) : DeckMachine, FeedBook {
     override val kind: DeckMachineKind get() = DeckMachineKind.Ejector
     override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
     override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
 
-    /** Whether pure [species] is on the list — one press of the switch away from either answer. */
-    fun ejects(species: Species): Boolean = species in whitelist
-
-    /** True when this ejector will take nothing at all: no species named, and no ore. */
-    val isShut: Boolean get() = whitelist.isEmpty() && !ore
-
-    /**
-     * This ejector with [species] on the stated side of its switch.
-     *
-     * ⛔ **Set, not flip.** The panel's two buttons each name a side, so pressing the lit one has to
-     * come to nothing — a `toggled` here would turn a double tap on EJECT into a silent reversal,
-     * and the whole reason the control is a pair is to make that impossible.
-     */
-    fun switched(species: Species, ejecting: Boolean): Ejector =
-        copy(whitelist = if (ejecting) whitelist + species else whitelist - species)
-
-    /** The same press on the ORE row, which has no species to key on. */
-    fun switchedOre(ejecting: Boolean): Ejector = copy(ore = ejecting)
+    override fun withFeed(whitelist: Set<Species>, ore: Boolean): FeedBook =
+        copy(whitelist = whitelist, ore = ore)
 }

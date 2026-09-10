@@ -100,6 +100,7 @@ import org.emerge.demo.outofspace.world.SignalNetworks
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.StructureMap
 import org.emerge.demo.outofspace.world.machine.Ejector
+import org.emerge.demo.outofspace.world.machine.FeedBook
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.BodyStep
@@ -2502,10 +2503,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     val m = deck[tile]
                     if (m is DockingPort) deck[tile] = m.copy(orders = edit.orders, ore = edit.ore)
                 }
-                is Edit.TuneEjector -> {
+                is Edit.TuneFeed -> {
                     val tile = originAt(edit.tile) ?: return
                     val m = deck[tile]
-                    if (m is Ejector) deck[tile] = m.copy(whitelist = edit.whitelist, ore = edit.ore)
+                    // The one cast a `FeedBook`-returning `withFeed` costs — see that method.
+                    if (m is FeedBook) deck[tile] = m.withFeed(edit.whitelist, edit.ore) as DeckMachine
                 }
                 is Edit.Undock -> {
                     val weld = assembly.welds.firstOrNull { it.parentId == Member.VESSEL } ?: return
@@ -4746,7 +4748,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 accepts.getOrPut(tile) { mutableListOf() }.add(Acceptance.filtered(SpeciesFilter.MIXED))
             }
 
-            // ── Ejectors: what the player has said may go overboard ──────────
+            // ── Books: what the player has said may be sent here ─────────────
             //
             // ⛔ **The docking port's sell side, and it is the same code because it is the same
             // question.** A tick on IRON is `SpeciesFilter(Iron, pure = true)` and the ore switch is
@@ -4761,19 +4763,30 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // ejector that default is exactly backwards: it is the machine whose door standing open
             // destroys the vessel's cargo. An entry holding an *empty* list refuses everything,
             // which is the docking port's rule too and the reason this line is not inside an `if`.
+            //
+            // ⚠️ **One block for the ejector and the decomposer**, because a book is a book — see
+            // [FeedBook]. A hole in the hull and a kiln want opposite things done with what arrives
+            // and ask the network the identical question to get it, and the day they were two blocks
+            // is the day one of them gets the empty case wrong.
+            //
+            // ⛔ **A decomposer used to be [Acceptance.ANYTHING] and this is what changed.** It was
+            // the honest answer while it had nothing to say — but a machine that takes anything on a
+            // demand network *is sent* everything, so the only way to cook one species was a tank in
+            // front of its mouth locked to that species and re-locked by hand. Ten worth cooking
+            // meant ten tanks. Now the kiln asks for what it is for.
             for ((tile, at) in ports) {
                 if (rails[tile.index] == null) continue
                 val input = at.firstOrNull { it.kind == PortKind.Input } ?: continue
-                val ejector = deck[input.owner] as? Ejector ?: continue
+                val book = deck[input.owner] as? FeedBook ?: continue
                 // A site is not a machine — the warehouse note above is the same trap, and it bites
-                // harder here: an unbuilt shell cannot throw anything away, and the site's own bill
-                // is the only appetite it has while it is one.
+                // harder here: an unbuilt shell cannot throw anything away or cook anything, and the
+                // site's own bill is the only appetite it has while it is one.
                 if (deck.isGhost(input.owner)) continue
                 val list = accepts.getOrPut(tile) { mutableListOf() }
-                for (species in ejector.whitelist) {
+                for (species in book.whitelist) {
                     list.add(Acceptance.filtered(SpeciesFilter(species, pure = true)))
                 }
-                if (ejector.ore) list.add(Acceptance.filtered(SpeciesFilter.MIXED))
+                if (book.ore) list.add(Acceptance.filtered(SpeciesFilter.MIXED))
             }
 
             // ── Docking ports: what the player has put up for sale ───────────

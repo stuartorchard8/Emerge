@@ -194,13 +194,13 @@ class EjectorTest {
         var s = line(emptySet(), pure(Species.Iron))
         val at = s.grid.tile(ejector.first, ejector.second)
 
-        s = run(s, 4 * RAIL_PERIOD, OutofspaceInput(listOf(Edit.TuneEjector(at, setOf(Species.Iron)))))
+        s = run(s, 4 * RAIL_PERIOD, OutofspaceInput(listOf(Edit.TuneFeed(at, setOf(Species.Iron)))))
         assertEquals(setOf(Species.Iron), ejectorAt(s).whitelist, "the tune did not reach the machine")
         s = run(s, 20 * RAIL_PERIOD)
         val venting = ejectorAt(s).ventedMass
         assertTrue(venting > 0L, "a listed ejector should be draining the tank")
 
-        s = run(s, 40 * RAIL_PERIOD, OutofspaceInput(listOf(Edit.TuneEjector(at, emptySet()))))
+        s = run(s, 40 * RAIL_PERIOD, OutofspaceInput(listOf(Edit.TuneFeed(at, emptySet()))))
         assertEquals(emptySet(), ejectorAt(s).whitelist)
         assertEquals(0L, onTrack(s), "clearing the list left cargo stranded on the run")
     }
@@ -210,9 +210,9 @@ class EjectorTest {
     fun `the switch sets a side rather than flipping it`() {
         val bare = Ejector(TileIndex(0))
         val on = bare.switched(Species.Iron, true)
-        assertTrue(on.ejects(Species.Iron))
+        assertTrue(on.takes(Species.Iron))
         assertEquals(on, on.switched(Species.Iron, true), "pressing EJECT twice reversed itself")
-        assertFalse(on.switched(Species.Iron, false).ejects(Species.Iron))
+        assertFalse(on.switched(Species.Iron, false).takes(Species.Iron))
         assertEquals(bare, on.switched(Species.Iron, false), "and KEEP should put it back exactly")
 
         // And the same of the ore row, which is the switch that has no species to key on.
@@ -358,9 +358,9 @@ class EjectorTest {
             (3 to 5) to lump(Species.Quartz, 3L * Capacity.PACKET_MASS),
             (4 to 5) to lump(Species.Water, 2L * Capacity.PACKET_MASS),
         )
-        hud.refreshEjectorRows(Ejector(TileIndex(0)), stock)
+        hud.refreshFeedRows(Ejector(TileIndex(0)), stock)
 
-        assertEquals(listOf(Species.Quartz, Species.Water, Species.Iron), hud.ejectorRows)
+        assertEquals(listOf(Species.Quartz, Species.Water, Species.Iron), hud.feedRows)
     }
 
     /**
@@ -372,9 +372,9 @@ class EjectorTest {
     fun `a species that is named but not aboard still gets a row`() {
         val hud = OutofspaceHud()
         val stock = aboard((2 to 5) to lump(Species.Iron, Capacity.PACKET_MASS))
-        hud.refreshEjectorRows(Ejector(TileIndex(0), whitelist = setOf(Species.Titanium)), stock)
+        hud.refreshFeedRows(Ejector(TileIndex(0), whitelist = setOf(Species.Titanium)), stock)
 
-        assertEquals(listOf(Species.Iron, Species.Titanium), hud.ejectorRows)
+        assertEquals(listOf(Species.Iron, Species.Titanium), hud.feedRows)
     }
 
     /**
@@ -385,21 +385,21 @@ class EjectorTest {
     fun `a species arriving mid-read joins the NEW section and moves nothing`() {
         val hud = OutofspaceHud()
         val machine = Ejector(TileIndex(0))
-        hud.refreshEjectorRows(machine, aboard((2 to 5) to lump(Species.Iron, Capacity.PACKET_MASS)))
-        val opened = hud.ejectorRows
+        hud.refreshFeedRows(machine, aboard((2 to 5) to lump(Species.Iron, Capacity.PACKET_MASS)))
+        val opened = hud.feedRows
 
         // Titanium arrives, and heavier than the iron — so a live sort would put it at the *top*.
         val later = aboard(
             (2 to 5) to lump(Species.Iron, Capacity.PACKET_MASS),
             (3 to 5) to lump(Species.Titanium, 5L * Capacity.PACKET_MASS),
         )
-        assertEquals(opened, hud.ejectorRows, "the frozen list moved on its own")
-        assertEquals(listOf(Species.Titanium), hud.newEjectorSpecies(machine, later))
+        assertEquals(opened, hud.feedRows, "the frozen list moved on its own")
+        assertEquals(listOf(Species.Titanium), hud.newFeedSpecies(machine, later))
 
         // REFRESH is the gesture that files it, and it files it by mass.
-        hud.refreshEjectorRows(machine, later)
-        assertEquals(listOf(Species.Titanium, Species.Iron), hud.ejectorRows)
-        assertEquals(emptyList(), hud.newEjectorSpecies(machine, later))
+        hud.refreshFeedRows(machine, later)
+        assertEquals(listOf(Species.Titanium, Species.Iron), hud.feedRows)
+        assertEquals(emptyList(), hud.newFeedSpecies(machine, later))
     }
 
     /** The other half of REFRESH: a row with nothing behind it any more stops being a row. */
@@ -407,17 +407,17 @@ class EjectorTest {
     fun `refresh drops a row that is neither aboard nor named`() {
         val hud = OutofspaceHud()
         val machine = Ejector(TileIndex(0))
-        hud.refreshEjectorRows(
+        hud.refreshFeedRows(
             machine,
             aboard(
                 (2 to 5) to lump(Species.Iron, Capacity.PACKET_MASS),
                 (3 to 5) to lump(Species.Quartz, Capacity.PACKET_MASS),
             ),
         )
-        assertTrue(Species.Quartz in hud.ejectorRows)
+        assertTrue(Species.Quartz in hud.feedRows)
 
-        hud.refreshEjectorRows(machine, aboard((2 to 5) to lump(Species.Iron, Capacity.PACKET_MASS)))
-        assertEquals(listOf(Species.Iron), hud.ejectorRows, "the spent row outlived a refresh")
+        hud.refreshFeedRows(machine, aboard((2 to 5) to lump(Species.Iron, Capacity.PACKET_MASS)))
+        assertEquals(listOf(Species.Iron), hud.feedRows, "the spent row outlived a refresh")
     }
 
     /**
@@ -446,10 +446,10 @@ class EjectorTest {
     fun `a species held only inside ore gets no row of its own`() {
         val hud = OutofspaceHud()
         val machine = Ejector(TileIndex(0))
-        hud.refreshEjectorRows(machine, aboard((2 to 5) to blend(Species.Iron, Species.Quartz)))
+        hud.refreshFeedRows(machine, aboard((2 to 5) to blend(Species.Iron, Species.Quartz)))
 
-        assertEquals(emptyList(), hud.ejectorRows, "ore put species rows on a list of pure metals")
-        assertTrue(hud.ejectorRowsHaveOre, "and the ore aboard earned no ORE row")
+        assertEquals(emptyList(), hud.feedRows, "ore put species rows on a list of pure metals")
+        assertTrue(hud.feedRowsHaveOre, "and the ore aboard earned no ORE row")
     }
 
     /** The ORE row is frozen alongside the species rows, and arrives in NEW like anything else. */
@@ -457,19 +457,19 @@ class EjectorTest {
     fun `ore arriving mid-read waits in the NEW section`() {
         val hud = OutofspaceHud()
         val machine = Ejector(TileIndex(0))
-        hud.refreshEjectorRows(machine, aboard((2 to 5) to lump(Species.Iron, Capacity.PACKET_MASS)))
-        assertFalse(hud.ejectorRowsHaveOre, "there was no ore aboard when the list was taken")
+        hud.refreshFeedRows(machine, aboard((2 to 5) to lump(Species.Iron, Capacity.PACKET_MASS)))
+        assertFalse(hud.feedRowsHaveOre, "there was no ore aboard when the list was taken")
 
         val later = aboard(
             (2 to 5) to lump(Species.Iron, Capacity.PACKET_MASS),
             (3 to 5) to blend(Species.Iron, Species.Quartz),
         )
-        assertFalse(hud.ejectorRowsHaveOre, "the frozen list grew an ORE row on its own")
-        assertTrue(hud.newEjectorOre(machine, later))
+        assertFalse(hud.feedRowsHaveOre, "the frozen list grew an ORE row on its own")
+        assertTrue(hud.newFeedOre(machine, later))
 
-        hud.refreshEjectorRows(machine, later)
-        assertTrue(hud.ejectorRowsHaveOre)
-        assertFalse(hud.newEjectorOre(machine, later))
+        hud.refreshFeedRows(machine, later)
+        assertTrue(hud.feedRowsHaveOre)
+        assertFalse(hud.newFeedOre(machine, later))
     }
 
     /**
@@ -479,10 +479,10 @@ class EjectorTest {
     @Test
     fun `the ore row survives when the ore does not, if the switch is on`() {
         val hud = OutofspaceHud()
-        hud.refreshEjectorRows(Ejector(TileIndex(0), ore = true), Stockpile.EMPTY)
-        assertTrue(hud.ejectorRowsHaveOre)
+        hud.refreshFeedRows(Ejector(TileIndex(0), ore = true), Stockpile.EMPTY)
+        assertTrue(hud.feedRowsHaveOre)
 
-        hud.refreshEjectorRows(Ejector(TileIndex(0)), Stockpile.EMPTY)
-        assertFalse(hud.ejectorRowsHaveOre, "an ORE row outlived both the ore and the switch")
+        hud.refreshFeedRows(Ejector(TileIndex(0)), Stockpile.EMPTY)
+        assertFalse(hud.feedRowsHaveOre, "an ORE row outlived both the ore and the switch")
     }
 }

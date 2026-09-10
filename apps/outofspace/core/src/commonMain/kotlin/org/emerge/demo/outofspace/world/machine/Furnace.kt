@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.world.machine
 
+import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.chem.BASE_RATE
@@ -40,6 +41,17 @@ import org.emerge.demo.outofspace.world.Wiring
  * ⚠️ **Zero is the default and it is the old behaviour exactly** — hand on the moment the charge is at
  * temperature. So the dial is opt-in, and a decomposer nobody has tuned behaves as it always did.
  *
+ * ### What goes in is the player's list, not the network's leftovers
+ *
+ * ⛔ **A decomposer states what may be sent to it, and an empty statement means nothing may.** See
+ * [whitelist] and [FeedBook]. This machine is the reason that interface is not just the ejector's
+ * field: what a kiln and a hole in the hull have in common is that both are places the player must
+ * *name* what goes, and the network then routes accordingly.
+ *
+ * ⚠️ **It has no opinion about whether the list makes sense.** Ticking iron on a furnace set to
+ * 300 K fills the chamber with iron and holds it at 300 K, which is a legible thing to have built by
+ * mistake and not something to refuse on the player's behalf.
+ *
  * Its firebrick casing -- if the player builds it in firebrick -- stops being decoration at the
  * same moment. The element is modelled as being *in* the chamber, so the charge is what gets hot and
  * the casing is what the heat then bleeds into — slowly, at the buffer's own contact conductance —
@@ -62,12 +74,35 @@ data class Furnace(
      * its own full dwell.
      */
     val heldTicks: Int = 0,
+    /**
+     * Every species the belts may send here **pure** — see [FeedBook], which is the whole of the
+     * rule. Empty means none, not any.
+     *
+     * ⛔ **A charge nobody chose was the tedium this exists to end.** A decomposer takes anything, so
+     * a network with one on it routes *everything* through the kiln; the only way to feed it one
+     * species was a tank in front of its mouth locked to that species, re-locked by hand every time
+     * something new turned up. Ten things worth decomposing meant ten tanks, on a ship whose whole
+     * subject is that there is no room for ten of anything.
+     *
+     * ⚠️ **The book is not derived from [setTemperature], though it very nearly could be.** A
+     * setpoint already implies a set — every species with a single-reagent reaction whose onset it
+     * clears — and deriving it would need no panel at all. It is a *list* instead because the two
+     * dials answer different questions: the setpoint says how hot, and a player who wants serpentine
+     * cooked and calcite left alone at 1100 K is asking something the temperature cannot express.
+     * Stu, 2026-09-10.
+     */
+    override val whitelist: Set<Species> = emptySet(),
+    /** Whether mixed ore may be sent here — see [FeedBook.ore]. */
+    override val ore: Boolean = false,
     override val wiring: Wiring = Wiring.RUNNING,
-) : DirectedDeckMachine {
+) : DirectedDeckMachine, FeedBook {
     override val kind: DeckMachineKind get() = DeckMachineKind.Furnace
     override fun rotated(): DeckMachine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
     override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
+
+    override fun withFeed(whitelist: Set<Species>, ore: Boolean): FeedBook =
+        copy(whitelist = whitelist, ore = ore)
 
     companion object {
         /**

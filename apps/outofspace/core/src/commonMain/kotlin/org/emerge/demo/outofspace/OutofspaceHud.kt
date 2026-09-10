@@ -50,6 +50,7 @@ import org.emerge.render.torus.ui.PanelBuilder
 import org.emerge.render.torus.ui.Ui
 import org.emerge.render.torus.ui.UiBuilder
 import org.emerge.demo.outofspace.world.Stockpile
+import org.emerge.demo.outofspace.world.machine.FeedBook
 import org.emerge.demo.outofspace.world.machine.Ejector
 import org.emerge.render.torus.ui.ActionButton
 import kotlin.math.absoluteValue
@@ -60,7 +61,7 @@ import org.emerge.demo.outofspace.world.BodyKind
 import kotlin.math.sqrt
 
 /** A full-screen overlay: the game's own controls, or the sim's readouts. One at a time. */
-enum class Sheet { None, Menu, Readouts, SaveLoad, Trade, Ejector }
+enum class Sheet { None, Menu, Readouts, SaveLoad, Trade, Feed }
 
 /**
  * How many buildable species the stockpile panel names before it stops counting.
@@ -287,7 +288,7 @@ class OutofspaceHud {
             // The save dialog is holding the keyboard as well as the screen, so it gets shut down
             // rather than merely hidden.
             Sheet.SaveLoad -> closeSaveLoadDialog()
-            Sheet.Readouts, Sheet.Trade, Sheet.Ejector -> openSheet = Sheet.None
+            Sheet.Readouts, Sheet.Trade, Sheet.Feed -> openSheet = Sheet.None
             Sheet.None -> if (!controller.escape()) openMenu(controller)
         }
     }
@@ -300,7 +301,7 @@ class OutofspaceHud {
      * reference would be a snapshot of the ejector as it was when the sheet opened, and the switches
      * would stop lighting up the moment they were used.
      */
-    private var ejectorTile: TileIndex = TileIndex.NONE
+    private var feedTile: TileIndex = TileIndex.NONE
 
     /**
      * The rows the whitelist sheet was **opened** with, in the order it drew them — and it keeps
@@ -310,7 +311,7 @@ class OutofspaceHud {
      * mass, and mass aboard changes every tick: a live sort would have a row slide out from under
      * the cursor between the look and the click, and the machine on the other end of that click
      * throws cargo overboard for ever. So the order is a snapshot, and re-taking it is a *gesture*
-     * the player makes — see [refreshEjectorRows], which is what REFRESH and opening the sheet both
+     * the player makes — see [refreshFeedRows], which is what REFRESH and opening the sheet both
      * do.
      *
      * ⚠️ **Rows survive here after their reason to exist has gone.** A species that leaves the ship
@@ -318,23 +319,23 @@ class OutofspaceHud {
      * row a player has just finished un-ticking, and taking it away in the same breath would look
      * like the game had undone the press.
      */
-    var ejectorRows: List<Species> = emptyList()
+    var feedRows: List<Species> = emptyList()
         // ⚠️ Readable for [openSheet]'s reason: the freeze is a *rule*, it can be asked and answered
         // without a screen, and a test that could not see the list could only assert on the pixels
-        // it happens to produce. Written only through [refreshEjectorRows], which is what keeps
+        // it happens to produce. Written only through [refreshFeedRows], which is what keeps
         // "the list was re-taken" and "the player asked for it" from drifting apart.
         private set
 
     /**
      * Whether the frozen list includes the ORE row — the one row that is not a species.
      *
-     * ⛔ **Frozen alongside [ejectorRows] and for the identical reason.** Ore sits at the foot of the
+     * ⛔ **Frozen alongside [feedRows] and for the identical reason.** Ore sits at the foot of the
      * main section, so ore arriving mid-read would push the NEW heading and everything under it down
      * by a row. A separate flag rather than a member of the list because ORE is not a [Species] and
      * has no mass to be ranked by — it is the counter's own shape, where the ore row likewise sits
      * below the ranking rather than inside it.
      */
-    var ejectorRowsHaveOre: Boolean = false
+    var feedRowsHaveOre: Boolean = false
         private set
 
     /**
@@ -344,10 +345,10 @@ class OutofspaceHud {
      * player's other way of saying REFRESH, and a sheet that reopened onto a stale list would make
      * that gesture do nothing.
      */
-    fun openEjectorSheet(tile: TileIndex, ejector: Ejector, stock: Stockpile) {
-        ejectorTile = tile
-        refreshEjectorRows(ejector, stock)
-        openSheet = Sheet.Ejector
+    fun openFeedSheet(tile: TileIndex, book: FeedBook, stock: Stockpile) {
+        feedTile = tile
+        refreshFeedRows(book, stock)
+        openSheet = Sheet.Feed
     }
 
     /**
@@ -358,9 +359,9 @@ class OutofspaceHud {
      * section joins the list in its rightful place by mass; anything that is neither aboard nor
      * whitelisted stops having a row.
      */
-    fun refreshEjectorRows(ejector: Ejector, stock: Stockpile) {
-        ejectorRows = ejectorSpecies(ejector, stock)
-        ejectorRowsHaveOre = ejectorWantsOreRow(ejector, stock)
+    fun refreshFeedRows(book: FeedBook, stock: Stockpile) {
+        feedRows = feedSpecies(book, stock)
+        feedRowsHaveOre = feedWantsOreRow(book, stock)
     }
 
     /**
@@ -382,13 +383,13 @@ class OutofspaceHud {
      * with nothing aboard — both on the list, both spent — would otherwise be free to swap places
      * between one refresh and the next for no reason the player could see.
      */
-    private fun ejectorSpecies(ejector: Ejector, stock: Stockpile): List<Species> =
-        Species.ALL.filter { stock.buildable(it) > 0L || ejector.ejects(it) }
+    private fun feedSpecies(book: FeedBook, stock: Stockpile): List<Species> =
+        Species.ALL.filter { stock.buildable(it) > 0L || book.takes(it) }
             .sortedByDescending { stock.buildable(it) }
 
     /** Whether the ORE row earns its place: there is some aboard, or the switch is already on. */
-    private fun ejectorWantsOreRow(ejector: Ejector, stock: Stockpile): Boolean =
-        stock.blended.total > 0L || ejector.ore
+    private fun feedWantsOreRow(book: FeedBook, stock: Stockpile): Boolean =
+        stock.blended.total > 0L || book.ore
 
     /**
      * What has come aboard since the list was taken — the NEW section, and nothing else.
@@ -397,15 +398,15 @@ class OutofspaceHud {
      * freeze: a species arriving mid-read must not push the row under the player's finger down by
      * one. It gets its own heading at the bottom, where nothing is above it to move.
      */
-    fun newEjectorSpecies(ejector: Ejector, stock: Stockpile): List<Species> {
-        if (ejectorRows.isEmpty() && !ejectorRowsHaveOre) return emptyList()
-        val shown = ejectorRows.toHashSet()
-        return ejectorSpecies(ejector, stock).filter { it !in shown }
+    fun newFeedSpecies(book: FeedBook, stock: Stockpile): List<Species> {
+        if (feedRows.isEmpty() && !feedRowsHaveOre) return emptyList()
+        val shown = feedRows.toHashSet()
+        return feedSpecies(book, stock).filter { it !in shown }
     }
 
-    /** Whether ore has turned up since the list was taken — the ORE row's half of [newEjectorSpecies]. */
-    fun newEjectorOre(ejector: Ejector, stock: Stockpile): Boolean =
-        !ejectorRowsHaveOre && ejectorWantsOreRow(ejector, stock)
+    /** Whether ore has turned up since the list was taken — the ORE row's half of [newFeedSpecies]. */
+    fun newFeedOre(book: FeedBook, stock: Stockpile): Boolean =
+        !feedRowsHaveOre && feedWantsOreRow(book, stock)
 
     private val collapsed = mutableSetOf<String>()
     private val expanded = mutableSetOf<String>()
@@ -692,7 +693,7 @@ class OutofspaceHud {
                 Sheet.Readouts -> readoutsSheet(controller, fps, stock)
                 Sheet.SaveLoad -> saveLoadSheet(controller)
                 Sheet.Trade -> tradeSheet(controller)
-                Sheet.Ejector -> ejectorSheet(controller, stock)
+                Sheet.Feed -> feedSheet(controller, stock)
             }
         }
         // Clear one-shot status messages after they've been displayed.
@@ -1114,7 +1115,7 @@ class OutofspaceHud {
         // is a sweep of every buffer, every belt and the whole deck — see [build] — and this needs
         // it exactly once per opening rather than once per frame the inspector happens to be up.
         button("WHITELIST", 0x2E5A6BFFL) {
-            openEjectorSheet(tile, ejector, controller.state.stockpile)
+            openFeedSheet(tile, ejector, controller.state.stockpile)
         }
     }
 
@@ -1126,9 +1127,9 @@ class OutofspaceHud {
      * ⛔ **Nothing in this sheet moves on its own.** The rows are ranked by mass aboard, which is a
      * number that changes every tick — so a live list would re-rank under the player's hand, and the
      * control they were reaching for would be a different species by the time they hit it. The rows
-     * are taken once, when the sheet opens ([ejectorRows]); species that arrive while it is open get
+     * are taken once, when the sheet opens ([feedRows]); species that arrive while it is open get
      * their own section at the bottom where nothing above them can shift; and the only thing that
-     * re-ranks anything is the player pressing REFRESH. See [refreshEjectorRows].
+     * re-ranks anything is the player pressing REFRESH. See [refreshFeedRows].
      *
      * ⚠️ **Two buttons and not one toggle.** A single button whose label changed would be a control
      * that says what it will *become*, which is exactly the ambiguity that gets cargo thrown away by
@@ -1138,42 +1139,75 @@ class OutofspaceHud {
      * ⚠️ EJECT lights **red**. Every other lit control in this HUD is green because every other one
      * is safe; this one destroys the ship's cargo, and it should not look like an approval.
      */
-    private fun UiBuilder.ejectorSheet(controller: OutofspaceController, stock: Stockpile) {
+    /**
+     * What one machine's feed sheet calls its two sides.
+     *
+     * ⛔ **The sheet is one control and the machines are two, and the difference between them is
+     * entirely words and one colour.** Both ask the network the same question — see [FeedBook] — so
+     * duplicating the sheet to change a caption would be two hundred lines kept in step by hand, and
+     * the half that drifted would be the one nobody has open. Everything that genuinely differs is
+     * here, and it is four fields.
+     *
+     * ⚠️ **The verbs are the machine's, not the network's.** "EJECT" and "EAT" both mean *let the
+     * belts send this here*; what they promise the player is what happens next, which is the only
+     * thing they need to get right.
+     */
+    private data class FeedWords(
+        /** The sheet's own heading. */
+        val title: String,
+        /** The lit-side button: what the machine does with what arrives. */
+        val on: String,
+        /** The other side. Always a refusal, and always the word for *not* doing the above. */
+        val off: String,
+        /** The lit side's colour — see [EAT_ON], where the difference is argued. */
+        val onLit: Long,
+    ) {
+        companion object {
+            val OVERBOARD = FeedWords("OVERBOARD", "EJECT", "KEEP", EJECT_ON)
+            val KILN = FeedWords("INTO THE KILN", "COOK", "LEAVE", EAT_ON)
+
+            /** Which set of words [book] speaks. */
+            fun of(book: FeedBook): FeedWords = if (book is Furnace) KILN else OVERBOARD
+        }
+    }
+
+    private fun UiBuilder.feedSheet(controller: OutofspaceController, stock: Stockpile) {
         val s = controller.state
-        val ejector = s.machineCovering(ejectorTile) as? Ejector
+        val book = s.machineCovering(feedTile) as? FeedBook
+        val words = book?.let { FeedWords.of(it) } ?: FeedWords.OVERBOARD
 
         val body: PanelBuilder.() -> Unit = {
-            if (ejector == null) {
+            if (book == null) {
                 // The machine was taken apart, or moved, while its list was open. Said rather than
                 // dismissed: a sheet that vanished mid-read would look like a misclick.
-                text("that ejector is no longer there", 0x9A9A9AFFL)
+                text("that machine is no longer there", 0x9A9A9AFFL)
             } else {
                 row(gapPx = 6f) {
-                    button("REFRESH", 0x2E5A6BFFL) { refreshEjectorRows(ejector, stock) }
+                    button("REFRESH", 0x2E5A6BFFL) { refreshFeedRows(book, stock) }
                     // ⚠️ **Short enough to fit beside the button**, which a screenshot decided and no
                     // test could have: the sheet clips at its own edge rather than wrapping, and the
                     // first wording ran off it mid-word. See the counter's note about padding.
                     text("re-rank · drop spent rows", 0x7A7A7AFFL)
                 }
-                keyValue("THROWN AWAY", mass(ejector.ventedMass), 0x9A9A9AFFL, 0xE0864AFFL)
+                if (book is Ejector) keyValue("THROWN AWAY", mass(book.ventedMass), 0x9A9A9AFFL, 0xE0864AFFL)
                 gap()
                 row(gapPx = 2f) {
                     text(EJECT_NAME_W.named("SPECIES"), 0x7A7A7AFFL)
                     text(EJECT_MASS_W.cell("ABOARD"), 0x7A7A7AFFL)
                 }
-                for (species in ejectorRows) ejectorRow(controller, ejector, stock, species)
-                if (ejectorRowsHaveOre) ejectorOreRow(controller, ejector, stock)
+                for (species in feedRows) feedRow(controller, book, words, stock, species)
+                if (feedRowsHaveOre) feedOreRow(controller, book, words, stock)
 
                 // ── What has come aboard since the list was taken ────────────
-                val arrived = newEjectorSpecies(ejector, stock)
-                val newOre = newEjectorOre(ejector, stock)
+                val arrived = newFeedSpecies(book, stock)
+                val newOre = newFeedOre(book, stock)
                 if (arrived.isNotEmpty() || newOre) {
                     gap()
                     text("NEW ABOARD  ·  REFRESH to file them", 0xE0C060FFL)
-                    for (species in arrived) ejectorRow(controller, ejector, stock, species)
-                    if (newOre) ejectorOreRow(controller, ejector, stock)
+                    for (species in arrived) feedRow(controller, book, words, stock, species)
+                    if (newOre) feedOreRow(controller, book, words, stock)
                 }
-                if (ejectorRows.isEmpty() && !ejectorRowsHaveOre && arrived.isEmpty() && !newOre) {
+                if (feedRows.isEmpty() && !feedRowsHaveOre && arrived.isEmpty() && !newOre) {
                     text("(nothing aboard, and nothing on the list)", 0x9A9A9AFFL)
                 }
             }
@@ -1185,12 +1219,12 @@ class OutofspaceHud {
             val w = minOf(EJECT_WIDTH_DP * density, screenW * 0.92f)
             val h = screenH * 0.85f
             sheet(
-                "oos-eject", "OVERBOARD", onDismiss = dismiss,
+                "oos-eject", words.title, onDismiss = dismiss,
                 boxX = (screenW - w) * 0.5f, boxY = (screenH - h) * 0.5f, boxW = w, boxH = h,
                 rowHeight = SHEET_ROW_DP, textSize = 14f, body = body,
             )
         } else {
-            sheet("oos-eject", "OVERBOARD", onDismiss = dismiss, heightFraction = 0.85f, rowHeight = 34f, textSize = 15f, body = body)
+            sheet("oos-eject", words.title, onDismiss = dismiss, heightFraction = 0.85f, rowHeight = 34f, textSize = 15f, body = body)
         }
     }
 
@@ -1201,23 +1235,24 @@ class OutofspaceHud {
      * species pure, so the honest figure beside it is the mass that tick can actually move. Iron
      * dissolved in a hold of rock is on the ORE row and nowhere else.
      */
-    private fun PanelBuilder.ejectorRow(
+    private fun PanelBuilder.feedRow(
         controller: OutofspaceController,
-        ejector: Ejector,
+        book: FeedBook,
+        words: FeedWords,
         stock: Stockpile,
         species: Species,
     ) {
-        val on = ejector.ejects(species)
+        val on = book.takes(species)
         row(gapPx = 2f) {
             button(EJECT_NAME_W.named(species.name.uppercase()), 0x00000000L) { controller.openWiki(species) }
             text(EJECT_MASS_W.cell(mass(stock.buildable(species))), speciesColor(species) or 0xFFL)
             // ⛔ **Each button SETS its side rather than flipping.** Pressing the lit one has to be a
-            // no-op, or a double tap on EJECT would quietly take the species back off the list.
-            button("EJECT", if (on) EJECT_ON else EJECT_OFF, widthEm = EJECT_SWITCH_EM) {
-                controller.setEject(ejector, species, true)
+            // no-op, or a double tap on the ON side would quietly take the species back off the list.
+            button(words.on, if (on) words.onLit else EJECT_OFF, widthEm = EJECT_SWITCH_EM) {
+                controller.setFeeds(book, species, true)
             }
-            button("KEEP", if (on) EJECT_OFF else KEEP_ON, widthEm = EJECT_SWITCH_EM) {
-                controller.setEject(ejector, species, false)
+            button(words.off, if (on) EJECT_OFF else KEEP_ON, widthEm = EJECT_SWITCH_EM) {
+                controller.setFeeds(book, species, false)
             }
         }
     }
@@ -1234,22 +1269,23 @@ class OutofspaceHud {
      * has no single species to be ranked against, and a mixed heap that outweighed every pure tank
      * aboard would otherwise sit permanently at the top of a list of metals.
      */
-    private fun PanelBuilder.ejectorOreRow(
+    private fun PanelBuilder.feedOreRow(
         controller: OutofspaceController,
-        ejector: Ejector,
+        book: FeedBook,
+        words: FeedWords,
         stock: Stockpile,
     ) {
-        val on = ejector.ore
+        val on = book.ore
         row(gapPx = 2f) {
             // Inert, unlike a species name: there is no article about "ore", because ore is not a
             // thing — it is every lump aboard that is more than one thing.
             button(EJECT_NAME_W.named("ORE"), 0x00000000L) { }
             text(EJECT_MASS_W.cell(mass(stock.blended.total)), 0xC8A44AFFL)
-            button("EJECT", if (on) EJECT_ON else EJECT_OFF, widthEm = EJECT_SWITCH_EM) {
-                controller.setEjectOre(ejector, true)
+            button(words.on, if (on) words.onLit else EJECT_OFF, widthEm = EJECT_SWITCH_EM) {
+                controller.setFeedsOre(book, true)
             }
-            button("KEEP", if (on) EJECT_OFF else KEEP_ON, widthEm = EJECT_SWITCH_EM) {
-                controller.setEjectOre(ejector, false)
+            button(words.off, if (on) EJECT_OFF else KEEP_ON, widthEm = EJECT_SWITCH_EM) {
+                controller.setFeedsOre(book, false)
             }
         }
         text("  everything aboard that is more than one species", 0x5A5A5AFFL)
@@ -2577,6 +2613,34 @@ class OutofspaceHud {
             0x2E5A6BFFL,
         ) { controller.cycleDecomposerDwell(tile, 1) }
 
+        // ── What the belts may send here ─────────────────────────────────────
+        //
+        // ⚠️ **A door to a sheet, not a section**, which the ejector settled and the docking port
+        // before it: a control with one row per species in the game is a list whose length is the
+        // world's, and the inspector is a narrow column with the wiki hanging off the bottom of it.
+        //
+        // ⚠️ **An empty list is called out in words.** "0 species" is a number a player reads past;
+        // "cooks nothing" is the sentence that explains why the belt behind the machine is solid —
+        // and a decomposer loaded out of a file written before it had a list is *exactly* that.
+        if (machine.isShut) {
+            keyValue("COOKING", "nothing", 0x9A9A9AFFL, 0x9A9A9AFFL)
+            text("name a species and the belts will feed it", 0x5A5A5AFFL)
+        } else {
+            // ⚠️ Ore is counted in words and not as a species, because it is not one — see the
+            // ejector's twin, where the argument is written down.
+            val named = when {
+                machine.whitelist.isEmpty() -> "ore"
+                machine.ore -> "${machine.whitelist.size} species · ore"
+                else -> "${machine.whitelist.size} species"
+            }
+            keyValue("COOKING", named, 0x9A9A9AFFL, 0xE0864AFFL)
+        }
+        // The stockpile is read HERE, in the press — see the ejector's note, which is the same sweep
+        // for the same reason.
+        button("FEED LIST", 0x2E5A6BFFL) {
+            openFeedSheet(tile, machine, controller.state.stockpile)
+        }
+
         if (chamber != null && controller.state.buffers.resourceAt(chamber) != null) {
             // Coloured by whether the charge is *there yet* rather than by how hot it is: below the
             // setpoint the element is still working and the dwell has not started counting.
@@ -3008,6 +3072,21 @@ class OutofspaceHud {
         private val EJECT_ON = 0xA0432EFFL
         private val KEEP_ON = 0x2E6B4AFFL
         private val EJECT_OFF = 0x2A3550FFL
+
+        /**
+         * A kiln's lit side: **ember, not alarm.**
+         *
+         * ⛔ **Not [EJECT_ON]'s red**, and the difference is the whole reason this is a value rather
+         * than a constant. Sending serpentine to a decomposer is reversible — what comes out the far
+         * side is olivine and water, and both are still aboard. Dressing that in the ejector's red
+         * would teach the player to flinch at a control that costs them nothing, and would spend the
+         * alarm that red is being saved for.
+         *
+         * ⚠️ **Not [KEEP_ON]'s green either**, which it was for one screenshot: both halves of the
+         * switch lit the same colour, so the only thing telling a player which side they were on was
+         * which *column* the lit cell sat in. Every other switch in this HUD says it twice.
+         */
+        private val EAT_ON = 0xA0662EFFL
 
         /** Nav view half-width (provisional — 20s debug thrust). */
         const val NAV_RANGE_TILES: Float = 256f

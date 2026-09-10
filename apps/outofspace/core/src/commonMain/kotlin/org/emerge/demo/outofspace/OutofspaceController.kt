@@ -28,6 +28,7 @@ import org.emerge.demo.outofspace.world.Docking
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.machine.DockingPort
 import org.emerge.demo.outofspace.world.machine.Ejector
+import org.emerge.demo.outofspace.world.machine.FeedBook
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
@@ -805,20 +806,24 @@ class OutofspaceController(
     fun toggleSellOreForever(port: DockingPort) = retune(port.unboundedOre())
 
     /**
-     * One press of EJECT or KEEP on [species] — see `Ejector.switched`, where the rule lives.
+     * One press of the switch on [species] — see `FeedBook.switched`, where the rule lives.
      *
      * ⚠️ **The set is built on the machine, not here**, for the reason [nudge] gives: what a press
      * means is a fact about what the list can say, and stating it in the panel would let the panel
      * and any other caller form two opinions about it.
+     *
+     * ⚠️ **[FeedBook] and not [Ejector]**, so the decomposer's panel drives the identical path. The
+     * two machines disagree about what happens to a lump once it arrives and about nothing at all
+     * before that, which is all this is deciding.
      */
-    fun setEject(ejector: Ejector, species: Species, ejecting: Boolean) =
-        retune(ejector.switched(species, ejecting))
+    fun setFeeds(book: FeedBook, species: Species, taking: Boolean) =
+        retune(book.switched(species, taking))
 
     /** The same press on the ORE row, which has no species to key on. */
-    fun setEjectOre(ejector: Ejector, ejecting: Boolean) = retune(ejector.switchedOre(ejecting))
+    fun setFeedsOre(book: FeedBook, taking: Boolean) = retune(book.switchedOre(taking))
 
-    private fun retune(ejector: Ejector) =
-        pending.add(Edit.TuneEjector(ejector.center, ejector.whitelist, ejector.ore))
+    private fun retune(book: FeedBook) =
+        pending.add(Edit.TuneFeed(book.center, book.whitelist, book.ore))
 
     private fun retune(port: DockingPort) =
         pending.add(Edit.TuneDockingPort(port.center, orders = port.orders, ore = port.ore))

@@ -203,19 +203,24 @@ sealed interface Edit {
     ) : Edit
 
     /**
-     * Replace an ejector's whitelist wholesale.
+     * Replace a machine's feed book wholesale — see
+     * [org.emerge.demo.outofspace.world.machine.FeedBook].
      *
      * ⛔ **The whole set, not one species at a time**, which is [TuneDockingPort]'s reason exactly: a
-     * whitelist is a statement about a *set* — the network's demand at that tile is rebuilt from all
-     * of it together — so an edit that flipped one entry would have to say what happens to the rest
-     * anyway. `Ejector.toggled` is where a button press becomes a set, and it lives on the machine
+     * book is a statement about a *set* — the network's demand at that tile is rebuilt from all of
+     * it together — so an edit that flipped one entry would have to say what happens to the rest
+     * anyway. `FeedBook.switched` is where a button press becomes a set, and it lives on the machine
      * so that the panel and any other caller cannot disagree about what a press means.
+     *
+     * ⚠️ **One edit for the ejector and the decomposer**, and it does not name which: the tile knows
+     * what stands on it, and an edit per machine would be two ways to say one sentence. It was
+     * `TuneEjector` while the ejector was the only machine with a list.
      */
-    data class TuneEjector(
+    data class TuneFeed(
         val tile: TileIndex,
-        /** See [org.emerge.demo.outofspace.world.machine.Ejector.whitelist] — species, **pure**. */
+        /** See [org.emerge.demo.outofspace.world.machine.FeedBook.whitelist] — species, **pure**. */
         val whitelist: Set<org.emerge.demo.outofspace.chem.Species>,
-        /** See [org.emerge.demo.outofspace.world.machine.Ejector.ore] — every blend, in one switch. */
+        /** See [org.emerge.demo.outofspace.world.machine.FeedBook.ore] — every blend, in one switch. */
         val ore: Boolean = false,
     ) : Edit
 

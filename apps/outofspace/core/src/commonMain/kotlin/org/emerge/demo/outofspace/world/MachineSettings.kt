@@ -171,7 +171,10 @@ fun DeckMachine.toMachineSettings(): MachineSettings = MachineSettings(
     whitelist = when (this) {
         // ⛔ **A shut ejector is captured as [Setting.Empty], never as a present empty book.** See
         // the field — and note that "shut" is both halves: no species *and* no ore.
-        is Ejector -> if (isShut) Setting.Empty else Setting.Present(EjectBook(whitelist, ore))
+        // ⚠️ **Any [FeedBook], not the ejector alone** — a stamp is refused across classes anyway
+        // (see [settingsFamily]), so this crossing no boundary is exactly what makes it safe to
+        // widen: a decomposer's list can only ever be pasted onto another decomposer.
+        is FeedBook -> if (isShut) Setting.Empty else Setting.Present(EjectBook(whitelist, ore))
         else -> Setting.Absent
     },
 )
@@ -250,6 +253,13 @@ fun DeckMachine.withSettings(settings: MachineSettings): DeckMachine {
             if (settings.facing is Setting.Present) result = result.copy(facing = settings.facing.value)
             if (settings.setTemperature is Setting.Present) result = result.copy(setTemperature = settings.setTemperature.value)
             if (settings.dwellTicks is Setting.Present) result = result.copy(dwellTicks = settings.dwellTicks.value)
+            // ⚠️ **The book travels with the dials**, because on a decomposer they are one setting:
+            // "cook these, at that". A stamp that carried the temperature and left the list behind
+            // would paste a kiln that is hot and shut.
+            if (settings.whitelist is Setting.Present) {
+                result = result.copy(whitelist = settings.whitelist.value.species, ore = settings.whitelist.value.ore)
+            }
+            if (settings.whitelist is Setting.Empty) result = result.copy(whitelist = emptySet(), ore = false)
             result
         }
         DeckMachineKind.Thruster -> {
