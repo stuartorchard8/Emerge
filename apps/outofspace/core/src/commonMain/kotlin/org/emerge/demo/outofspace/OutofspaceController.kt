@@ -858,7 +858,8 @@ class OutofspaceController(
     ))
 
     /**
-     * Takes the build tool out, holding a copy of **whatever is under the pointer** — material,
+     * Takes the build tool out, holding a copy of **the tile the inspector is reading**, or of
+     * whatever is under the pointer when it is reading nothing that can be copied — material,
      * settings, facing and all. What **C** does; [over] is the tile the pointer is on.
      *
      * ### The one gesture
@@ -866,48 +867,66 @@ class OutofspaceController(
      * This replaced a clipboard: **C** captured a machine's settings and **V** stamped them onto
      * another one, which is two keys, an invisible holding pen, and a rule ("only onto the same kind
      * of machine") that could only be discovered by breaking it. C keeps the key it had and does the
-     * whole job with it. Every automation game the player has already played spells the same idea as
-     * one key that hands you the thing you are pointing at, so that is what this is: point at a
-     * furnace, press C, and you are holding a furnace —
-     * tuned the way that one is, made of what that one is made of, aimed the way that one is aimed.
-     * Putting it down somewhere empty builds one. Putting it down on another furnace tunes *that*
-     * one — see [place]. There is nothing else to learn.
+     * whole job with it: point at a furnace, press C, and you are holding a furnace — tuned the way
+     * that one is, made of what that one is made of, aimed the way that one is aimed. Putting it
+     * down somewhere empty builds one. Putting it down on another furnace tunes *that* one — see
+     * [place]. There is nothing else to learn.
      *
-     * ⭐ **The pointer, not the inspector** (Stu, 2026-09-10). It read [inspectTile] until then,
-     * which is a different tile from the one the hand is over as soon as the player looks at
-     * something and then moves on — so copying a second machine meant clicking it first, and the
-     * click was easy to forget precisely because the panel it opened was already full of the *last*
-     * thing. Pointing at a thing and pressing a key is the gesture every automation game spells the
-     * same way, and this is now that gesture and nothing else.
+     * ⭐ **The panel first, the pointer second** (Stu, 2026-09-10). C read the inspector, then for
+     * half a day it read only the pointer, and this is the two of them in the order the hand
+     * reaches for them. *Select, then copy* is the habit every editor the player has ever used
+     * taught them, and a tile under the inspector is an answer they have already given out loud —
+     * so C is not entitled to overrule it with wherever the mouse happens to be resting. Pointing
+     * still works, because with nothing selected the pointer is the only thing C could possibly
+     * mean: it selects what is under the mouse and copies that, which is the same one-key gesture
+     * with the click folded into it.
+     *
+     * ⛔ **A selection is spent by ESC, not by the copy.** The panel goes on naming what C will hand
+     * over for as long as it is up, so a second machine is copied the way the first one was —
+     * click it, press C — and never by drifting the mouse over it. Two presses in a row give the
+     * same thing twice, which is what a player who can see the panel would predict.
+     *
+     * ⚠️ **Unless the panel has nothing to hand over, and then the pointer gets its turn after
+     * all.** The air is a readable layer, so a click on bare deck leaves the inspector pointed at a
+     * tile with no brush behind it; stopping there would make C a key that reports broken because
+     * the player once clicked the floor. This is the one case the two are tried in order rather
+     * than the first one winning outright.
      *
      * ⚠️ **A tile is not one thing, so the layer still has to be chosen** — see [layerToGrab]. The
      * inspector's pinned layer wins on the tile it is pinned to, and everywhere else the topmost
-     * readable layer does, which is the same rule a first inspector click follows. So C on a belt
-     * threaded under a machine hands over the machine, and C on the same belt with the inspector
-     * pinned to its RAIL layer hands over a length of track in the metal that track is made of.
+     * readable layer does, which is the same rule a first inspector click follows. So C over a belt
+     * threaded under a machine hands over the machine, and C with the inspector pinned to that same
+     * tile's RAIL layer hands over a length of track in the metal that track is made of.
      *
-     * ⛔ **Pointing at bare deck empties the palette**, even with a machine still up in the panel.
-     * That is the whole of what "it reads the pointer" means: the answer to *what am I holding* has
-     * to be the thing the player is aiming at, or the key is a lottery between two places on screen.
-     *
-     * With nothing under the pointer at all — off the grid, or a host with no pointer to speak of —
-     * it falls back to the inspected tile, which is also what the panel's own COPY button uses. It
-     * still takes the build tool out either way, with the palette empty: "build something" is what
-     * the key means even when there is nothing to copy, and a key that did nothing at all would read
-     * as broken. Returns whether anything was actually picked up.
+     * With nothing to read in either place — an empty panel and no pointer worth the name — it
+     * still takes the build tool out, with the palette empty: "build something" is what the key
+     * means even when there is nothing to copy, and a key that did nothing at all would read as
+     * broken. Returns whether anything was actually picked up.
      *
      * ⭐ **A successful grab points the inspector at what it took** (Stu, 2026-09-10), on the layer it
-     * took it from. The moment a player copies a machine is the moment they want to see how it is
-     * set up — they are about to put another one down — and leaving the panel on whatever was
-     * clicked last put the *wrong* machine's dials next to the words "copied from a furnace".
+     * took it from. Idle when the panel is what was copied, and the point of the exercise when the
+     * pointer was: the moment a player copies a machine is the moment they want to see how it is
+     * set up — they are about to put another one down — and that is also how "it selects what is
+     * under the mouse" is spelled.
      *
-     * ⛔ **Only on success**, which is the half worth stating: a press over bare deck empties the
-     * palette and leaves the panel alone. Moving it there would trade a machine the player was
+     * ⛔ **Only on success**, which is the half worth stating: a press with nothing to copy anywhere
+     * empties the palette and leaves the panel alone. Moving it would trade a machine the player was
      * reading for a readout of the air they happened to sweep the mouse across.
      */
     fun grab(over: TileIndex = TileIndex.NONE): Boolean {
         tool = Tool.Build
-        val tile = if (over != TileIndex.NONE) over else inspectTile
+        if (grabFrom(inspectTile)) return true
+        return over != inspectTile && grabFrom(over)
+    }
+
+    /**
+     * One attempt at [grab], off one named tile: true if it picked something up.
+     *
+     * ⚠️ **Nothing is written until the answer is yes**, which is what lets [grab] ask twice. Every
+     * refusal in here is taken before the brush, the stamp or the material is touched, so a failed
+     * attempt on the panel's tile leaves a cursor the pointer's attempt can still fill.
+     */
+    private fun grabFrom(tile: TileIndex): Boolean {
         if (tile == TileIndex.NONE) return false
         val layer = layerToGrab(tile) ?: return false
         val conduit = when (layer) {
@@ -930,8 +949,8 @@ class OutofspaceController(
             InspectLayer.Signal -> Conduit.Signal
             InspectLayer.Power -> Conduit.Power
             // There is no brush for a room. The air is the one layer the inspector always offers,
-            // so this is the case a player reaches by pressing C on bare deck, and the honest answer
-            // is the empty palette they are now holding.
+            // so this is the case a player reaches by pressing C on bare deck — and the case that
+            // hands the attempt on to the pointer rather than answering.
             InspectLayer.Atmosphere -> return false
         }
         val material = state.conduits.materialAt(conduit, tile) ?: return false

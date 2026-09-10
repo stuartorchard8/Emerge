@@ -254,7 +254,8 @@ object OutofspaceAgentHarness {
                 /*
                  * `grab` — the C key. Takes a copy of whatever the inspector is reading: the
                  * building on the DECK layer or the track on the RAIL one, in its own metal and with
-                 * its own settings, and puts the build tool in the player's hand holding it.
+                 * its own settings, and puts the build tool in the player's hand holding it. With
+                 * the inspector on nothing copyable it takes what the pointer is over instead.
                  *
                  * Goes through the controller and not through a hand-built brush on purpose, because
                  * the whole of what it does is *derive* the brush, the material, the facing and the
@@ -263,8 +264,9 @@ object OutofspaceAgentHarness {
                  */
                 "grab" -> {
                     // ⚠️ **The pointer, which is wherever `hover` left it** — and `TileIndex.NONE`
-                    // when a script has never called `hover`, which falls back to the inspected tile.
-                    // So `inspect` then `grab` goes on meaning what it always meant.
+                    // when a script has never called `hover`. Either way `inspect` then `grab` means
+                    // what it always meant: the inspected tile answers first, and the pointer is
+                    // only reached for when it has nothing to say.
                     val got = controller.grab(hovered)
                     settle()
                     println("[agent] grab -> " + if (!got) "nothing (palette empty)" else

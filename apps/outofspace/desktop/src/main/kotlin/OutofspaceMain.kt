@@ -360,9 +360,10 @@ fun main() {
                 }
                 println("════════════════════════════════════════════════════════")
             }
-            // Take a copy of whatever is **under the pointer** and go build it — see
-            // [OutofspaceController.grab]. It replaced C-then-V on the hovered tile, which was two
-            // keys for one idea; this is the *copy* half of that pair kept, doing the whole job.
+            // Take a copy of **what the inspector is reading**, or of what is under the pointer
+            // when the panel has nothing to give, and go build it — see [OutofspaceController.grab].
+            // The pointer is passed on every press; which of the two answers it is depends on
+            // whether the player has selected anything, and that decision is the controller's.
             GLFW_KEY_C -> controller.grab(hovered)
             // Through the controller's own ladder, so the keys and the HUD's buttons cannot reach
             // different speeds — see `OutofspaceController.SPEEDS`.

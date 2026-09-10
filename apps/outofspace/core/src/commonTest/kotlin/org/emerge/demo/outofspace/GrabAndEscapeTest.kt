@@ -131,43 +131,81 @@ class GrabAndEscapeTest {
     }
 
     /**
-     * ⭐ **C copies what the POINTER is over, not what the panel is showing** (Stu, 2026-09-10).
+     * ⭐ **C copies what the PANEL is showing, not what the pointer is over** (Stu, 2026-09-10).
      *
-     * The two disagree the moment a player looks at one machine and walks to another, and the panel
-     * is the wrong one of the pair: it is full of the *last* thing they clicked, so a C that read it
-     * copied something they had stopped looking at.
+     * The two disagree the moment a player selects a machine and moves the mouse on — to the place
+     * they mean to build, most often — and the selection is the right one of the pair, because it
+     * is the answer the player gave on purpose. *Select, then copy* is the habit every editor they
+     * have ever used taught them, and a press of C is not a chance to overrule it.
      */
     @Test
-    fun c_copies_what_the_pointer_is_over() {
+    fun c_copies_what_the_panel_is_reading() {
         val c = controller()
-        // The inspector deliberately left on the untuned one, which is what a copy must NOT take.
-        c.inspect(PLAIN_OVEN, InspectLayer.Deck)
+        // Selected on purpose; the pointer has since wandered onto the untuned one, which is what a
+        // copy must NOT take.
+        c.inspect(OVEN, InspectLayer.Deck)
 
-        assertTrue(c.grab(OVEN))
+        assertTrue(c.grab(PLAIN_OVEN))
 
         assertEquals(TUNED_KELVIN, (assertNotNull(c.stamped).setTemperature as Setting.Present).value)
-        // ⭐ And the panel follows the copy: the machine whose dials are worth reading is the one
-        // about to be put down again, not the one clicked before it.
-        assertEquals(OVEN, c.inspectTile, "the panel was left on the machine that was NOT copied")
+        assertEquals(OVEN, c.inspectTile, "the panel followed the pointer instead of being obeyed")
         assertEquals(InspectLayer.Deck, c.inspectLayer)
     }
 
     /**
-     * ⛔ **A press that copies nothing leaves the panel where it was.**
+     * ⛔ **And the copy does not spend the selection**: two presses hand over the same machine.
      *
-     * The other half of the rule above, and the half worth writing down: moving the inspector onto
-     * bare floor would trade a machine the player is reading for a readout of the air they swept the
-     * mouse across on the way somewhere.
+     * The panel is still up, still naming the furnace, and a rule the player can read off the
+     * screen has to hold for as long as they can read it. Copying the machine under the mouse means
+     * clicking it first — which is the gesture this whole arrangement exists to keep.
+     */
+    @Test
+    fun a_second_press_hands_over_the_same_machine_again() {
+        val c = controller()
+        c.inspect(OVEN, InspectLayer.Deck)
+        assertTrue(c.grab(PLAIN_OVEN))
+
+        assertTrue(c.grab(PLAIN_OVEN))
+
+        assertEquals(TUNED_KELVIN, (assertNotNull(c.stamped).setTemperature as Setting.Present).value)
+        assertEquals(OVEN, c.inspectTile)
+    }
+
+    /**
+     * With nothing selected, C **selects what is under the mouse and copies that** — the click
+     * folded into the key.
+     *
+     * This is the whole of the pointer half: it is not a second rule, it is what "copy the
+     * selection" comes to when the player has not made one yet.
+     */
+    @Test
+    fun c_with_nothing_selected_takes_what_is_under_the_pointer() {
+        val c = controller()
+        assertEquals(TileIndex.NONE, c.inspectTile, "fixture: nothing selected")
+
+        assertTrue(c.grab(OVEN))
+
+        assertEquals(TUNED_KELVIN, (assertNotNull(c.stamped).setTemperature as Setting.Present).value)
+        assertEquals(OVEN, c.inspectTile, "the press did not leave the panel on what it copied")
+        assertEquals(InspectLayer.Deck, c.inspectLayer)
+    }
+
+    /**
+     * ⛔ **A press that copies nothing leaves the panel where it was**, with neither the selection
+     * nor the pointer having anything to give.
+     *
+     * Moving the inspector onto bare floor would trade the tile the player is reading for a readout
+     * of the air they swept the mouse across on the way somewhere.
      */
     @Test
     fun a_grab_that_takes_nothing_leaves_the_panel_alone() {
         val c = controller()
-        c.inspect(OVEN, InspectLayer.Deck)
+        c.inspect(EMPTY_FLOOR, InspectLayer.Atmosphere)
 
-        assertFalse(c.grab(EMPTY_FLOOR))
+        assertFalse(c.grab(OTHER_EMPTY_FLOOR))
 
-        assertEquals(OVEN, c.inspectTile, "an empty-handed press moved the panel")
-        assertEquals(InspectLayer.Deck, c.inspectLayer)
+        assertEquals(EMPTY_FLOOR, c.inspectTile, "an empty-handed press moved the panel")
+        assertEquals(InspectLayer.Atmosphere, c.inspectLayer)
     }
 
     /** A grab off a conduit points the panel at that conduit's layer, not at the tile's top one. */
@@ -183,26 +221,26 @@ class GrabAndEscapeTest {
     }
 
     /**
-     * ⛔ **And pointing at bare deck empties the palette**, with a machine still up in the panel.
+     * ⛔ **Pointing at bare deck does NOT empty the palette while a machine is selected.**
      *
-     * That is the whole of what "it reads the pointer" means. Left to fall back on the inspector,
-     * every press over empty floor would hand the player back the last thing they clicked, and which
-     * of the two places on screen C was about would be anyone's guess.
+     * The mouse is resting on the floor for the most ordinary reason there is — that is where the
+     * copy is about to be put down. A press that read it would hand back an empty palette at the
+     * exact moment the player asked for a furnace.
      */
     @Test
-    fun c_over_bare_deck_empties_the_palette_though_a_machine_is_inspected() {
+    fun c_over_bare_deck_still_hands_over_the_selected_machine() {
         val c = controller()
         c.inspect(OVEN, InspectLayer.Deck)
 
-        assertFalse(c.grab(EMPTY_FLOOR), "something was picked up off bare deck")
-        assertEquals(Tool.Build, c.tool, "and C stopped taking the build tool out")
-        assertNull(c.brush)
-        assertNull(c.stamped)
+        assertTrue(c.grab(EMPTY_FLOOR), "the floor under the mouse won over the selection")
+        assertEquals(Tool.Build, c.tool)
+        assertEquals(Brush.Building(DeckMachineKind.Furnace), c.brush)
+        assertEquals(TUNED_KELVIN, (assertNotNull(c.stamped).setTemperature as Setting.Present).value)
     }
 
-    /** With no pointer at all — off the grid, or a host without one — it is the inspected tile. */
+    /** With no pointer at all — off the grid, or a host without one — the inspected tile is all there is. */
     @Test
-    fun c_with_no_pointer_falls_back_to_the_inspected_tile() {
+    fun c_with_no_pointer_takes_the_inspected_tile() {
         val c = controller()
         c.inspect(OVEN, InspectLayer.Deck)
 
@@ -214,6 +252,9 @@ class GrabAndEscapeTest {
     /**
      * A tile with a belt under a furnace hands over **the furnace**, because that is the topmost
      * thing on it — the same answer a first click of the inspector gives.
+     *
+     * Nothing is selected here, so this is the pointer path; with a selection it would never be
+     * asked. See [c_copies_what_the_panel_is_reading].
      */
     @Test
     fun c_over_a_tile_of_two_layers_takes_the_top_one() {
@@ -241,15 +282,26 @@ class GrabAndEscapeTest {
         assertEquals(TRACK_METAL, c.buildMaterial)
     }
 
-    /** And a pin on some other tile does not reach this one. */
+    /**
+     * ⚠️ **A panel with nothing to hand over is not a refusal — the pointer gets its turn.**
+     *
+     * The air is a readable layer, so a click on bare deck leaves the inspector *on* a tile while
+     * having nothing behind it. Stopping there would make C a key that reports broken because the
+     * player once clicked the floor.
+     *
+     * ⛔ And the tile it falls through to reads its **own** top layer: the pin belongs to the tile it
+     * was made on and does not travel, so this hands over the furnace and not a length of track.
+     */
     @Test
-    fun a_layer_pinned_elsewhere_does_not_travel() {
+    fun the_pointer_gets_its_turn_when_the_panel_has_nothing_to_give() {
         val c = controller()
-        c.inspect(TRACK, InspectLayer.Rail)
+        c.inspect(EMPTY_FLOOR, InspectLayer.Atmosphere)
 
         assertTrue(c.grab(THREADED))
 
-        assertEquals(Brush.Building(DeckMachineKind.Furnace), c.brush, "a pin on another tile followed the pointer")
+        assertEquals(Brush.Building(DeckMachineKind.Furnace), c.brush)
+        assertEquals(THREADED, c.inspectTile, "the panel stayed on the air it could not copy")
+        assertEquals(InspectLayer.Deck, c.inspectLayer)
     }
 
     /**
@@ -627,6 +679,9 @@ class GrabAndEscapeTest {
 
     /** Somewhere with room for a three-by-three machine and nothing else near it. */
     private val EMPTY_FLOOR = grid.tile(7, 8)
+
+    /** A second patch of bare deck, for the press that must find nothing in either place. */
+    private val OTHER_EMPTY_FLOOR = grid.tile(3, 6)
 
     private companion object {
         /**

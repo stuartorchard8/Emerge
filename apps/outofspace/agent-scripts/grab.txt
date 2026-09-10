@@ -9,11 +9,13 @@
 # It replaced C-then-V on the hovered tile: two keys, an invisible holding pen, and a rule ("same
 # kind of machine only") that could only be found by breaking it. C keeps its key and does the lot.
 #
-# ⭐ **C copies what the POINTER is over**, not what the panel is showing -- the two disagree the
-# moment you look at one machine and walk to another. The inspector still decides WHICH LAYER of a
-# tile is meant, but only on the tile it is pinned to; everywhere else C takes the topmost thing,
-# which is what a first click of the inspector would have shown. And the panel carries a COPY button
-# for the same act aimed at the tile it is describing.
+# ⭐ **C copies what the PANEL is showing**, not what the pointer is over -- the two disagree the
+# moment you select a machine and move the mouse to where the copy is going, and the selection is
+# the answer you gave on purpose. Select, then copy. With NOTHING selected there is no such answer,
+# and C selects what is under the mouse and copies that instead -- the same one key, with the click
+# folded into it. The inspector also decides WHICH LAYER of its tile is meant; on the tile the
+# pointer falls through to, C takes the topmost thing, which is what a first click would have shown.
+# And the panel carries a COPY button for the same act aimed at the tile it is describing.
 #
 # ⭐ **A copy that lands POINTS THE PANEL at what it took.** The moment you copy a machine is the
 # moment you want its dials in front of you -- you are about to put another one down. A press that
@@ -24,8 +26,8 @@
 #                     ones that have to come out the other end. ⚠️ And the COPY button under the
 #                     layer tabs, which is this key with a face on it.
 #   `holding`      -- the build panel with FURNACE picked and, in green, "copied from a furnace".
-#                     ⚠️ **And the inspector back on the tuned furnace**, which the line above put
-#                     deliberately on the OTHER one: the panel followed the copy.
+#                     ⚠️ **And the inspector still on the tuned furnace**, with the mouse left
+#                     deliberately on the OTHER one: the selection was obeyed, not the pointer.
 #                     ⛔ The green line is the whole of what tells a player they are holding a COPY
 #                     rather than a plain brush -- a stamped brush and an ordinary one are the same
 #                     entry in the palette and behave differently, so this line is not decoration.
@@ -62,12 +64,11 @@ run 10
 shot inspecting
 
 # ── C ────────────────────────────────────────────────────────────────────────
-# ⚠️ **Aimed, and the panel is deliberately pointed somewhere else first.** C reads the POINTER, so
-# the untuned furnace in the panel is what a version reading the inspector would have copied -- and
-# the shot below shows the panel back on the tuned one, because a copy that lands takes the panel
-# with it.
-inspect 30 13 DECK
-hover 22 13
+# ⚠️ **Selected, and the pointer is deliberately left somewhere else.** C reads the PANEL, so the
+# tuned furnace it is already on is what gets copied -- and the untuned one under the mouse is what
+# a version reading the pointer would have handed over instead.
+inspect 22 13 DECK
+hover 30 13
 grab
 shot holding
 

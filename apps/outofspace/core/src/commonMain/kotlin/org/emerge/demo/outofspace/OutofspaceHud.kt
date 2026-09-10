@@ -651,10 +651,15 @@ class OutofspaceHud {
                 // to the other five.
                 text("B build · X delete · Z cancel · Q cut · E material", 0x9A9A9AFFL)
                 // ⚠️ **The two keys the whole editor is reached through, said in one line.** C is
-                // the way in — point at a thing, get one of those — and ESC is the way back out of
-                // whatever C left you holding, one rung at a time, all the way to the menu. Neither
-                // is discoverable from a panel that only names the tool you are already in.
-                text("C copy what you're pointing at · ESC back out", 0x9A9A9AFFL)
+                // the way in — get one of the thing you have selected, or of the thing under the
+                // mouse when you have selected nothing — and ESC is the way back out of whatever C
+                // left you holding, one rung at a time, all the way to the menu. Neither is
+                // discoverable from a panel that only names the tool you are already in.
+                //
+                // ⛔ **Both halves named, in that order.** A player with a machine in the panel and
+                // the mouse somewhere else has to be able to predict which one they get, and that is
+                // the whole of the rule — see [OutofspaceController.grab].
+                text("C copy what's selected, else what's hovered · ESC back out", 0x9A9A9AFFL)
                 text("WASD or right-drag pan · wheel zoom", 0x9A9A9AFFL)
                 text("space pause", 0x9A9A9AFFL)
                 text("F8 fit grid", 0x9A9A9AFFL)
@@ -1751,18 +1756,18 @@ class OutofspaceHud {
                     ) { controller.inspect(tile, option) }
                 },
             )
-            // ⭐ **The C key with a face on it.** C copies whatever is under the *pointer* — see
+            // ⭐ **The C key with a face on it.** C copies the tile this panel is reading — see
             // [OutofspaceController.grab] — and a key with no button anywhere is a key that is only
             // ever found by reading a wall of text somewhere else. This one is aimed at the tile the
-            // panel is about, on the layer the panel is showing, so what it hands over is exactly
-            // what is being read above it.
+            // panel is about, on the layer the panel is showing, which is now the same thing the key
+            // does: what it hands over is exactly what is being read above it.
             //
             // ⚠️ **Not offered for the air**, which is the one layer there is no brush for: a button
             // that emptied the palette would be a button for undoing what the player is holding.
             if (layer != InspectLayer.Atmosphere) {
                 row {
                     button("COPY", 0x2E5A6BFFL) { controller.grab(tile) }
-                    text("· or press C over it", 0x9A9A9AFFL)
+                    text("· or press C", 0x9A9A9AFFL)
                 }
             }
             when (layer) {
