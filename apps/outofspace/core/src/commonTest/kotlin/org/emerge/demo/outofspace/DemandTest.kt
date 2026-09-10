@@ -976,4 +976,89 @@ class DemandTest {
             "the ghost rails could not draw the titanium that dissolves them",
         )
     }
+
+    /**
+     * ⭐ **A standing lump is charged to the sinks that can eat it, and to no others.**
+     *
+     * ⛔ **A door's fussiness and a route's arithmetic were two readings of one fact, and only one
+     * of them knew about locks.** [Whitelist.chargeStandingLoad] divided what stands on a tile by
+     * asking `loadOn(tile, acceptance.bill)`, and a bill is a *construction site's* statement: a
+     * store has none, so that question answered "the whole lump" for every tank on the route
+     * whatever it was locked to. A hundred grams of iron in a corridor therefore read as a hundred
+     * grams already on their way to an **oxygen** tank, and the source upstream held off sending
+     * oxygen because the tank looked fed.
+     *
+     * [Acceptance.admits] is the door's own question and sees everything the door sees — the
+     * species lock, the purity standard, the shortlist. Asked that way a lump covers only what would
+     * actually take it.
+     *
+     * ```
+     *  (2,3)-(3,3)-(4,3)-(5,3)-[oxygen tank]   locked pure oxygen, 50g of room
+     *          ^           |
+     *      100g of iron  (4,4)
+     *       standing       |
+     *                    [iron sink]           200g short
+     * ```
+     *
+     * ⚠️ **Both halves are asserted.** That the oxygen tank is untouched is the fix; that the iron
+     * sink *is* charged is what stops the fix from being "stop counting standing load", which would
+     * pass the first assertion and break the network.
+     */
+    @Test
+    fun `standing material covers only the sinks whose doors would take it`() {
+        val grid = cfg.initialGrid
+        val source = grid.tile(2, 3)
+        val standing = grid.tile(3, 3)
+        val oxygenTank = grid.tile(6, 3)
+        val ironSink = grid.tile(4, 5)
+        val tiles = mutableSetOf(
+            source, standing, grid.tile(4, 3), grid.tile(5, 3), oxygenTank,
+            grid.tile(4, 4), ironSink,
+        )
+
+        val lump = iron(100_000_000_000L)
+        val oxygenRoom = 50_000_000_000L
+        val ironShort = 200_000_000_000L
+        val oxygenWants = Acceptance.filtered(SpeciesFilter(Species.Oxygen, pure = true), oxygenRoom)
+        val ironWants = Acceptance.filtered(SpeciesFilter(Species.Iron, pure = true), ironShort)
+
+        val flow = FlowGraph.build(
+            tiles,
+            sources = setOf(source),
+            sinks = setOf(oxygenTank, ironSink),
+            linked = { tile, dir -> tile in tiles && grid.neighbour(tile, dir) in tiles },
+            grid = grid,
+        )
+        val whitelist = Whitelist.of(
+            flow,
+            grid.size,
+            acceptanceAt = { tile ->
+                when (tile) {
+                    oxygenTank -> listOf(oxygenWants)
+                    ironSink -> listOf(ironWants)
+                    else -> null
+                }
+            },
+            // The bill reading: a store states none, so this answers "all of it" for either tank.
+            loadOn = { tile, want ->
+                if (tile != standing) 0L
+                else if (want == null || buildableFrom(want, lump)) lump.total else 0L
+            },
+            // The door reading, which is the one that knows what each tank is locked to.
+            usableBy = { tile, acceptance ->
+                if (tile != standing) 0L else if (acceptance.admits(lump)) lump.total else 0L
+            },
+        )
+
+        assertEquals(
+            oxygenRoom,
+            whitelist.room(source, Mixture.of(Species.Oxygen to oxygenRoom, energy = 0)),
+            "iron in the corridor was counted as oxygen already on its way to an oxygen tank",
+        )
+        assertEquals(
+            ironShort - lump.total,
+            whitelist.room(source, lump),
+            "the standing iron was not charged against the sink that will actually eat it",
+        )
+    }
 }

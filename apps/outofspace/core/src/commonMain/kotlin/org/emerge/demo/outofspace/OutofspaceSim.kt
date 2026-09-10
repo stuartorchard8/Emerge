@@ -5364,7 +5364,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             //
             // The tile set only changes when something actually ceases to be, which is rare, so the
             // graph is rebuilt on that edge rather than built twice every step.
-            val whitelist = Whitelist.of(flow, rails.size, { accepts[it] }, loadOn)
+            val usableBy: (TileIndex, Acceptance) -> Long = { t, a ->
+                fun usable(lump: Mixture): Long = if (a.admits(lump)) lump.total else 0L
+                var total = lumps[t]?.let { usable(it) } ?: 0L
+                aboard[t]?.let { for (held in it) total += usable(held) }
+                total
+            }
+            val whitelist = Whitelist.of(flow, rails.size, { accepts[it] }, loadOn, usableBy)
             scrapDeconstructing(whitelist)
             scrapMachines(whitelist)
             // ⛔ **Nothing is rebuilt here, because nothing above can have changed the tile set.**

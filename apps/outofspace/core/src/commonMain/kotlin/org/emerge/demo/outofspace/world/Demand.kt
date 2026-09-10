@@ -671,6 +671,7 @@ class Whitelist private constructor(
             tileCount: Int,
             acceptanceAt: (TileIndex) -> List<Acceptance>?,
             loadOn: (TileIndex, Mixture?) -> Long,
+            usableBy: (TileIndex, Acceptance) -> Long = { t, a -> loadOn(t, a.bill) },
         ): Whitelist {
             val routes = arrayOfNulls<MutableList<Demand>>(tileCount)
             val unlimited = BooleanArray(tileCount)
@@ -794,7 +795,7 @@ class Whitelist private constructor(
                 // a site that needs 300g and one that needs 700g splits a packet 30:70. A sink the
                 // lump cannot be used by takes none of it and is not in the division at all — that
                 // is [loadOn] answering nought for a bill this lump does not suit.
-                here?.let { list -> chargeStandingLoad(list, tile, loadOn) }
+                here?.let { list -> chargeStandingLoad(list, tile, loadOn, usableBy) }
 
                 unlimited[i] = any
                 // Nothing downstream is fussy *and* nothing downstream is boundless: the list is the
@@ -837,6 +838,7 @@ class Whitelist private constructor(
             here: MutableList<Demand>,
             tile: TileIndex,
             loadOn: (TileIndex, Mixture?) -> Long,
+            usableBy: (TileIndex, Acceptance) -> Long,
         ) {
             var wantedHere = 0L
             var hungriest = -1
@@ -844,7 +846,7 @@ class Whitelist private constructor(
             for (k in here.indices) {
                 val d = here[k]
                 if (d.acceptance.isUnlimited) continue
-                if (loadOn(tile, d.acceptance.bill) <= 0L) continue
+                if (usableBy(tile, d.acceptance) <= 0L) continue
                 if (!reachedBy(d, tile, loadOn)) continue
                 val remaining = d.acceptance.wanted - d.covered
                 if (remaining <= 0L) continue
@@ -857,7 +859,7 @@ class Whitelist private constructor(
             for (k in here.indices) {
                 val d = here[k]
                 if (d.acceptance.isUnlimited) continue
-                val load = loadOn(tile, d.acceptance.bill)
+                val load = usableBy(tile, d.acceptance)
                 if (load <= 0L) continue
                 if (!reachedBy(d, tile, loadOn)) continue
                 val remaining = d.acceptance.wanted - d.covered
@@ -868,7 +870,7 @@ class Whitelist private constructor(
                 here[k] = Demand(d.acceptance, d.covered + share, d.blocks)
                 given += share
             }
-            val load = loadOn(tile, here[hungriest].acceptance.bill)
+            val load = usableBy(tile, here[hungriest].acceptance)
             if (given < load) {
                 val d = here[hungriest]
                 here[hungriest] = Demand(d.acceptance, d.covered + (load - given), d.blocks)
