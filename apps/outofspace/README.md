@@ -35,7 +35,9 @@ Nothing of the app template's placeholder world remains.
 ./gradlew :apps:outofspace:desktop:run     # the game
 ```
 
-Click to place, drag to paint a line of them, right-click to remove. `R` rotates the brush, `1`–`9`
+Click to place, drag to paint a line of them, right-click to remove. `R` rotates the brush — or, held
+over a machine you have copied the settings of, turns *that machine* to the next facing it can
+adopt, which is how a paste re-aims something. `1`–`9`
 pick a machine, middle-drag pans, wheel zooms, space pauses. `W` switches between the **build** and
 **wire** tools; in wire mode, click a machine to open its wiring.
 

@@ -312,7 +312,10 @@ fun main() {
             }
             // Stability augmentation, on the key every space game puts it on.
             GLFW_KEY_T -> controller.toggleSas()
-            GLFW_KEY_R -> controller.rotateBrush()
+            // ⚠️ **The pointer goes with the key.** R turns the brush, unless it is pointed at a
+            // machine a stamped click would re-tune, which it turns instead — see
+            // [OutofspaceController.rotateBrush].
+            GLFW_KEY_R -> controller.rotateBrush(hovered)
             GLFW_KEY_H -> controller.overlay = controller.overlay.next
 
             // ── A key per tool, and the same key aims it ──────────────────────

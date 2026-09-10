@@ -2,8 +2,9 @@
 #
 # The gesture the whole build editor now hangs off: point the inspector at a thing, press C, and you
 # are holding that thing -- its kind, its metal, its settings and the way it faces. Put it down on
-# bare deck and you have built another one exactly like it. Put it down on a machine of the same kind
-# and you have RE-TUNED that one instead: settings and facing hand over, the metal does not.
+# bare deck and you have built another one exactly like it. Put it down on a machine of the same
+# FAMILY and you have RE-TUNED that one instead: the settings hand over, the metal and the facing do
+# not. See `paste.txt` for that half, which has three rules of its own.
 #
 # It replaced C-then-V on the hovered tile: two keys, an invisible holding pen, and a rule ("same
 # kind of machine only") that could only be found by breaking it. C keeps its key and does the lot.

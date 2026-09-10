@@ -177,6 +177,35 @@ fun DeckMachine.toMachineSettings(): MachineSettings = MachineSettings(
 )
 
 /**
+ * **The kind that names a machine's paste family** — the one every kind built out of the same class
+ * answers with.
+ *
+ * ⭐ **A stamp is refused by class, not by kind, and that distinction is the whole of this** — see
+ * `PLAN_stamp_by_class.md`. A warehouse, a silo and a buffer are one [Storage] at three capacities:
+ * they carry the same dials, they take the same branch of [withSettings], and a filter set on one
+ * means exactly what it means on the others. Compared by *kind*, a warehouse's filter could not be
+ * pasted onto a silo — which is a rule with nothing behind it but the size of the box.
+ *
+ * ⛔ **"Same class" and not "has a field with the same name."** The furnace and the rocket share a
+ * temperature dial deliberately — a chamber ceiling and a kiln setpoint are the same setting — and
+ * they are still two classes, so a stamp does not cross between them. Neither does one between a
+ * thruster and a rocket: [org.emerge.demo.outofspace.world.machine.Engine] is an interface they both
+ * implement, not a machine either of them *is*. Every kind aboard but the three stores is its own
+ * family, and a new one joins a family only when it is genuinely the same machine at a different
+ * size.
+ */
+val DeckMachineKind.settingsFamily: DeckMachineKind
+    get() = when (this) {
+        // One class, one branch below, one family. See `project_oos_storage_sizes`.
+        DeckMachineKind.Warehouse, DeckMachineKind.Silo, DeckMachineKind.Buffer -> DeckMachineKind.Warehouse
+        else -> this
+    }
+
+/** Whether settings captured off one machine mean the same thing on a [kind] — see [settingsFamily]. */
+fun MachineSettings.appliesTo(kind: DeckMachineKind): Boolean =
+    kind.settingsFamily == this.kind.settingsFamily
+
+/**
  * Apply settings from [MachineSettings] to a [DeckMachine], returning a new machine with the
  * settings applied where applicable.
  *
@@ -190,10 +219,12 @@ fun DeckMachine.toMachineSettings(): MachineSettings = MachineSettings(
 fun DeckMachine.withSettings(settings: MachineSettings): DeckMachine {
     val base = this
     return when (kind) {
-        // All three sizes carry the same dials, so they take the same branch. ⚠️ A capture is only
-        // pasted onto a machine of the **same kind** (see the caller), so this never quietly turns a
-        // warehouse's settings into a buffer's — it is one branch because the code is identical, not
-        // because the kinds are interchangeable.
+        // ⭐ **All three sizes carry the same dials, so they take the same branch — and the caller
+        // now lets a capture cross between them.** It used to guard on kind, and the comment here
+        // said this was "one branch because the code is identical, not because the kinds are
+        // interchangeable". They are interchangeable: a store is one [Storage] at three capacities,
+        // and the size lives in `Storage.capacity` rather than in what its filter means. See
+        // [settingsFamily], which is where that argument is now made once for every family.
         DeckMachineKind.Warehouse, DeckMachineKind.Silo, DeckMachineKind.Buffer -> {
             base as Storage
             var result = base

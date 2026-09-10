@@ -91,6 +91,8 @@ import kotlin.math.roundToInt
  * remove <x> <y> [layer]    # layer = TOP|BRIDGE|RAIL|PIPE|DECK|ALL (default TOP, one layer/click)
  * cancel <x> <y> [x2 y2]    # calls off a deconstruction on every layer of the tile, or of a run
  * rotate <x> <y>
+ * turn [n]                  # the R key, N times, aimed wherever `hover` last put the pointer:
+ *                           # turns the brush, or a machine a stamped click would re-tune
  * take <x> <y>               # move tool: press on a machine, picking it up into the cursor
  * carry <x> <y> [dir]        # hold it over a tile, optionally turned — prints whether it would land
  * drop                       # let go: it moves if it fits there, and stays put if it does not
@@ -431,6 +433,20 @@ object OutofspaceAgentHarness {
                 }
 
                 "rotate" -> { controller.rotate(index(t[1], t[2])); settle() }
+
+                /*
+                 * `turn [n]` — the **R key**, and it is aimed: the pointer is wherever `hover` left
+                 * it, and R over a machine a stamped click would re-tune turns *that machine* rather
+                 * than the brush. See `OutofspaceController.rotateBrush`. Without a hover it is the
+                 * plain brush rotate a script has always been able to get at through `brush <k> <d>`.
+                 */
+                "turn" -> {
+                    repeat(t.getOrNull(1)?.toInt() ?: 1) { controller.rotateBrush(hovered) }
+                    val aimed = controller.reaimed
+                    println("[agent] turn -> brush faces ${controller.brushFacing}" +
+                        if (aimed == TileIndex.NONE) " (nothing under the pointer to re-aim)"
+                        else " · re-aims the machine at (${state.grid.xOf(aimed)},${state.grid.yOf(aimed)})")
+                }
 
                 /*
                  * The move gesture, in the three parts a mouse has: press, carry, let go.

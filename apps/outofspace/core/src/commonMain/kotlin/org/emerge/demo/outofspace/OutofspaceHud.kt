@@ -566,8 +566,13 @@ class OutofspaceHud {
                     // instead of refusing. A player who cannot see they are holding a copy reads the
                     // second of those as the build tool doing something at random.
                     controller.stamped?.let {
-                        text("copied from a ${it.kind.label.lowercase()} · settings + facing", 0x6FCF97FFL)
-                        text("click one of those to re-tune it in place", 0x6FCF97FFL)
+                        // ⚠️ **"settings", and not "settings + facing" as this said until
+                        // 2026-09-10.** A paste leaves the machine it lands on pointed where it was;
+                        // R while pointing at one is how the facing is asked for, and it is said
+                        // here because the alternative is discovering it by pressing R and watching
+                        // nothing happen. See `OutofspaceController.reaimed`.
+                        text("copied from a ${it.kind.label.lowercase()} · its settings", 0x6FCF97FFL)
+                        text("click one like it to re-tune it · R turns that one", 0x6FCF97FFL)
                     }
 
                     // ── What it is to be made of ──────────────────────────────

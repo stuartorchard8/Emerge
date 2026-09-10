@@ -1,0 +1,69 @@
+# Pasting onto a machine that is already standing: the FAMILY, the TARGET's aim, and R.
+#
+# A stamped click on bare deck builds another one of what you copied. A stamped click on a machine
+# already standing hands its settings over instead -- and three rules decide what that means:
+#
+#   1. FAMILY, not kind. A warehouse, a silo and a buffer are one machine at three capacities, so a
+#      filter set on one pastes onto the others. It does not reach a furnace: same class, not "has a
+#      field with the same name". See `MachineSettings.settingsFamily`.
+#   2. The TARGET keeps its aim. A paste says "have these settings", not "and face this way", so the
+#      cursor draws the machine that would stand there -- its footprint, its facing -- rather than
+#      the brush's.
+#   3. Unless the player says so, about THAT machine: R while pointing at one steps it to the next
+#      facing it could actually adopt, and the paste then applies it.
+#
+# What to read in the shots:
+#   `source`        -- the ship's own warehouse, locked. This is the setting that has to come out
+#                      the other end, and it is read off the machine's DECK panel, never off the
+#                      cursor.
+#   `cursor-buffer` -- the copy held over a BUFFER: green (a re-tune), and drawn as a 1x2 buffer
+#                      pointed the way that buffer is pointed. ⛔ Not a 3x3 warehouse pointed the way
+#                      the brush is -- that was a picture of a placement that was not going to
+#                      happen, over the top of the machine that was.
+#   `cursor-turned` -- R once. A 1x2 has two facings and no more, so it flips end for end, and the
+#                      green preview is what the click will now produce.
+#   `buffer-tuned`  -- the buffer's own panel afterwards: the warehouse's lock, on a buffer, turned.
+#   `cursor-silo`   -- the same held copy over a SILO, untouched by the R that was aimed at the
+#                      buffer. It still points the way it always did: the turn belongs to the machine
+#                      it was asked of.
+
+new
+creative 1
+# ⚠️ **Aimed off-centre on purpose.** The panels take the left half and the bottom of the window, and
+# what has to be legible here is a 1x2 footprint changing which way round it is -- so the camera is
+# set to leave the machine in the clear patch on the right rather than in the middle of the screen.
+camera centre 20 15 44
+
+# ── Two more stores, of the other two sizes ──────────────────────────────────
+material Firebrick
+brush BUFFER Up
+place 30 13
+brush SILO Right
+place 26 18
+run 30
+
+# ── The setting to be copied ─────────────────────────────────────────────────
+# Locked through the panel rather than constructed locked: this is the player's own path to it.
+inspect warehouse warehouse DECK
+tap LOCK TO
+shot source
+
+# ── C, then the cursor over a store of another size ──────────────────────────
+grab
+hover 30 13
+shot cursor-buffer
+
+# ── R, aimed ─────────────────────────────────────────────────────────────────
+turn
+shot cursor-turned
+
+place 30 13
+run 20
+inspect 30 13 DECK
+shot buffer-tuned
+
+# ⛔ And the silo is untouched by that R. Every store on the deck is something this brush could
+# re-tune, so an intent carried on the brush alone would have turned this one too.
+camera centre 16 20 44
+hover 26 18
+shot cursor-silo

@@ -33,6 +33,9 @@ import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.DirectedDeckMachine
 import org.emerge.demo.outofspace.world.MachineSettings
+import org.emerge.demo.outofspace.world.aimed
+import org.emerge.demo.outofspace.world.appliesTo
+import org.emerge.demo.outofspace.world.shape
 import org.emerge.demo.outofspace.world.unaimed
 import org.emerge.demo.outofspace.world.toMachineSettings
 import org.emerge.demo.outofspace.world.withSettings
@@ -131,6 +134,28 @@ class OutofspaceController(
         private set
 
     /**
+     * The machine the player has **deliberately turned with R**, or [TileIndex.NONE] — the one
+     * standing machine a paste is allowed to re-aim.
+     *
+     * ⭐ **Why an intent and not just a facing.** A paste hands over settings and leaves the target
+     * pointed where it was — see [stampOnto] — because the cursor's aim is a fact about the *next
+     * thing built*, not an instruction to swing the thing already on the deck. That is right by
+     * default and wrong exactly once: copy-and-paste is also the cheapest way to say "turn this one
+     * round", and taking it away leaves that gesture with nothing but demolish-and-rebuild. So the
+     * player says so, by pressing R while pointing at it, and this remembers *which machine* they
+     * said it about. Hover the next one along and the default is back: settings cross, facing does
+     * not.
+     *
+     * ⚠️ **Keyed by anchor, and that is what makes it safe.** [brushFacing] is one field and it is
+     * also what fresh placements are aimed by, so "the brush points down" cannot on its own mean
+     * "turn what I click on" — every machine of that kind on the deck would swing the moment it was
+     * pasted onto. Keyed by the anchor the turn was aimed at, a stale intent can only ever re-apply
+     * itself to the machine the player actually turned, where it is already true.
+     */
+    var reaimed: TileIndex = TileIndex.NONE
+        private set
+
+    /**
      * What the player is about to place, or **null when they have not chosen** — see [Tool.Build].
      *
      * ⛔ **Null is a state the player is meant to be in**, not an absence to be defaulted away. It is
@@ -145,7 +170,13 @@ class OutofspaceController(
             // The settings are a *kind's* settings, so they cannot survive a change of kind. Dropped
             // here rather than at each of the several call sites, because every one of them would
             // have to remember and the one that forgot would paste a furnace's dwell into a pump.
-            if ((value as? Brush.Building)?.kind != stamped?.kind) stamped = null
+            if ((value as? Brush.Building)?.kind != stamped?.kind) {
+                stamped = null
+                // The intent belongs to the stamp: with nothing to paste there is nothing to re-aim,
+                // and a leftover anchor would turn the next machine pasted onto it for no reason the
+                // player could see. See [reaimed].
+                reaimed = TileIndex.NONE
+            }
             field = value
         }
 
@@ -277,11 +308,14 @@ class OutofspaceController(
      * a click that quietly recast a titanium furnace in iron because the cursor was carrying iron
      * would be a demolition wearing a placement's clothes.
      *
-     * ⚠️ **The facing comes off the cursor, not off the stamp**, and that is what makes this a way of
-     * *turning* things: R turns the brush, the click hands the new facing over, and a machine the
-     * player is standing in front of swings round. Turning by copying is a strange sentence, but the
-     * gesture is exactly the one a player already knows — pick up, aim, click — and it means the
-     * rotate key does the same thing to a thing on the deck as it does to a thing on the cursor.
+     * ⚠️ **And it does not turn what it lands on either** — the cursor's aim is a fact about the
+     * next thing *built*. Unless the player has said otherwise about that particular machine by
+     * pressing R while pointing at it, which is [reaimed] and the one exception.
+     *
+     * ⛔ **The kind is the target's, not the brush's.** A warehouse's filter pastes onto a silo,
+     * because a store is one machine at three sizes — see `MachineSettings.settingsFamily`, where
+     * "same class, not same kind" is argued. What lands is still a silo: nothing about a paste
+     * resizes, re-metals or re-aims the thing it lands on.
      */
     fun place(tile: TileIndex) {
         val material = buildMaterial ?: return
@@ -305,7 +339,11 @@ class OutofspaceController(
         val settings = stamped ?: return null
         if (brush !is Brush.Building) return null
         val standing = state.machineCovering(tile) ?: return null
-        if (standing.kind != settings.kind) return null
+        // ⛔ **Family, not kind** — `PLAN_stamp_by_class.md`. A warehouse's filter means exactly what
+        // it means on a silo, and refusing it because the box is a different size was a rule with
+        // nothing behind it. `withSettings` already answers "would this setting mean the same thing
+        // over there" one layer down; this only has to stop asking the wrong question.
+        if (!settings.appliesTo(standing.kind)) return null
         // ⚠️ **The machine's own anchor, not the tile the pointer is over.** The reducer resolves
         // either through `originAt`, so this changes nothing about what happens — but it is also
         // what the *cursor* is drawn from, and there it changes everything: a hand-over is aimed at
@@ -313,11 +351,68 @@ class OutofspaceController(
         // is about to re-tune. Drawn off the pointer instead, a click on a warehouse's top-left
         // corner previewed a warehouse hanging off the corner of the one already there, which reads
         // as an overlapping placement — the one thing this click is not.
-        // ⛔ **`unaimed()`, and that is the whole of increment 3.** A paste hands over settings and
-        // does not turn what it lands on; `Tool.Move` is how a standing machine is re-aimed now.
-        // While this forced the cursor's facing there was no other gesture that could, so a re-tune
-        // and a re-aim were the same click and neither could be asked for alone.
-        return Edit.ReplaceDeckMachine(standing.center, standing.withSettings(settings.unaimed()))
+        // ⛔ **`unaimed()` by default, and that is the whole of increment 3.** A paste hands over
+        // settings and does not turn what it lands on; `Tool.Move` is how a standing machine is
+        // re-aimed now. While this forced the cursor's facing there was no other gesture that could,
+        // so a re-tune and a re-aim were the same click and neither could be asked for alone.
+        //
+        // ⭐ **[reaimed] is the way back to asking for both**, and it is per machine rather than per
+        // brush: R over *this* one says "and turn it", R anywhere else does not.
+        val handedOver = if (standing.center == reaimed) settings.aimed(brushFacing) else settings.unaimed()
+        return Edit.ReplaceDeckMachine(standing.center, standing.withSettings(handedOver))
+    }
+
+    /**
+     * The machine under [tile] that a stamped click would re-tune, if it is one **R can turn**.
+     *
+     * Null for every reason a paste is not on: no stamp, no machine, a machine of another family —
+     * and also for one that is on but has nothing to turn, a valve or an ejector having no facing to
+     * point. [rotateBrush] falls back to turning the brush in all of those.
+     */
+    private fun pasteTarget(tile: TileIndex): DirectedDeckMachine? {
+        if (tile == TileIndex.NONE) return null
+        val brush = brush ?: return null
+        if (stampOnto(tile, brush) == null) return null
+        val standing = state.machineCovering(tile) as? DirectedDeckMachine ?: return null
+        // ⛔ **A ghost is not turned**, which is the limitation the move tool has and it is the same
+        // one: a part-built machine cannot be demolished and rebuilt without minting the metal it
+        // has not been delivered yet, so the reducer swaps a ghost's machine **in place** — and an
+        // in-place swap leaves the occupancy map and the buffer roles claimed by the facing it used
+        // to have. Its settings still paste; only the turn is off. See `canBeMoved`.
+        if (state.deck.isGhost(standing.center)) return null
+        return standing
+    }
+
+    /**
+     * Where R would point [standing] next, or null if there is nowhere for it to go.
+     *
+     * ⭐ **Parity decides how far a turn is**, because a machine being re-aimed in place has to land
+     * back on the deck it is standing on. A footprint whose sides match — every square, and a silo's
+     * 3×1 line — comes back to a block of the same proportions after a quarter turn, so all four
+     * facings are on offer. One whose sides differ, a thruster's 2×1 or an electrolyzer's 3×2, does
+     * not: a quarter turn asks for a block the other way round, so only the half turn is offered and
+     * R flips it end for end. ⛔ **A thruster is one of those and not a special case** (Stu,
+     * 2026-09-10) — an earlier design had engines swinging about their hub, and the move tool is how
+     * a footprint is re-laid now.
+     *
+     * ⚠️ **A candidate that would not fit is skipped, not offered.** Turning a silo across a corridor
+     * swings it onto two tiles it does not own, and the reducer refuses that — so offering it would
+     * draw a preview of a paste that then quietly did nothing.
+     */
+    private fun nextFacing(standing: DirectedDeckMachine): Direction? {
+        val anchor = standing.center
+        // From where the player last put it, so a second press steps on rather than starting over.
+        val from = if (anchor == reaimed) brushFacing else standing.facing
+        val shape = standing.kind.shape
+        val quarters = if (shape.width % 2 == shape.height % 2) intArrayOf(1, 2, 3) else intArrayOf(2)
+        for (q in quarters) {
+            var candidate = from
+            repeat(q) { candidate = candidate.clockwise }
+            // The same question the move tool's cursor asks of a turn in place, so the two gestures
+            // cannot come to disagree about which turns are possible.
+            if (state.canStandAfterMoving(anchor, anchor, candidate)) return candidate
+        }
+        return null
     }
 
     /**
@@ -358,7 +453,22 @@ class OutofspaceController(
         // what the click is about to do.
         // ⛔ **`it.tile`, not `tile`** — the edit has already resolved the pointer onto the machine's
         // anchor, and the preview snaps there with it. See [stampOnto].
-        stampOnto(tile, brush)?.let { return BuildPlan(it.tile, brush, brushFacing, allowed = true, settingsOnly = true) }
+        //
+        // ⭐ **And it draws the edit's machine, not the brush.** The brush is what a click on bare
+        // deck would build — a warehouse, say — while what a click *here* produces is the silo
+        // already standing, wearing the warehouse's filter and pointed the way it is pointed. Drawn
+        // off the brush the cursor showed a 3×3 over a 3×1 and a facing nothing was about to adopt,
+        // which is a picture of a placement that is not going to happen. Off the edit it cannot be
+        // wrong: that machine *is* what the reducer will stand there.
+        stampOnto(tile, brush)?.let { edit ->
+            return BuildPlan(
+                tile = edit.tile,
+                brush = Brush.Building(edit.machine.kind),
+                facing = (edit.machine as? DirectedDeckMachine)?.facing ?: brushFacing,
+                allowed = true,
+                settingsOnly = true,
+            )
+        }
         val allowed = buildMaterial != null && when (brush) {
             // Track goes anywhere there is grid: the layers no longer exclude each other, and a run
             // drawn over a run it already has is a no-op rather than a mistake — see `layConduit`.
@@ -784,6 +894,9 @@ class OutofspaceController(
                 // would drop the settings this call just took.
                 brush = Brush.Building(machine.kind)
                 stamped = machine.toMachineSettings()
+                // A fresh copy is a fresh gesture: whatever machine was last turned with R, this is
+                // not a statement about it. See [reaimed].
+                reaimed = TileIndex.NONE
                 buildMaterial = state.deck.materialOf(machine)
                 (machine as? DirectedDeckMachine)?.let { brushFacing = it.facing }
                 return true
@@ -1185,19 +1298,39 @@ class OutofspaceController(
     }
 
     /**
-     * `R`: **turns whatever is on the cursor.**
+     * `R`: **turns whatever the cursor is about to act on** — [over] is the tile under the pointer.
      *
-     * ⭐ **And it needs no precedence rule, which is the second thing the move tool bought.** An
-     * earlier design argued at length over whether `R` should turn the brush or the machine under the
-     * pointer, and worried about laying a row of machines while hovering a neighbour that would
-     * silently turn instead. A *carried* machine is what is on the cursor, and a player cannot be
-     * holding a brush and carrying a machine at once, so there is exactly one thing to turn.
+     * Three things it can be, and they are in the order of how specific they are:
+     *
+     * 1. A machine **in hand** turns. A player cannot be carrying one and holding a brush at once,
+     *    so there is nothing to arbitrate.
+     * 2. A machine a **stamped click would re-tune** turns — see [reaimed]. The brush's own aim goes
+     *    with it, because the facing shown under the cursor and the facing the next placement takes
+     *    must be the same field or the player is reading a number that is about to change.
+     *    ⛔ **The press is consumed even when that machine has nowhere to turn to**, rather than
+     *    falling through: R is aimed at the thing under the pointer, and quietly spinning a brush
+     *    the player is not looking at instead is a change they cannot see.
+     * 3. Otherwise the brush, which is what R has always done.
+     *
+     * ⚠️ **Rule 2 is why the pointer is an argument at all.** An earlier design argued over whether R
+     * should turn the brush or the machine under it, and settled on the brush once the move tool
+     * existed to turn standing machines. It is back, narrowed to the one case that asks for it: the
+     * player is holding a copy of that machine, pointing at that machine, and the only thing a
+     * paste will not do on its own is turn it.
      */
-    fun rotateBrush() {
+    fun rotateBrush(over: TileIndex = TileIndex.NONE) {
         if (carriedFrom != TileIndex.NONE) {
             carriedFacing = carriedFacing.clockwise
             return
         }
+        pasteTarget(over)?.let { standing ->
+            nextFacing(standing)?.let { reaimed = standing.center; brushFacing = it }
+            return
+        }
+        // Nothing is being pointed at, so nothing is being said about anything standing: an intent
+        // left over from the last machine turned would otherwise re-aim it on a paste the player
+        // made minutes later with a brush they have since spun.
+        reaimed = TileIndex.NONE
         brushFacing = brushFacing.clockwise
     }
 

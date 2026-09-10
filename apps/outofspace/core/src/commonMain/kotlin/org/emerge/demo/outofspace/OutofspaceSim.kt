@@ -2410,6 +2410,16 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         // ⚠️ A ghost must stay a ghost: `rebuildInPlace` does `deck -=` + `deck +=`
                         // which releases zero and adds the full bill — matter from nowhere.
                         // In-place `deck.set` swaps the machine while leaving matter/energy untouched.
+                        //
+                        // ⛔ **And so it may not re-aim one.** `set` swaps the machine object and
+                        // nothing else: the occupancy map and the buffer roles go on naming the tiles
+                        // the old facing claimed, which for a 1×2 is the wrong pair outright and for
+                        // a square is the wrong doors. A turn needs `rebuildInPlace`, a ghost may not
+                        // have it, so the answer is no — the cursor does not offer it either, see
+                        // `OutofspaceController.pasteTarget`.
+                        if ((edit.machine as? DirectedDeckMachine)?.facing !=
+                            (oldMachine as? DirectedDeckMachine)?.facing
+                        ) return
                         deck.set(tile, edit.machine)
                     } else {
                         rebuildInPlace(tile, tile, oldMachine, edit.machine)
