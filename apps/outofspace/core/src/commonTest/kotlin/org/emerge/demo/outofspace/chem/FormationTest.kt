@@ -71,8 +71,12 @@ class FormationTest {
             "2 Periclase + 1 Silicon -> 2 Magnesium + 1 Quartz" to 293L,
             "1 Forsterite + 4 Carbon -> 2 Periclase + 1 Silicon + 2 Carbon + 2 CarbonMonoxide" to 748L,
             "1 Enstatite + 3 Carbon -> 1 Periclase + 1 Silicon + 1 Carbon + 2 CarbonMonoxide" to 723L,
-            "1 Fayalite + 2 Carbon -> 2 Iron + 1 Silicon + 2 CarbonDioxide" to 691L,
-            "2 Ferrosilite + 3 Carbon -> 2 Iron + 2 Silicon + 3 CarbonDioxide" to 1208L,
+            // ⚠️ **Both rows changed shape on 2026-09-11, not just price** — they made CO₂ beside
+            // their own leftover carbon above the Boudouard onset, which is a two-step written as
+            // one. Carbon doubled and the product became CO; see [REACTIONS]. Priced by hand the
+            // same way as every line here: 4(-111) - (-1479) = 1035, and 6(-111) - 2(-1195) = 1724.
+            "1 Fayalite + 4 Carbon -> 2 Iron + 1 Silicon + 4 CarbonMonoxide" to 1035L,
+            "2 Ferrosilite + 6 Carbon -> 2 Iron + 2 Silicon + 6 CarbonMonoxide" to 1724L,
             "1 Ilmenite + 1 Carbon -> 1 Iron + 1 Rutile + 1 CarbonMonoxide" to 182L,
             "1 Rutile + 2 Magnesium -> 1 Titanium + 2 Periclase" to -260L,
             // ── Roasting, and the oxide ores ──
@@ -121,6 +125,11 @@ class FormationTest {
      * expensive in heat, and algae pyrolysis turned out to be exothermic rather than endothermic. If
      * one of these ever needs revisiting, this is the list of what moved and what it moved from.
      *
+     * ⚠️ **The fayalite and ferrosilite rows were dropped from this record on 2026-09-11**, when
+     * they stopped making CO₂ and their formulas changed. They were 210 → 691 and 480 → 1208 in the
+     * hand-written-to-derived move this list is about; the rows they named no longer exist, and a
+     * record keyed by a formula can only honestly hold formulas that are still in the table.
+     *
      * ⛔ **Four of these are roundings and two are genuine unknowns.** Methane, hydrogen sulfide,
      * ammonia-burning, magnesite, quartz, forsterite, ilmenite and rutile all moved by 1–2 kJ, which
      * is the difference between a textbook's rounded figure and this table's — noise. Serpentine
@@ -142,8 +151,6 @@ class FormationTest {
             "1 Quartz + 2 Carbon -> 1 Silicon + 2 CarbonMonoxide" to 690L,
             "1 Forsterite + 4 Carbon -> 2 Periclase + 1 Silicon + 2 Carbon + 2 CarbonMonoxide" to 750L,
             "1 Enstatite + 3 Carbon -> 1 Periclase + 1 Silicon + 1 Carbon + 2 CarbonMonoxide" to 890L,
-            "1 Fayalite + 2 Carbon -> 2 Iron + 1 Silicon + 2 CarbonDioxide" to 210L,
-            "2 Ferrosilite + 3 Carbon -> 2 Iron + 2 Silicon + 3 CarbonDioxide" to 480L,
             "1 Ilmenite + 1 Carbon -> 1 Iron + 1 Rutile + 1 CarbonMonoxide" to 180L,
             "1 Rutile + 2 Magnesium -> 1 Titanium + 2 Periclase" to -259L,
         )

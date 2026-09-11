@@ -690,35 +690,50 @@ private val WRITTEN: List<Reaction> = listOf(
         onsetKelvin = 1800,
         baseRate = BASE_RATE,
     ),
-    // Fe₂SiO₄ + 2 C → 2 Fe + Si + 2 CO₂. Iron holds oxygen less tightly than magnesium does, so this
+    // Fe₂SiO₄ + 4 C → 2 Fe + Si + 4 CO. Iron holds oxygen less tightly than magnesium does, so this
     // olivine cracks a good deal cooler — and the iron drops out as solid metal without any gaseous
     // reversion, leaving a clean unit of silicon behind.
     //
     // ⚠️ **It is not the cheap row it used to look like.** The table claimed 210 kJ per formula unit
     // until the enthalpies were derived; [FORMATION_ENTHALPY] says 691, and the comment that used to
     // stand here argued from the low onset to a low energy as though the two were the same fact.
-    // They are not: the onset says when it *starts*, and the enthalpy says what it *costs*. ⛔ Note
-    // also that this row and the ferrosilite one below make CO₂ where every other carbothermic row
-    // here makes CO, which is worth a second look — CO is the favoured product at these
-    // temperatures, and it is what the Boudouard row exists to say.
+    // They are not: the onset says when it *starts*, and the enthalpy says what it *costs*.
+    //
+    // ⛔ **It made CO₂ until 2026-09-11, and that was wrong twice over.** Every other carbothermic
+    // row here makes CO, because CO is the favoured product at these temperatures — which is the
+    // whole reason the Boudouard row exists. Worse, the two disagreed *in the same chamber*: this
+    // row's CO₂ met its own leftover carbon at 1250 K, where `CO₂ + C → 2 CO` is already dominant,
+    // and the second row ate carbon the first one still needed. A charge mixed to this row's stated
+    // ratio would stall part-converted with no reagent left and nothing to say why.
+    //
+    // ⚠️ **So the carbon DOUBLED**, and that is the correction rather than a rebalance: four oxygens
+    // leaving as CO need four carbons, where leaving as CO₂ they needed two. The ratio a player has
+    // to mix to was always this one; the table was quoting the first half of a two-step and calling
+    // it the reaction. [enthalpyPerKg] is derived, so the energy repriced itself.
     Reaction(
         principal = Species.Fayalite,
-        reagents = listOf(Species.Fayalite to 1, Species.Carbon to 2),
-        products = listOf(Species.Iron to 2, Species.Silicon to 1, Species.CarbonDioxide to 2),
+        reagents = listOf(Species.Fayalite to 1, Species.Carbon to 4),
+        products = listOf(Species.Iron to 2, Species.Silicon to 1, Species.CarbonMonoxide to 4),
         onsetKelvin = 1250,
         baseRate = BASE_RATE,
     ),
-    // 2 FeSiO₃ + 3 C → 2 Fe + 2 Si + 3 CO₂. The iron twin to enstatite, and like it a 1:1 mineral
+    // 2 FeSiO₃ + 6 C → 2 Fe + 2 Si + 6 CO. The iron twin to enstatite, and like it a 1:1 mineral
     // structure that yields a large silicon surplus relative to the iron — at mid-tier furnace
     // temperatures.
     //
     // ⚠️ The only row that consumes two units of its principal, so the only one where the formula
     // mass and the molar mass are different numbers. ⚠️ It claimed 480 kJ and is worth 1208; see the
     // fayalite row above, which drifted the same way and for the same reason.
+    //
+    // ⛔ **CO, and six carbons, since 2026-09-11** — the fayalite row above carries the argument and
+    // this row is the case that found it. Its onset is 1200 K and Boudouard is *dominant* above
+    // 1200 K, so the old `3 CO₂` was consumed by `CO₂ + C` on the faster base rate before the slow
+    // reduction had finished with the carbon it was quoted against. The net of the two steps is
+    // exactly what is written here now.
     Reaction(
         principal = Species.Ferrosilite,
-        reagents = listOf(Species.Ferrosilite to 2, Species.Carbon to 3),
-        products = listOf(Species.Iron to 2, Species.Silicon to 2, Species.CarbonDioxide to 3),
+        reagents = listOf(Species.Ferrosilite to 2, Species.Carbon to 6),
+        products = listOf(Species.Iron to 2, Species.Silicon to 2, Species.CarbonMonoxide to 6),
         onsetKelvin = 1200,
         baseRate = BASE_RATE,
     ),
