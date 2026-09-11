@@ -848,7 +848,7 @@ class OutofspaceRenderer {
             is Gauge -> frame(x, y, Colors.GAUGE_COLLAR)
             // A filled plate. It is all face and that is the whole of what it does, so it reads as
             // a surface rather than as a housing with something going on inside it.
-            is SolarPanel -> tileRect(x, y, 1f, kindColor(DeckMachineKind.SolarPanel))
+            is SolarPanel -> footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.SolarPanel))
             // Bright core, wider than the pipe it opens, centred on the tile.
             is Valve -> footprintRect(state, m, Visual.VALVE_COLLAR, Colors.VALVE_CORE)
             // A rod seen end-on, standing on the plate that bolts it down. Deliberately small: what

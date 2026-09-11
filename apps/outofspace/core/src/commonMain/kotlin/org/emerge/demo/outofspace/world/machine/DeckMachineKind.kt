@@ -150,7 +150,7 @@ enum class DeckMachineKind(
     Gauge("GAUGE"),
 
     /** Pushes charge onto the power run under it — see [SolarPanel]. */
-    SolarPanel("SOLAR"),
+    SolarPanel("SOLAR", preventThoroughfare=true),
 
     /**
      * A rod bonding every layer under its tile, so charge may cross between them there — see
