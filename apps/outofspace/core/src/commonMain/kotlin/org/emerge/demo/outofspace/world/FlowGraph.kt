@@ -66,6 +66,7 @@ class FlowGraph internal constructor(
     private val _tiles: Set<TileIndex>,
     private val _sinks: Set<TileIndex>,
     private val _order: List<TileIndex>,
+    private val _loops: Map<TileIndex, List<TileIndex>>,
     private val _feeders: Map<TileIndex, List<TileIndex>>,
     private val _hops: Map<TileIndex, TileIndex>,
     private val grid: Grid,
@@ -73,6 +74,24 @@ class FlowGraph internal constructor(
     val tiles: Set<TileIndex> get() = _tiles
 
     val sinks: Set<TileIndex> get() = _sinks
+
+    /**
+     * The tiles of each **cycle** in [order], keyed by the member [order] reaches first.
+     *
+     * ⛔ **The one place [order]'s promise cannot be kept, named rather than papered over.** A tile
+     * appears after every tile it can send to — except on a loop, where no such order exists, and a
+     * reader that carries anything upstream in one pass over [order] will lose it at whatever seam
+     * the loop happened to be broken at. So the loops are handed over instead: a reader solves each
+     * group as a unit and walks the rest of [order] as before. See [Whitelist.of], which iterates a
+     * group to a fixed point.
+     *
+     * ⚠️ **Members of a group are contiguous in [order]**, so a reader can step over one by its
+     * size once it has dealt with it.
+     *
+     * ⚠️ **Empty on every acyclic network**, which is nearly all of them — the decomposition is
+     * reached only down the branch `walkOrder` already took when it could not place every tile.
+     */
+    val loops: Map<TileIndex, List<TileIndex>> get() = _loops
 
     /**
      * Every tile that takes part in the flow, downstream first.
@@ -330,11 +349,13 @@ class FlowGraph internal constructor(
             // end reverts to an input port that takes anything for ever, which is the hole
             // [hopTo] exists to close. Only the near end has to be somewhere the walk reaches.
             val usable = hops.filterKeys { it in tileSet }
+            val walk = walkOrder(allowed, tileSet, sinks, usable, grid)
             return FlowGraph(
                 allowed,
                 tileSet,
                 sinks.filterTo(mutableSetOf()) { it in tileSet },
-                walkOrder(allowed, tileSet, sinks, usable, grid),
+                walk.order,
+                walk.loops,
                 feedersOf(allowed, tileSet, grid),
                 usable,
                 grid,
@@ -668,13 +689,16 @@ class FlowGraph internal constructor(
          * A loop has no topological order at all, and that is not a failure — its tiles come last,
          * in tile order, and `arrived` is what keeps a packet on a cycle to one tile per advance.
          */
+        /** [walkOrder]'s two answers: the order itself, and the cycles it could not order. */
+        private class Walk(val order: List<TileIndex>, val loops: Map<TileIndex, List<TileIndex>>)
+
         private fun walkOrder(
             allowed: ByteArray,
             tileSet: Set<TileIndex>,
             sinks: Set<TileIndex>,
             hops: Map<TileIndex, TileIndex>,
             grid: Grid,
-        ): List<TileIndex> {
+        ): Walk {
             val remaining = HashMap<TileIndex, Int>()
             val feeders = HashMap<TileIndex, MutableList<TileIndex>>()
             for (tile in tileSet) {
@@ -718,11 +742,133 @@ class FlowGraph internal constructor(
                 }
                 wave = next.sortedBy { it.index }
             }
-            // Whatever is left is on a cycle.
-            if (order.size < tileSet.size) order.addAll(tileSet.filter { it !in placed }.sortedBy { it.index })
+            // ── Whatever is left is on a cycle, or upstream of one ──────────
+            //
+            // ⛔ **This used to be `sortedBy { it.index }`, and tile index is not an order.** Every
+            // reader of [order] is promised that a tile appears after everything it can send to; the
+            // leftovers were appended in a sequence with no relation to the flow at all, so the
+            // promise held for them only by coincidence. [Whitelist.of] carries appetite upstream in
+            // one pass over this list, and what the coincidence cost was demand that stopped dead
+            // wherever two adjacent tiles happened to sort the wrong way round.
+            //
+            // Stu's `cycle` save: a silo with a tonne of iron, a silo with room for it, and a route
+            // between them that ran round the vessel through two bridges. Demand died between
+            // (18,14) and (17,14) — tiles 438 and 437, adjacent in the flow and adjacent in the
+            // fallback, in opposite orders. Nothing moved for 3000 ticks, and cutting any rail on a
+            // stretch that was not on the route broke the loop and delivered the lot.
+            //
+            // There is no order that works on a cycle, so the answer is to say where the cycles are
+            // and let the reader solve each as a unit. Tarjan gives both at once: the components,
+            // and them **in reverse topological order of the condensation** — an SCC is popped only
+            // once everything reachable from it has been, which is exactly the promise above, kept
+            // as far as it can be kept.
+            val loops = HashMap<TileIndex, List<TileIndex>>()
+            if (order.size < tileSet.size) {
+                val rest = tileSet.filterTo(mutableSetOf()) { it !in placed }
+                for (scc in stronglyConnected(rest, allowed, hops, grid)) {
+                    order.addAll(scc)
+                    // ⚠️ **Only the real ones.** A tile that is merely *upstream* of a loop is in the
+                    // leftovers too and Tarjan hands it back as a component of one; it has a
+                    // perfectly good place in the order and nothing to iterate.
+                    if (scc.size > 1) loops[scc.first()] = scc
+                }
+            }
 
             // Only tiles that take part: somewhere to send material, or somewhere to be consumed.
-            return order.filter { allowed[it.index].toInt() != 0 || it in sinks }
+            // ⚠️ **A cycle member always survives this** — it has an outgoing edge by construction —
+            // so a group cannot be split by the filter and stays contiguous, which is what lets a
+            // reader step over one by its size.
+            return Walk(order.filter { allowed[it.index].toInt() != 0 || it in sinks }, loops)
+        }
+
+        /**
+         * The strongly connected components of [rest], **in the order Tarjan retires them**.
+         *
+         * Which is reverse topological order of the condensation: a component is closed only once
+         * every component reachable from it is closed, so appending them in that order keeps
+         * [FlowGraph.order]'s promise everywhere it can be kept — between components. Inside one it
+         * cannot be kept by anybody, and [FlowGraph.loops] is how that is handed on.
+         *
+         * ⚠️ **Deterministic, like the wave sort above it.** Roots are taken in ascending tile
+         * order and each tile's edges in a fixed direction order, so the same network always
+         * decomposes the same way — a replay cannot be allowed to depend on a set's iteration order.
+         *
+         * ⚠️ **Iterative, for [SourceSide]'s reason**: a run of track is as long as the player cares
+         * to draw it, and a recursive walk over one is a stack overflow that nothing about the shape
+         * of a factory would warn you about.
+         *
+         * ⚠️ **Members come back with the component's root last.** That is the stack order, and it
+         * is the useful one: on a simple loop it leaves exactly one edge — the one back to the root
+         * — pointing the wrong way, so a single seam rather than several.
+         */
+        private fun stronglyConnected(
+            rest: Set<TileIndex>,
+            allowed: ByteArray,
+            hops: Map<TileIndex, TileIndex>,
+            grid: Grid,
+        ): List<List<TileIndex>> {
+            // Successors within [rest]. Anything leading out of it is already placed and ordered.
+            fun onward(at: TileIndex): List<TileIndex> {
+                val out = ArrayList<TileIndex>(4)
+                for (dir in Direction.ALL) {
+                    if (!bit(allowed, at, dir)) continue
+                    val next = grid.neighbour(at, dir)
+                    if (next != TileIndex.NONE && next in rest) out.add(next)
+                }
+                // A span is somewhere this tile sends material, exactly as in the ordering above.
+                hops[at]?.takeIf { it in rest }?.let { out.add(it) }
+                return out
+            }
+
+            val n = grid.size
+            val disc = IntArray(n) { -1 }
+            val low = IntArray(n)
+            val onStack = BooleanArray(n)
+            val stack = ArrayDeque<TileIndex>()
+            val out = ArrayList<List<TileIndex>>()
+            var timer = 0
+
+            for (start in rest.sortedBy { it.index }) {
+                if (disc[start.index] >= 0) continue
+                // tile, and how far through its successors — the frame a recursion would have held.
+                val work = ArrayDeque<IntArray>()
+                disc[start.index] = timer; low[start.index] = timer; timer++
+                stack.addLast(start); onStack[start.index] = true
+                work.addLast(intArrayOf(start.index, 0))
+                while (work.isNotEmpty()) {
+                    val frame = work.last()
+                    val at = TileIndex(frame[0])
+                    val next = onward(at)
+                    if (frame[1] < next.size) {
+                        val to = next[frame[1]]
+                        frame[1]++
+                        if (disc[to.index] < 0) {
+                            disc[to.index] = timer; low[to.index] = timer; timer++
+                            stack.addLast(to); onStack[to.index] = true
+                            work.addLast(intArrayOf(to.index, 0))
+                        } else if (onStack[to.index]) {
+                            if (disc[to.index] < low[at.index]) low[at.index] = disc[to.index]
+                        }
+                    } else {
+                        work.removeLast()
+                        work.lastOrNull()?.let { parent ->
+                            if (low[at.index] < low[parent[0]]) low[parent[0]] = low[at.index]
+                        }
+                        // The root of a component: everything above it on the stack is its.
+                        if (low[at.index] == disc[at.index]) {
+                            val scc = ArrayList<TileIndex>()
+                            while (true) {
+                                val t = stack.removeLast()
+                                onStack[t.index] = false
+                                scc.add(t)
+                                if (t == at) break
+                            }
+                            out.add(scc)
+                        }
+                    }
+                }
+            }
+            return out
         }
 
         /** Inverts the permission bits: for each tile, who may send material to it. */
@@ -981,7 +1127,7 @@ class FlowGraph internal constructor(
          * run after `advanceRails`, and it needs something to hold before the first one.
          */
         fun empty(): FlowGraph =
-            FlowGraph(ByteArray(0), emptySet(), emptySet(), emptyList(), emptyMap(), emptyMap(), Grid(0, 0))
+            FlowGraph(ByteArray(0), emptySet(), emptySet(), emptyList(), emptyMap(), emptyMap(), emptyMap(), Grid(0, 0))
     }
 }
 

@@ -676,7 +676,16 @@ class Whitelist private constructor(
             val routes = arrayOfNulls<MutableList<Demand>>(tileCount)
             val unlimited = BooleanArray(tileCount)
 
-            for (tile in flow.order) {
+            // One tile's answer, worked out from its successors' — and nothing else. Everything it
+            // reads is either tile-local or already in [routes]/[unlimited], and everything it
+            // writes is its own slot, so asking it twice gives the same answer twice. That is what
+            // lets a cycle be iterated below.
+            //
+            // [charge] is the one part that is **not** idempotent across a lap: what stands on the
+            // track is divided among the sinks that can eat it, and going round a loop twice would
+            // charge the same lump twice. So the fixed point is reached without it and it is applied
+            // on one final lap. Returns whether anything about this tile moved.
+            fun visit(tile: TileIndex, charge: Boolean): Boolean {
                 val i = tile.index
                 var any = false
                 var here: MutableList<Demand>? = null
@@ -795,14 +804,78 @@ class Whitelist private constructor(
                 // a site that needs 300g and one that needs 700g splits a packet 30:70. A sink the
                 // lump cannot be used by takes none of it and is not in the division at all — that
                 // is [loadOn] answering nought for a bill this lump does not suit.
-                here?.let { list -> chargeStandingLoad(list, tile, loadOn, usableBy) }
+                if (charge) here?.let { list -> chargeStandingLoad(list, tile, loadOn, usableBy) }
 
-                unlimited[i] = any
                 // Nothing downstream is fussy *and* nothing downstream is boundless: the list is the
                 // only thing left worth keeping, and only while the unlimited flag is not set.
-                routes[i] = if (any) null else here
+                val settled = if (any) null else here
+                val moved = unlimited[i] != any || !same(routes[i], settled)
+                unlimited[i] = any
+                routes[i] = settled
+                return moved
+            }
+
+            // ── The walk ────────────────────────────────────────────────────
+            //
+            // Straight through [FlowGraph.order], which is a tile at a time — except where the graph
+            // hands back a **cycle**, which has to be solved whole. See [FlowGraph.loops].
+            val order = flow.order
+            val loops = flow.loops
+            var at = 0
+            while (at < order.size) {
+                val tile = order[at]
+                val loop = loops[tile]
+                if (loop == null) {
+                    visit(tile, charge = true)
+                    at++
+                    continue
+                }
+                // ⛔ **A loop is a fixed point, not a pass.** Appetite only ever grows here — a
+                // route is added or replaced by a more permissive one, never taken away — so
+                // repeating the lap converges, and it converges in two laps on a simple ring:
+                // Tarjan hands the members back with one seam in them, so the first lap carries
+                // everything but the edge across the seam and the second carries that.
+                //
+                // ⚠️ **Bounded by the size of the loop**, which is the worst case a nest of them
+                // can need (one hop of progress per lap), and is the guarantee that this
+                // terminates even if some future rule makes the growth non-monotone.
+                var laps = 0
+                while (laps < loop.size) {
+                    var moved = false
+                    for (t in loop) if (visit(t, charge = false)) moved = true
+                    laps++
+                    if (!moved) break
+                }
+                // ⚠️ **Then exactly one lap that charges**, which is the same single accounting a
+                // straight run gets: each lump on the loop is divided once among the sinks that can
+                // eat it. A tile early in the lap cannot see the charges of one late in it — on a
+                // ring there is no "early", so some seam has to wear that — and the error is one
+                // lap's worth of standing load, never a multiple of it.
+                for (t in loop) visit(t, charge = true)
+                at += loop.size
             }
             return Whitelist(routes, unlimited)
+        }
+
+        /**
+         * Whether two of [of]'s route lists say the same thing — the fixed-point test, and nothing
+         * more general than that.
+         *
+         * ⚠️ **Sinks are compared by identity**, as everywhere else in this file, and the lists are
+         * built in a deterministic order from the same successors, so a positional walk is enough:
+         * two lists that agree entry for entry agree.
+         */
+        private fun same(a: List<Demand>?, b: List<Demand>?): Boolean {
+            if (a == null || b == null) return a == null && b == null
+            if (a.size != b.size) return false
+            for (k in a.indices) {
+                val x = a[k]
+                val y = b[k]
+                if (x.acceptance !== y.acceptance) return false
+                if (x.covered != y.covered) return false
+                if (owed(x.blocks) != owed(y.blocks)) return false
+            }
+            return true
         }
 
         /**
