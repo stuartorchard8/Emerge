@@ -365,5 +365,12 @@ fun VesselState.railFlow(): FlowGraph {
         // ⛔ Unpaid track, and nothing else: a ghost rail is a wall to the graph — see
         // [FlowGraph.build]. Ghost *machines* stand on finished track and are deliberately absent.
         walls = ghosts,
+        // ⛔ **The spans, which this omitted — and a missing hop is not a missing detail.** A hop
+        // counts as an edge for [FlowGraph.order], so leaving them out gave the harness a different
+        // walk order from the reducer's on any vessel with a bridge on it, which is precisely the
+        // second opinion this function exists to prevent. Found in Stu's `cycle` save, where the
+        // order the `flow` command reported broke a loop in a different place from the order the
+        // tick actually walked.
+        hops = railHops(grid, rails, deck),
     )
 }
