@@ -300,41 +300,6 @@ private val WRITTEN: List<Reaction> = listOf(
     ),
 
     /**
-     * `CH₄ → C + 2 H₂` — methane pyrolysis, **the row this whole plan was written about**, back
-     * after being deleted on 2026-08-27, and the first reaction in the game that a room declines to
-     * host.
-     *
-     * Its carbon is not a [Fluid], so the air cannot hold it — and for three weeks that was read as
-     * a fact about the *row*, which is why the row was deleted. It is a fact about one of the three
-     * stores. A cargo layer holds every species, so this happens exactly where a player would
-     * actually do it: in a packet on a rail, or in a hopper held at temperature, where the soot
-     * lands next to the hydrogen and both ride on together. `AmbientChemistry.runsIn` is the whole
-     * of the difference, and `PLAN_unified_reactions.md`'s increment 2 is *not* what unblocked it.
-     *
-     * ⚠️ **It is the only useful thing in the game that a room refuses to do**, which makes it the
-     * proving case for the store-level rule in a way nothing else in this table is: run it in the
-     * air and nothing at all happens — no draw, no products, no silently dropped mass.
-     *
-     * **+75 kJ/mol**, endothermic, and cheaply so — a tenth of what calcining limestone costs. The
-     * hydrogen is the point: `Engine.propellantRole` says an engine fed hydrogen is three times the
-     * one that is not, and a comet gives up methane first. This is the route from the one to the
-     * other that does not spend the carbon on CO₂ first.
-     *
-     * ⛔ **Not a way around `FORMATION_ENTHALPY` being sparse.** It needs no new entries only
-     * because methane was already priced for the fires and both products are elements at zero.
-     *
-     * Onset as `DECOMPOSITIONS` had it, and [COMBUSTION_BASE_RATE] because the principal is a gas —
-     * the same pairing as ammonia cracking above, for the same reason.
-     */
-    Reaction(
-        principal = Species.Methane,
-        reagents = listOf(Species.Methane to 1),
-        products = listOf(Species.Carbon to 1, Species.Hydrogen to 2),
-        onsetKelvin = 1300,
-        baseRate = COMBUSTION_BASE_RATE,
-    ),
-
-    /**
      * `CO₂ + C → 2 CO` — the Boudouard reaction, and **the row that could not be written down
      * before**: its principal is in the room's air and its other reagent is on a belt.
      *
@@ -468,6 +433,50 @@ private val WRITTEN: List<Reaction> = listOf(
         reagents = listOf(Species.Sulfur to 1, Species.Oxygen to 1),
         products = listOf(Species.SulfurDioxide to 1),
         onsetKelvin = 505,
+        baseRate = COMBUSTION_BASE_RATE,
+    ),
+
+    /**
+     * `CH₄ → C + 2 H₂` — methane pyrolysis, **the row this whole plan was written about**, back
+     * after being deleted on 2026-08-27, and the first reaction in the game that a room declines to
+     * host.
+     *
+     * Its carbon is not a [Fluid], so the air cannot hold it — and for three weeks that was read as
+     * a fact about the *row*, which is why the row was deleted. It is a fact about one of the three
+     * stores. A cargo layer holds every species, so this happens exactly where a player would
+     * actually do it: in a packet on a rail, or in a hopper held at temperature, where the soot
+     * lands next to the hydrogen and both ride on together. `AmbientChemistry.runsIn` is the whole
+     * of the difference, and `PLAN_unified_reactions.md`'s increment 2 is *not* what unblocked it.
+     *
+     * ⚠️ **It is the only useful thing in the game that a room refuses to do**, which makes it the
+     * proving case for the store-level rule in a way nothing else in this table is: run it in the
+     * air and nothing at all happens — no draw, no products, no silently dropped mass.
+     *
+     * **+75 kJ/mol**, endothermic, and cheaply so — a tenth of what calcining limestone costs. The
+     * hydrogen is the point: `Engine.propellantRole` says an engine fed hydrogen is three times the
+     * one that is not, and a comet gives up methane first. This is the route from the one to the
+     * other that does not spend the carbon on CO₂ first.
+     *
+     * ⛔ **Not a way around `FORMATION_ENTHALPY` being sparse.** It needs no new entries only
+     * because methane was already priced for the fires and both products are elements at zero.
+     *
+     * Onset as `DECOMPOSITIONS` had it, and [COMBUSTION_BASE_RATE] because the principal is a gas —
+     * the same pairing as ammonia cracking, for the same reason.
+     *
+     * ⛔ **It sits after the methane fire, and that is load-bearing until the save format is
+     * fixed.** `Save.kt` writes a furnace's recipe as its principal's *name* and reads it back with
+     * `REACTIONS.firstOrNull { it.principal == principal }` — so for a species that is the principal
+     * of two rows, the earlier row wins and the later one is unreachable across a save. Methane is
+     * such a species now; written above the fire, this row would have silently re-pointed every
+     * existing methane-fire furnace at itself, at a different setpoint and a different feed list.
+     * See `ReactionOrderTest`, which pins the resolution for all six duplicated principals so that
+     * the next reorder fails loudly instead of quietly rewriting saves.
+     */
+    Reaction(
+        principal = Species.Methane,
+        reagents = listOf(Species.Methane to 1),
+        products = listOf(Species.Carbon to 1, Species.Hydrogen to 2),
+        onsetKelvin = 1300,
         baseRate = COMBUSTION_BASE_RATE,
     ),
 
