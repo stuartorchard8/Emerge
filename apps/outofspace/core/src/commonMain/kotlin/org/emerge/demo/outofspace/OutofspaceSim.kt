@@ -1416,18 +1416,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
      * several pure species in order. `ConcentratorBankTest` pins the purity of each *lump*, not the
      * sameness of successive ones.
      *
-     * ⚠️ **The lift-time gate below is not the guarantee it reads as, and there is a known hole
-     * beside it.** It compares the charge against the bank, but it sits inside the `?: run { … }`
-     * that only executes when the chamber is **empty** — and since this rewrite the chamber is never
-     * empty again once the machine has run. So it fires once, on a machine that has never worked,
-     * and `holdsBack`'s `mustClearTheBank` exemption goes with it. On a *warm* machine whose bank has
-     * been part-shipped — which `holdsBack` permits when a sink's appetite is shorter than a packet —
-     * the next deposit is `banked + output` across two species and the port then emits blended lumps.
-     * Measured, not deduced: see the ignored `a part-shipped bank is not blended into` in
-     * `ConcentratorBankTest`. **Reported, deliberately not fixed here** — closing it is a design call
-     * about where the gate belongs, and the deposit is not obviously it.
+     * ⛔ **A deposit can never blend, because the bank is normalised before anything else happens** —
+     * see [returnBankResidue], which is the first line of this function and the whole reason it can
+     * be. The bank holds one packet of one species or nothing, so `banked + output` is always
+     * `EMPTY + output`.
+     * That replaced a gate at the *lift* which compared the charge against the bank: it sat inside
+     * the `?: run { … }` that only executes when the chamber is empty, and since `811be00f` the
+     * chamber is never empty again once the machine has worked, so it fired once in a machine's life
+     * and a warm machine's part-shipped bank went on emitting blended lumps. The lift-time check is
+     * still below and still worth having — it stops a charge of the wrong species being lifted in
+     * front of a *full* bank — but it is no longer what the purity of a lump rests on.
      */
     private fun Work.refine(cfg: OutofspaceConfig, m: Concentrator, on: Boolean, tile: TileIndex): Concentrator {
+        returnBankResidue(m, tile)
         // Starting a fresh lump is a move between two stores, and the whole tick's heat is applied
         // the moment it starts rather than dribbled out over the action.
         var inProgress = store(m, tile, BufferRole.Inside) ?: run {
@@ -1480,6 +1481,56 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             return m.copy(progress = 0, carry = carry)
         }
         return m.copy(progress = m.progress + actionProgress.toInt(), carry = carry)
+    }
+
+    /**
+     * **A concentrator's bank holds exactly one packet of one species, or nothing**, and anything
+     * else goes back into the chamber to be worked again.
+     *
+     * ⛔ **This is what makes the bank unmixable, and it replaces the gate that used to try.** A
+     * deposit is `banked + output`, so the one state in which two species can meet is a bank holding
+     * a *part* packet of the first when the second is ready. `refine` used to refuse to lift a
+     * charge whose dominant was not what the bank held, and `holdsBack`'s `mustClearTheBank` let the
+     * runt go so the new species could start clean — but that gate sits inside the `?: run { … }`
+     * that only runs when the chamber is empty, and since `811be00f` the chamber is never empty
+     * again once the machine has worked. Measured on a warm machine: bank `Quartz=100kg, Iron=40kg`,
+     * and 208 of 400 ticks with a blended lump standing on the run.
+     *
+     * ⚠️ **A part packet may still leave**, and that is the point of putting the rule here rather
+     * than on the port. A construction site owed thirty kilograms still gets thirty kilograms —
+     * `holdsBack` exempts a short appetite for the reasons argued there — and the seventy that stays
+     * behind is *pure*, so tipping it back into the chamber costs nothing but a re-draw. External
+     * demand is served and the bank is still never mixed into. The old arrangement could only have
+     * one of the two.
+     *
+     * ⛔ **A blended bank goes back whole, however much of it there is**, and that is the case that
+     * was found in a real save rather than reasoned about. `mixed_concentrate.txt`, tick 30753966:
+     * the bank held a *full* 100 kg packet assaying 62% water and 32% enstatite, and 2000 ticks left
+     * every store in the machine byte-identical. A blend is a packet no consumer will have — a tank
+     * locks onto a species, a site wants `BUILD_PURITY_PERCENT` — so it could never be delivered,
+     * and a full bank stops the machine at the [MACHINE_OUTPUT_CAP] check in [refine]. Dead for
+     * good. Keeping a proportional packet's worth of it would have shipped one mixed lump and cured
+     * nothing, because the mixed lump is exactly what nothing accepts.
+     *
+     * ⚠️ **Over a packet is the same tip-back**, and both are save-compatibility cases rather than
+     * states the sim can still reach: once the bank is normalised at the head of every action, a
+     * deposit only ever lands on an empty one, and what it deposits is one pure species.
+     */
+    private fun Work.returnBankResidue(m: Concentrator, tile: TileIndex) {
+        val banked = store(m, tile, BufferRole.Product) ?: return
+        if (banked.total == Capacity.PACKET_MASS && banked.impurities == 0L) return
+        // A blend is handed back entire: there is no slice of it that is a packet anybody wants.
+        val keep =
+            if (banked.impurities == 0L && banked.total > Capacity.PACKET_MASS)
+                banked.takeAtLeast(Capacity.PACKET_MASS)
+            else null
+        val back = if (keep == null) banked else banked - keep
+        if (back.total <= 0L) return
+        putStore(m, tile, BufferRole.Product, keep)
+        // The chamber is a pile rather than a slot, so this simply joins whatever is standing in it
+        // — over [Concentrator.CHARGE_MASS] if need be, which only means the next action tops up by
+        // less. Nothing is minted and nothing is lost: it is the same matter one store to the left.
+        putStore(m, tile, BufferRole.Inside, (store(m, tile, BufferRole.Inside) ?: Mixture.EMPTY) + back)
     }
 
     /**
@@ -4717,36 +4768,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (minOf(room, buffer.total) >= Capacity.PACKET_MASS) return false
             if (port.owner in scrapping) return false
             if (useful != Acceptance.UNLIMITED && useful < Capacity.PACKET_MASS) return false
-            if (m is Concentrator && port.stream == Stream.Product &&
-                mustClearTheBank(m, port.owner, buffer)
-            ) return false
             return true
-        }
-
-        /**
-         * Whether a concentrator's bank has to be emptied before the machine can do anything else.
-         *
-         * ⛔ **The one case where a part packet of concentrate leaves.** The bank holds one species
-         * — see [Work.refine] — so a charge of a different one cannot start until what is banked has
-         * gone. Held to the whole-packet rule the machine would simply stop for good the first time
-         * its feed changed dominance, which is the ordinary case the moment anybody reprocesses
-         * tailings.
-         *
-         * ⚠️ **Two species near the same abundance make small packets**, and that is the accepted
-         * cost rather than an oversight: a tight loop with little material in it produces runts, and
-         * the answer is more material in the loop, not a machine that hides the problem by mixing.
-         *
-         * The conditions say "there is a charge waiting that this machine is refusing to start":
-         * nothing in the chamber, a full charge banked up in the feed, and a different dominant.
-         * Anything less than a full charge is not yet a refusal — `refine` would not have started it
-         * either — so a trickle of a new species cannot flush a bank that is still filling.
-         */
-        private fun mustClearTheBank(m: Concentrator, at: TileIndex, banked: Mixture): Boolean {
-            val chamber = bufferTile(grid, m, at, BufferRole.Inside)
-            if (chamber != null && buffers.massAt(chamber) > 0L) return false
-            val feed = bufferTile(grid, m, at, BufferRole.Input)?.let { buffers.resourceAt(it) } ?: return false
-            val charge = feed.takeAtLeast(Concentrator.CHARGE_MASS) ?: return false
-            return charge.dominant != banked.dominant
         }
 
         /**

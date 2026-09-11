@@ -16,7 +16,6 @@ import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.MACHINE_OUTPUT_CAP
-import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -170,26 +169,25 @@ class ConcentratorBankTest {
     )
 
     /**
-     * ⛔ **A cold machine clears a stale bank before it starts on a species that is not in it.**
+     * ⛔ **A stale part-bank is tipped back into the chamber, not shipped as a runt.**
      *
      * A part packet of one species sitting in the bank is the one state in which a deposit could
-     * blend, since a deposit is `banked + output`. `Work.refine` refuses to lift a charge whose
-     * dominant is not what the bank holds, `Work.holdsBack`'s `mustClearTheBank` exemption lets the
-     * short packet go, and the new species starts on an empty bank the tick after.
+     * blend, since a deposit is `banked + output`. [Work.returnBankResidue] runs at the head of
+     * every action and hands anything that is not a whole packet back to the chamber, so the bank a
+     * deposit lands on is always empty and the stale iron is simply re-drawn with everything else.
      *
-     * ⚠️ **The runt is the accepted cost**, and it is bounded by how much of the old species had
-     * been banked. Small packets mean a loop with too little material in it, not a machine that is
-     * misbehaving.
+     * ⚠️ **The iron is not lost and it is not shipped short.** It goes into the charge, so it leaves
+     * later as part of a whole pure packet of iron, whenever iron is dominant again. What this pins
+     * is that it does not leave *now*, as a forty-kilogram runt owning a rail tile for good.
      *
-     * ⚠️ **"Cold" is load-bearing and it is what the ignored test below is about.** The gate lives
-     * inside the `?: run { … }` that only runs when the chamber is empty, and since `811be00f` the
-     * chamber is never empty again once the machine has worked. So this pins the first lift of a
-     * machine's life and nothing after it.
+     * ⛔ **This replaced `mustClearTheBank`**, which shipped exactly that runt so the machine would
+     * not stop dead in front of a bank it could not add to. Nothing has to stop any more: the bank
+     * clears itself into the chamber.
      */
     @Test
-    fun `a cold machine clears a stale bank before starting a new species`() {
+    fun `a stale part-bank goes back into the chamber rather than shipping short`() {
         val stale = Capacity.PACKET_MASS * 2L / 5L
-        var s = world(quartzCharge()).also {
+        var s = world(quartzCharge().scaledTo(Capacity.PACKET_MASS * 20L)).also {
             it.buffers.put(
                 bufferTile(grid, it.deck[mill]!!, mill, BufferRole.Product)!!,
                 Mixture.of(Species.Iron to stale, energy = 0L).atAmbient(),
@@ -197,51 +195,41 @@ class ConcentratorBankTest {
         }
         val started = massIn(s)
 
-        // Long enough to have worked several charges had it been allowed to start at all.
-        s = run(s, 200)
+        // Sampled every tick: a runt is on the track for only a few ticks before a tank swallows it.
+        repeat(200) {
+            s = OutofspaceReducer.reduce(cfg, s, emptyMap())
+            for (t in productRun) {
+                val mass = s.rail.massAt(t)
+                if (mass == 0L) continue
+                assertEquals(Capacity.PACKET_MASS, mass, "the stale bank was shipped as a runt at $t")
+            }
+            val bank = s.inStore(mill, BufferRole.Product)
+            if (bank != null) assertEquals(0L, bank.impurities, "the bank blended two species: $bank")
+        }
 
-        assertEquals(
-            stale,
-            s.inStore(forward, BufferRole.Inside)?.get(Species.Iron) ?: 0L,
-            "the stale bank was not shipped as a short packet",
-        )
-        // ⚠️ **Asked of the bank and of every lump, not of the tank.** The quartz is *expected* to
-        // reach the tank — a 200 kg charge assaying 60% clears a packet on its first action — so the
-        // tank holding both proves nothing either way. What must never happen is the two travelling
-        // together.
-        assertEquals(
-            0L,
-            s.inStore(mill, BufferRole.Product)?.impurities ?: 0L,
-            "the bank blended the stale iron with the new species",
-        )
         assertTrue(
             (s.inStore(forward, BufferRole.Inside)?.get(Species.Quartz) ?: 0L) > 0L,
-            "the machine never got going on the new species once its bank was clear",
+            "the machine never got going on the new species",
         )
-        assertEquals(started, massIn(s), "and a species change conserves mass")
+        assertEquals(started, massIn(s), "and tipping the bank back conserves mass")
     }
 
     /**
-     * ⛔ **KNOWN HOLE, measured and deliberately left red rather than papered over.**
-     *
-     * The gate the test above pins is at the **lift**, and the lift only happens when the chamber is
-     * empty — which, since `811be00f`, is only ever true of a machine that has never run. A machine
-     * that *has* run and whose bank has been part-shipped is in exactly the state the gate exists to
-     * refuse, and cannot reach it.
+     * ⛔ **The case that was measured, red, and ignored**, and the reason [Work.returnBankResidue]
+     * exists at all.
      *
      * A bank is left part-shipped whenever a sink's appetite is shorter than a packet: `holdsBack`
      * exempts a finite short appetite on purpose — a construction site owed thirty kilograms — and
-     * `takePacket(buffer, room)` then takes the thirty and leaves seventy in the bank. The next
-     * action deposits `banked + output` across two species, and the port ships blended lumps from
-     * then on. Measured on this fixture: the bank went to `Quartz=100kg, Iron=40kg` and 208 of 400
-     * ticks had a blended lump standing on the run.
+     * `takePacket(buffer, room)` takes the thirty and leaves seventy behind. The gate that was meant
+     * to stop the next deposit blending into that seventy lived at the **lift**, and the lift only
+     * happens when the chamber is empty, which since `811be00f` is only ever true of a machine that
+     * has never run. Measured on this fixture before the fix: the bank went to
+     * `Quartz=100kg, Iron=40kg` and 208 of 400 ticks had a blended lump standing on the run.
      *
-     * ⚠️ **Not fixed here because the fix is a design decision, not a repair.** Moving the gate to
-     * the deposit strands a finished charge of one species against a bank of another with nowhere to
-     * put either — which is the argument the old KDoc made for putting it at the lift in the first
-     * place. Un-ignore this when that decision is made.
+     * ⚠️ **The short appetite is still served.** Normalising at the head of the action rather than
+     * vetoing at the port is what buys both: the thirty kilograms goes, and the seventy rejoins the
+     * charge instead of waiting to be mixed into.
      */
-    @Ignore
     @Test
     fun `a part-shipped bank is not blended into`() {
         var s = world(quartzCharge().scaledTo(Capacity.PACKET_MASS * 20L)).also {
@@ -249,8 +237,8 @@ class ConcentratorBankTest {
                 bufferTile(grid, it.deck[mill]!!, mill, BufferRole.Product)!!,
                 Mixture.of(Species.Iron to Capacity.PACKET_MASS * 2L / 5L, energy = 0L).atAmbient(),
             )
-            // What every machine that has ever worked looks like, and what the lift gate cannot see
-            // past: rock already standing in the chamber.
+            // What every machine that has ever worked looks like, and what the lift gate could not
+            // see past: rock already standing in the chamber.
             it.buffers.put(
                 bufferTile(grid, it.deck[mill]!!, mill, BufferRole.Inside)!!,
                 quartzCharge().atAmbient(),
@@ -266,6 +254,79 @@ class ConcentratorBankTest {
                 assertEquals(0L, lump.impurities, "a blended lump of concentrate is riding at $t: $lump")
             }
         }
+    }
+
+    /**
+     * ⛔ **A bank holding a blended packet is handed back whole, and the machine starts again.**
+     *
+     * Found in `mixed_concentrate.txt` at tick 30753966, not reasoned about: the bank held a full
+     * 100 kg packet assaying 62% water and 32% enstatite, and 2000 ticks left every store in the
+     * machine byte-identical. A blend is a packet nothing will have — a tank locks onto a species,
+     * a site wants `BUILD_PURITY_PERCENT` — so it can never be delivered, and a full bank stops the
+     * machine dead at the [MACHINE_OUTPUT_CAP] check.
+     *
+     * ⚠️ **It is a full packet by mass, which is why the mass rule alone does not cure it.** Keeping
+     * a proportional packet's worth would ship one mixed lump and wedge again on the next; the bank
+     * holds one packet **of one species** or nothing, and a blend fails the second half.
+     */
+    @Test
+    fun `a blended bank is handed back whole and the machine starts again`() {
+        var s = world(quartzCharge().scaledTo(Capacity.PACKET_MASS * 20L)).also {
+            it.buffers.put(
+                bufferTile(grid, it.deck[mill]!!, mill, BufferRole.Product)!!,
+                Mixture.of(
+                    Species.Water to Capacity.PACKET_MASS * 62L / 100L,
+                    Species.Enstatite to Capacity.PACKET_MASS * 38L / 100L,
+                    energy = 0L,
+                ).atAmbient(),
+            )
+            it.buffers.put(
+                bufferTile(grid, it.deck[mill]!!, mill, BufferRole.Inside)!!,
+                quartzCharge().atAmbient(),
+            )
+        }
+        val started = massIn(s)
+
+        repeat(400) {
+            s = OutofspaceReducer.reduce(cfg, s, emptyMap())
+            for (t in productRun) {
+                val lump = s.rail.resourceAt(t) ?: continue
+                assertEquals(0L, lump.impurities, "the blended bank was shipped as a lump at $t: $lump")
+            }
+        }
+
+        assertTrue(
+            (s.inStore(forward, BufferRole.Inside)?.total ?: 0L) > 0L,
+            "the machine never shipped anything: it is still wedged on the blended bank",
+        )
+        assertEquals(started, massIn(s), "and handing a blend back conserves mass")
+    }
+
+    /**
+     * ⛔ **And the bank is never more than one packet**, which is the other half of the same rule:
+     * a store that can hold two packets' worth can hold two *species*' worth.
+     *
+     * A bank loaded over the cap — from a save written before [Work.returnBankResidue] existed —
+     * keeps a packet and hands the excess back to the chamber. The sim can no longer reach that
+     * state on its own, since a deposit only ever lands on a bank that has just been normalised to
+     * empty; this pins that an old save converges rather than staying over for ever.
+     */
+    @Test
+    fun `a bank loaded over a packet hands the excess back`() {
+        var s = world(quartzCharge().scaledTo(Capacity.PACKET_MASS * 20L)).also {
+            it.buffers.put(
+                bufferTile(grid, it.deck[mill]!!, mill, BufferRole.Product)!!,
+                Mixture.of(Species.Iron to Capacity.PACKET_MASS * 3L / 2L, energy = 0L).atAmbient(),
+            )
+        }
+        val started = massIn(s)
+
+        repeat(200) {
+            s = OutofspaceReducer.reduce(cfg, s, emptyMap())
+            val bank = s.inStore(mill, BufferRole.Product)?.total ?: 0L
+            assertTrue(bank <= Capacity.PACKET_MASS, "the bank is holding $bank, over a packet")
+        }
+        assertEquals(started, massIn(s), "and handing the excess back conserves mass")
     }
 
     /**
