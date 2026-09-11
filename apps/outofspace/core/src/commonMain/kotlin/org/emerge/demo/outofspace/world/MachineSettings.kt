@@ -45,6 +45,16 @@ data class MachineSettings(
     val control: Setting<ThrusterControl>,
     val fuelPermille: Setting<Int>,
     /**
+     * A rocket's propellant lock — see [Rocket.propellant].
+     *
+     * ⚠️ **`Setting<Species?>`, so that "unlocked" is a value a stamp can carry.** Copying an
+     * unlocked rocket onto a locked one has to *clear* the lock, exactly as copying a fresh ejector
+     * clears a list; a `Setting<Species>` could only ever say "this one burns methane" and never
+     * "this one is plumbed for nothing in particular". [filter] above is the same shape for the same
+     * reason.
+     */
+    val propellant: Setting<Species?>,
+    /**
      * An ejector's whitelist — see [Ejector.whitelist].
      *
      * ⚠️ **[Setting.Empty] and [Setting.Absent] are not the same thing here, and the difference is
@@ -67,6 +77,7 @@ data class MachineSettings(
         append(',').append("eff=").append(if (efficiencyPermille is Setting.Present) efficiencyPermille.value else efficiencyPermille)
         append(',').append("control=").append(if (control is Setting.Present) control.value else control)
         append(',').append("mix=").append(if (fuelPermille is Setting.Present) fuelPermille.value else fuelPermille)
+        append(',').append("fuel=").append(if (propellant is Setting.Present) propellant.value?.name ?: "none" else propellant)
         append(',').append("eject=").append(
             if (whitelist is Setting.Present) "${whitelist.value.species.size}${if (whitelist.value.ore) "+ore" else ""}"
             else whitelist,
@@ -166,6 +177,10 @@ fun DeckMachine.toMachineSettings(): MachineSettings = MachineSettings(
     },
     fuelPermille = when (this) {
         is Rocket -> Setting.Present(fuelPermille)
+        else -> Setting.Absent
+    },
+    propellant = when (this) {
+        is Rocket -> Setting.Present(propellant)
         else -> Setting.Absent
     },
     whitelist = when (this) {
@@ -279,6 +294,7 @@ fun DeckMachine.withSettings(settings: MachineSettings): DeckMachine {
             if (settings.control is Setting.Present) result = result.copy(control = settings.control.value)
             if (settings.setTemperature is Setting.Present) result = result.withSetTemperature(settings.setTemperature.value)
             if (settings.fuelPermille is Setting.Present) result = result.withFuelPermille(settings.fuelPermille.value)
+            if (settings.propellant is Setting.Present) result = result.withPropellant(settings.propellant.value)
             result
         }
         DeckMachineKind.KeyInput -> {

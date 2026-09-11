@@ -2632,6 +2632,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     if (m is Rocket) deck[tile] = m
                         .withFuelPermille(edit.fuelPermille)
                         .withSetTemperature(edit.setTemperature)
+                        // ⚠️ **Re-plumbing mid-burn keeps both feed stores, deliberately.** What is
+                        // already in the tanks is the old propellant and the new lock will not route
+                        // any more of it, so it burns off or sits there — a mess the player made and
+                        // can see in the inspector, rather than a quiet deletion of two tonnes of
+                        // hydrogen. Nothing else here discards a charge either.
+                        .withPropellant(edit.propellant)
                 }
                 is Edit.TuneDecomposer -> {
                     val tile = originAt(edit.tile) ?: return
@@ -5112,16 +5118,36 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 if (deck.isGhost(input.owner)) continue
                 // ⚠️ **Stated once per door, so a [Rocket] states it twice** — the loop is over port
                 // tiles and a rocket has two, which is exactly the shape a two-input machine needs
-                // and needed no widening to get. ⛔ **Neither door is fussier than the other.** A
-                // rocket has no filter and asks both mouths for any fluid, so which of them the
-                // hydrogen arrives at is the player's belt and not this machine's opinion — feed
-                // both the same thing and you have built an expensive cold gas thruster, which is a
-                // legible thing to have built by mistake. What stops a *rock* reaching either is the
-                // same thing that stops one reaching a thruster: nothing routes it here.
-                val stated = (motor as? Thruster)?.filter
+                // and needed no widening to get.
+                //
+                // ⛔ **Neither door is fussier than the other, and for a locked rocket that is now
+                // the whole point rather than a shrug.** A rocket that names its [Rocket.propellant]
+                // asks *both* mouths for that fuel and for the oxidiser its row burns in, and the
+                // delivery is sorted into the right store by what is in it — see
+                // [inputBufferRoleAt]. So the two ports stop meaning different things, a belt can be
+                // laid to whichever one the vessel has room for, and the mistake this machine used
+                // to invite — hydrogen down the oxidiser line, an engine running 1:2 the wrong way
+                // up — is no longer expressible.
+                //
+                // ⚠️ **Unlocked is unchanged: any fluid at both doors, routed by the tile.** Stated
+                // as one acceptance per fluid because that is the shape [Acceptance] has, and they
+                // are OR'd at the door; a motor is one machine on a vessel, so the width costs
+                // nothing worth measuring. What stops a *rock* reaching either is the same thing
+                // that stops one reaching a thruster: nothing routes it here.
                 val list = accepts.getOrPut(tile) { mutableListOf() }
-                if (stated != null) list.add(Acceptance.filtered(stated))
-                else for (f in Fluid.ALL) list.add(Acceptance.filtered(SpeciesFilter(f.species, pure = null)))
+                val stated = (motor as? Thruster)?.filter
+                val burns = (motor as? Rocket)?.takeIf { it.propellant != null }
+                when {
+                    stated != null -> list.add(Acceptance.filtered(stated))
+                    burns != null -> {
+                        list.add(Acceptance.filtered(SpeciesFilter(burns.propellant, pure = null)))
+                        // ⚠️ **Only when the row names one.** [Rocket.oxidiser] is derived from the
+                        // reaction, so a propellant whose row has vanished from the table answers
+                        // null and this mouth asks for fuel alone — thin, and still an engine.
+                        burns.oxidiser?.let { list.add(Acceptance.filtered(SpeciesFilter(it, pure = null))) }
+                    }
+                    else -> for (f in Fluid.ALL) list.add(Acceptance.filtered(SpeciesFilter(f.species, pure = null)))
+                }
             }
 
             // ── Electrolyzers: water, and only water that is already pure ────
@@ -5873,11 +5899,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // Both take a feed, and both take it the way every buffered kind does — by role
                 // tile, kind-blind. See the machine-list twin above.
                 // All take a feed, and all take it the way every buffered kind does — by role tile,
-                // kind-blind. ⚠️ **By the door it arrived at**, which matters for exactly one of
-                // them: a rocket has two, and they mean different things. See [inputBufferRoleAt].
+                // kind-blind. ⚠️ **By the door it arrived at, or by what is in the lump**, which
+                // matters for exactly one of them: a rocket has two doors, and one that knows what
+                // it burns sorts by contents instead so that neither door has to mean anything. See
+                // [inputBufferRoleAt], where the two answers sit side by side.
                 is Thruster, is Concentrator, is Furnace,
                 is DockingPort, is Extractor, is Electrolyzer, is Rocket -> {
-                    val role = inputBufferRoleAt(grid, destination, port.tile) ?: return false
+                    val role = inputBufferRoleAt(grid, destination, port.tile, packet.contents) ?: return false
                     val store = bufferTile(grid, destination, destination.center, role) ?: return false
                     val merged = acceptInto(destination, buffers.resourceAt(store), packet) ?: return false
                     buffers.put(store, merged)

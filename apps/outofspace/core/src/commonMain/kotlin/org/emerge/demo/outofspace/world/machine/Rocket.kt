@@ -1,7 +1,9 @@
 package org.emerge.demo.outofspace.world.machine
 
 import org.emerge.demo.outofspace.chem.REACTIONS
+import org.emerge.demo.outofspace.chem.Reaction
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.chem.isFluid
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.BufferRole
@@ -60,13 +62,24 @@ import org.emerge.demo.outofspace.world.Wiring
  * reaction is what pays for the rest. The element matters far more to a monopropellant, which is the
  * same chamber with one door.
  *
- * ### What it does not do
+ * ### ⛔ The doors are agnostic, and the propellant is what sorts them
  *
- * ⚠️ **Nothing here refuses the wrong fluid at either door.** An unlocked motor takes any fluid and
- * no solid — the network never routes a rock to an engine — and which of the two lighter-than-rock
- * things arrives at which door is the player's belt, not this machine's opinion. Feed both doors
- * hydrogen and you have built an expensive cold gas thruster, which is a legible thing to have built
- * by mistake.
+ * ⛔ **Neither door is "the fuel door".** Both mouths ask the network for the same two species and a
+ * delivery lands in the store its *contents* belong in — see [org.emerge.demo.outofspace.world
+ * .inputBufferRoleAt]. That is the machine's whole answer to a question it used to make the player
+ * answer: the drawing cannot say which rear port is which, so a belt laid to the wrong one built an
+ * expensive cold gas thruster and the only warning was a word in the inspector.
+ *
+ * ⚠️ **Which needs the machine to know what it burns**, and that is [propellant]. "Put the fuel in
+ * the fuel store" is not a rule a machine can follow while *fuel* is a role a belt confers rather
+ * than a species the engine named. Locking to a row of [REACTIONS] is what makes it answerable, and
+ * the same lock then prices the mixture: [stoichiometricFuelPermille] is where the dial's ladder
+ * sits relative to burning clean, read off the table rather than restated.
+ *
+ * ⚠️ **Unlocked is still a legal engine and still the default**, because a save full of rockets
+ * predates this and every one of them has to keep flying. An unlocked motor asks both doors for any
+ * fluid and routes by the tile the delivery arrived at, which is exactly what it did before — see
+ * `inputBufferRoleAt` again, where the two answers sit side by side.
  */
 data class Rocket(
     override val center: TileIndex,
@@ -89,6 +102,20 @@ data class Rocket(
      * light rather than sit there full of cold gas wondering why it makes no thrust.
      */
     val setTemperature: Int = DEFAULT_SETPOINT,
+    /**
+     * The **fuel** this engine is plumbed for, or null for an unlocked motor that takes any fluid.
+     *
+     * ⛔ **One species and not a pair, because the oxidiser is not a second choice.** A propellant
+     * names exactly one row of [REACTIONS] — the [PROPELLANTS] list is those rows — and that row
+     * already says what it burns in. Offering both halves would let a player state a combination the
+     * chemistry has no row for, and the engine would then be locked onto a reaction that cannot
+     * happen while reporting two perfectly sensible species. See [oxidiser], derived.
+     *
+     * ⛔ **Saved by NAME, never by an index into [PROPELLANTS].** That list is derived from the
+     * reaction table, so a row added or reordered would silently re-plumb every rocket in every save
+     * — the same trap `Save.canonicalKindName` exists to avoid one level up.
+     */
+    val propellant: Species? = null,
     override val carry: Long = 0L,
     override val firing: Int = 0,
     override val control: ThrusterControl = ThrusterControl.Flight,
@@ -116,6 +143,50 @@ data class Rocket(
 
     fun withSetTemperature(kelvin: Int): Rocket = copy(setTemperature = kelvin)
 
+    /** Locked onto a fuel, or unlocked when it is null — [Thruster.withFilter]'s twin. */
+    fun withPropellant(propellant: Species?): Rocket = copy(propellant = propellant)
+
+    /**
+     * The row this engine burns, or null while it is unlocked.
+     *
+     * ⚠️ **Looked up rather than stored**, so a rocket cannot carry a reaction that the table no
+     * longer has. If [propellant] names a species that has stopped being a propellant, this answers
+     * null and the machine reads as unlocked — which is the safe direction to fail in, because an
+     * unlocked motor still flies.
+     */
+    val combustion: Reaction? get() = propellant?.let { fuel -> PROPELLANTS.firstOrNull { it.principal == fuel } }
+
+    /**
+     * What this engine's fuel burns in — **derived from the row, not chosen**.
+     *
+     * Oxygen for every row in the table today, and deliberately not written as `Species.Oxygen`: the
+     * moment a fluorine or a peroxide row lands, an engine locked onto it needs the other door to
+     * ask for the right thing without anybody remembering to come back here.
+     */
+    val oxidiser: Species?
+        get() = combustion?.reagents?.firstOrNull { it.first != propellant }?.first
+
+    /**
+     * Where **burning clean** sits on [RATIOS]' scale, or null while unlocked.
+     *
+     * ⚠️ **A readout, not a limit.** The dial is deliberately allowed past it in both directions —
+     * the whole mechanic is that the best mixture is richer than this — so what this is for is
+     * telling the player *how much* richer they are running. For hydrolox it is 111‰, which is the
+     * bottom rung of the ladder and the textbook `1:8`.
+     */
+    val stoichiometricFuelPermille: Int?
+        get() = propellant?.let { fuel -> combustion?.massPermilleOf(fuel) }
+
+    /**
+     * The temperature this engine's mixture starts burning at.
+     *
+     * ⚠️ **Per-engine now, because the propellants do not agree** — hydrogen lights at 773 K and
+     * methane at 810 K, and a panel that coloured a methalox chamber "lit" at 780 K would be
+     * confidently wrong. An unlocked motor has no row to read, so it falls back to [IGNITION_KELVIN]
+     * — hydrogen's, which is the mixture an unlocked rocket is overwhelmingly likely to be fed.
+     */
+    val ignitionKelvin: Int get() = combustion?.onsetKelvin ?: IGNITION_KELVIN
+
     companion object {
         /**
          * How much it throws per tick at full activation.
@@ -138,6 +209,26 @@ data class Rocket(
          * ship".
          */
         val CHAMBER_CAP: Long = MASS_PER_TICK * 2L
+
+        /**
+         * Every row a rocket can be plumbed for: **a fluid that burns in an oxidiser**.
+         *
+         * ⛔ **Derived, not curated**, which is this machine's own habit — see [IGNITION_KELVIN]
+         * below, where the argument is made for a single number. The test is the one `kindOf` uses
+         * to call a reaction a `Fire`: a fluid principal with an oxidiser among its reagents. A row
+         * added to the table is a propellant on the dial the same day, and nobody has to remember
+         * a second list.
+         *
+         * ⚠️ **It admits some poor engines and that is correct.** Sulfur is a fluid by the game's
+         * reckoning — volatile enough to leave a roasting bed — so sulfur/oxygen is on the list, and
+         * it throws sulfur dioxide at M̄ 64, which is dreadful. Refusing it would be this machine
+         * having an opinion about a mixture the chemistry is perfectly happy with; the ladder
+         * already lets a player run a hydrolox engine stoichiometric and lose 15% for it. A bad
+         * choice you can see the number for is the game working.
+         */
+        val PROPELLANTS: List<Reaction> = REACTIONS.filter { r ->
+            r.principal.isFluid && r.reagents.any { it.first != r.principal && it.first.isFluid }
+        }
 
         /**
          * Where `2 H₂ + O₂ → 2 H₂O` lights — **read off the reaction table, not restated**.

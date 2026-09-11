@@ -2901,6 +2901,20 @@ class OutofspaceHud {
         anchor: TileIndex,
     ) {
         val s = controller.state
+        // ⛔ **First, because everything under it is read against it.** The ratio means nothing until
+        // the engine says what it burns, and until this is set both doors take any fluid and the
+        // player is back to laying belts by hope. See [Rocket.propellant].
+        button(
+            listOf(
+                "BURNS  " to 0x9A9A9AFFL,
+                (machine.propellant?.name?.uppercase() ?: "ANY FLUID") to 0xFFFFFFFFL,
+            ),
+            0x2E5A6BFFL,
+        ) { controller.cycleRocketPropellant(tile, 1) }
+        // ⚠️ **Named only when there is a row to name it from.** An unlocked engine has no oxidiser
+        // because it has no reaction — saying OXYGEN anyway would be the panel guessing on the
+        // chemistry's behalf, which is the habit `labelOf` exists to break.
+        machine.oxidiser?.let { keyValue("OXIDISER", it.name.uppercase(), 0x9A9A9AFFL, 0x9AC0E0FFL) }
         button(
             listOf("FUEL TO OXIDISER  " to 0x9A9A9AFFL, ratioLabel(machine.fuelPermille) to 0xFFFFFFFFL),
             0x2E5A6BFFL,
@@ -2920,12 +2934,23 @@ class OutofspaceHud {
                 "CHAMBER",
                 "$kelvin K  (${kelvin - 273}C)",
                 0x9A9A9AFFL,
-                if (kelvin >= Rocket.IGNITION_KELVIN) 0xE0864AFFL else 0x9AC0E0FFL,
+                // ⚠️ **The locked row's onset, not hydrogen's.** Methane lights at 810 K and
+                // hydrogen at 773, so a fleet constant here would colour a methalox chamber lit
+                // while it was still 30 K short. See [Rocket.ignitionKelvin].
+                if (kelvin >= machine.ignitionKelvin) 0xE0864AFFL else 0x9AC0E0FFL,
             )
         } else {
             keyValue("CHAMBER", "(empty)", 0x9A9A9AFFL, 0x9A9A9AFFL)
         }
-        text("richer is cooler and faster  ·  1:2 is the peak", 0x7A7A7AFFL)
+        // ⚠️ **Where clean burning sits, rather than an instruction to avoid it.** The mechanic is
+        // that richer than this is *better*, so the number is offered as a landmark to run away from
+        // — and it is read off the reaction, so a methalox engine gets methalox's landmark.
+        val clean = machine.stoichiometricFuelPermille
+        if (clean != null) {
+            text("richer is cooler and faster  ·  ${ratioLabel(clean)} burns clean", 0x7A7A7AFFL)
+        } else {
+            text("richer is cooler and faster  ·  1:2 is the peak", 0x7A7A7AFFL)
+        }
     }
 
     /**

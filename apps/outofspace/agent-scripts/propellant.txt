@@ -1,0 +1,58 @@
+# The propellant lock: a rocket that says what it burns, and stops caring which door things arrive at.
+#
+# The machine used to have two rear ports that meant different things and no way to tell them apart
+# on the drawing. FUEL was the upper one and OXIDISER the lower one because `labelOf` said so, and a
+# belt laid to the wrong one built an expensive cold gas thruster -- a `1:2` engine running `2:1`,
+# oxidiser-rich, with nothing on the panel to say why. On a real vessel the fuel line and the
+# oxidiser line come from wherever there is room for them, which is not always the side the machine
+# wanted.
+#
+# So the engine names its propellant instead. One row of the reaction table answers everything: what
+# the fuel is, what it burns in, where a clean burn sits on the mixture dial, and what temperature
+# the chamber lights at. Both doors then ask the network for the same two species and a delivery is
+# sorted into the store its *contents* belong in, so the ports stop meaning different things.
+#
+# What to read in the shots:
+#   `unlocked`  -- a fresh rocket. BURNS says ANY FLUID, there is no IN line because an unlocked
+#                  engine has no reaction to read an oxidiser off, and the footer still gives the
+#                  generic 1:2 hint. This is every rocket in every save older than the lock, and it
+#                  still flies exactly as it did.
+#   `methalox`  -- one press. BURNS METHANE / OXIDISER OXYGEN, and the footer now reads "1:4 burns
+#                  clean" -- because CH4 + 2 O2 is 16g of fuel against 64 of oxidiser, read off the
+#                  row rather than typed in. Nothing here was chosen: the oxidiser is the reagent
+#                  that is not the principal, and the ratio is the two formula masses.
+#   `hydrolox`  -- one more press. BURNS HYDROGEN / OXIDISER OXYGEN and "1:8 burns clean", which is
+#                  the same arithmetic on a different row and proves the figure is not methane's with
+#                  a new label. ⚠️ **1:8 is the WORST mixture available**, which is why it is offered
+#                  as a landmark rather than as advice: the dial's default 1:2 is richer, cooler and
+#                  about 15% faster. See `Rocket`, which holds the argument.
+new
+creative 1
+
+# Out in the open astern of the starter vessel, where a 3x3 has room and the bell has somewhere to
+# point. Nothing is plumbed to it -- what is on trial here is what the machine SAYS, and a rocket
+# says it standing still.
+brush ROCKET right
+material Titanium
+place 24 14
+landmarks
+
+inspect rocket rocket DECK
+shot unlocked
+
+# The dial. One step off "unlocked" is the first row of `Rocket.PROPELLANTS`, which is derived from
+# the reaction table rather than typed -- so this cycles through however many fluid-plus-oxidiser
+# rows the chemistry has, and a row added tomorrow is a rung here the same day. ⚠️ **Which also means
+# the ORDER here is the table's**, not a designed one: methane happens to be written above hydrogen.
+tune rocket rocket fuel
+inspect rocket rocket DECK
+shot methalox
+
+tune rocket rocket fuel
+inspect rocket rocket DECK
+shot hydrolox
+
+# Nothing above moved a gram: the lock is a statement about what the machine will ask for, and the
+# asking happens on the demand pass. If this ever stops being zero, a dial has started teleporting
+# matter.
+expect massBalance = 0

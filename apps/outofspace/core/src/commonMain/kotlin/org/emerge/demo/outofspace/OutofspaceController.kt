@@ -1148,7 +1148,7 @@ class OutofspaceController(
         val at = all.indexOf(m.fuelPermille).let {
             if (it >= 0) it else all.indexOfLast { rung -> rung <= m.fuelPermille }.coerceAtLeast(0)
         }
-        pending.add(Edit.TuneRocket(tile, all[wrap(at + delta, all.size)], m.setTemperature))
+        pending.add(Edit.TuneRocket(tile, all[wrap(at + delta, all.size)], m.setTemperature, m.propellant))
     }
 
     /**
@@ -1164,7 +1164,22 @@ class OutofspaceController(
         val at = all.indexOf(m.setTemperature).let {
             if (it >= 0) it else all.indexOfLast { rung -> rung <= m.setTemperature }.coerceAtLeast(0)
         }
-        pending.add(Edit.TuneRocket(tile, m.fuelPermille, all[wrap(at + delta, all.size)]))
+        pending.add(Edit.TuneRocket(tile, m.fuelPermille, all[wrap(at + delta, all.size)], m.propellant))
+    }
+
+    /**
+     * Steps a rocket's propellant through [Rocket.PROPELLANTS], wrapping **through unlocked**.
+     *
+     * ⛔ **Unlocked is a rung, not an escape from the ladder.** It is what every rocket in every save
+     * before the lock existed is, and a player who has locked one has to be able to get back — so the
+     * cycle is `null, fuel₀, fuel₁, …` and comes round again. Modelled on the way a storage lock
+     * cycles rather than on the mixture dial, which genuinely has no off position.
+     */
+    fun cycleRocketPropellant(tile: TileIndex, delta: Int) {
+        val m = state.machineCovering(tile) as? Rocket ?: return
+        val all: List<Species?> = listOf(null) + Rocket.PROPELLANTS.map { it.principal }
+        val at = all.indexOf(m.propellant).coerceAtLeast(0)
+        pending.add(Edit.TuneRocket(tile, m.fuelPermille, m.setTemperature, all[wrap(at + delta, all.size)]))
     }
 
     /** Steps a decomposer's residence time through [Furnace.DWELLS], wrapping. */

@@ -69,9 +69,13 @@ class RocketTest {
         fuel: Mixture = hydrogen(),
         oxidiser: Mixture = oxygen(),
         mix: Int = Rocket.DEFAULT_FUEL_PERMILLE,
+        propellant: Species? = null,
     ): VesselState {
         val deck = DeckArray(grid)
-        deck += Rocket(engineAt, Direction.Right, fuelPermille = mix, control = ThrusterControl.Wire)
+        deck += Rocket(
+            engineAt, Direction.Right,
+            fuelPermille = mix, propellant = propellant, control = ThrusterControl.Wire,
+        )
         return VesselState(
             grid, deck,
             air = Stuff.gas(MassArray(grid.size)),
@@ -89,11 +93,20 @@ class RocketTest {
      * by hand names the role and so bypasses the entire question. The two runs never touch: the
      * middle of the engine's back face carries no track, so a lump on one belt has no route to the
      * other door.
+     *
+     * [upper] is what the belt into the **top** door carries and [lower] what the bottom one does —
+     * named for the *geometry* and not for fuel and oxidiser, because which is which is precisely
+     * what the propellant tests are asking about. [propellant] locks the engine, or leaves it
+     * unlocked at null.
      */
-    private fun plumbed(): VesselState {
+    private fun plumbed(
+        upper: Mixture = hydrogen(8),
+        lower: Mixture = oxygen(8),
+        propellant: Species? = null,
+    ): VesselState {
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
-        deck += Rocket(engineAt, Direction.Right, control = ThrusterControl.Wire)  // covers x 7..9, y 5..7
+        deck += Rocket(engineAt, Direction.Right, propellant = propellant, control = ThrusterControl.Wire)  // covers x 7..9, y 5..7
         deck += fixtureStorage(fuelTank, Direction.Right)        // pours right from (3,5)
         deck += fixtureStorage(oxidiserTank, Direction.Right)    // pours right from (3,11)
         joinRow(grid, rails, 3, 7, 5)                            // fuel tank → the upper door
@@ -106,8 +119,8 @@ class RocketTest {
             buffers = BufferLayer.forDeck(grid, deck),
             rail = RailLayer.empty(grid.size),
         )
-            .stocked(fuelTank, hydrogen(8))
-            .stocked(oxidiserTank, oxygen(8))
+            .stocked(fuelTank, upper)
+            .stocked(oxidiserTank, lower)
     }
 
     private fun hydrogen(packets: Long = 20L): Mixture =
@@ -124,6 +137,115 @@ class RocketTest {
         s.buffers.stuff.kelvinAt(bufferTile(grid, s.deck[engineAt]!!, engineAt, BufferRole.Inside)!!)
 
     // ── The doors ────────────────────────────────────────────────────────────
+
+    /**
+     * ⭐ **The claim the propellant lock exists for: the belts may be the wrong way round.**
+     *
+     * The same fixture as `the two rear doors fill two different stores`, with the two tanks' cargo
+     * swapped — oxygen down the belt into the top door, hydrogen down the one into the bottom — and
+     * the *same assertions*. An engine that knows it burns hydrogen puts hydrogen in the fuel store
+     * whichever mouth it came in at, so a vessel whose fuel line has to come round the outside is a
+     * vessel, not a mistake.
+     *
+     * ⛔ Route by the tile, as an unlocked motor still does, and this fails in the way the player
+     * hits it: a `1:2` engine running `2:1`, oxidiser-rich, quietly throwing away a third of its
+     * exhaust velocity with nothing on the panel to say why.
+     */
+    @Test
+    fun `a locked engine sorts by what arrived, not by which door it arrived at`() {
+        val after = run(plumbed(upper = oxygen(8), lower = hydrogen(8), propellant = Species.Hydrogen), 120)
+
+        val fuel = store(after, BufferRole.Input) ?: Mixture.EMPTY
+        val oxidiser = store(after, BufferRole.Oxidiser) ?: Mixture.EMPTY
+        val burned = chamber(after)
+
+        assertTrue(fuel[Species.Hydrogen] + burned.total > 0L, "no hydrogen reached the fuel store")
+        assertTrue(oxidiser[Species.Oxygen] > 0L, "no oxygen reached the oxidiser store")
+        // The strict half, and the whole point: neither store holds a gram of the other's species,
+        // even though the belts feeding them are crossed.
+        assertEquals(0L, fuel[Species.Oxygen], "oxygen reached the fuel store")
+        assertEquals(0L, oxidiser[Species.Hydrogen], "hydrogen reached the oxidiser store")
+    }
+
+    /**
+     * ⚠️ **The other half of the same rule: unlocked still routes by the tile.**
+     *
+     * Every rocket in every save that predates the lock is unlocked, and they were all plumbed by a
+     * player who knew which door was which. Sorting them by contents would silently re-plumb a
+     * working vessel, so an engine that has named no propellant behaves exactly as it always did —
+     * including getting it wrong when the belts are crossed, which is what this pins.
+     */
+    @Test
+    fun `an unlocked engine still routes by the door`() {
+        val after = run(plumbed(upper = oxygen(8), lower = hydrogen(8), propellant = null), 120)
+
+        val fuel = store(after, BufferRole.Input) ?: Mixture.EMPTY
+        val oxidiser = store(after, BufferRole.Oxidiser) ?: Mixture.EMPTY
+
+        assertEquals(0L, fuel[Species.Hydrogen], "an unlocked engine sorted hydrogen into the fuel store")
+        assertTrue(fuel[Species.Oxygen] > 0L, "the top door did not fill the fuel store")
+        assertTrue(oxidiser[Species.Hydrogen] > 0L, "the bottom door did not fill the oxidiser store")
+    }
+
+    // ── What the lock is worth ───────────────────────────────────────────────
+
+    /**
+     * ⛔ **The mole ratio becomes a mass ratio, and the table is the only place it comes from.**
+     *
+     * `2 H₂ + O₂` is 4 g of hydrogen against 32 of oxygen — a ninth by mass, which is the `1:8` the
+     * class note calls the textbook mixture and the worst one available. That it lands exactly on
+     * [Rocket.RATIOS]' bottom rung is not a coincidence: the ladder was built to span this point.
+     */
+    @Test
+    fun `the locked row prices a clean burn`() {
+        val hydrolox = Rocket(engineAt, Direction.Right, propellant = Species.Hydrogen)
+        assertEquals(111, hydrolox.stoichiometricFuelPermille, "hydrolox does not burn clean at 1:8")
+        assertEquals(Rocket.RATIOS.first(), hydrolox.stoichiometricFuelPermille)
+        assertEquals(Species.Oxygen, hydrolox.oxidiser, "hydrogen does not burn in oxygen")
+        // ⚠️ Methane's row, to prove the figure is read and not hydrogen's number in disguise:
+        // CH₄ + 2 O₂ is 16 g against 64, a fifth.
+        val methalox = Rocket(engineAt, Direction.Right, propellant = Species.Methane)
+        assertEquals(200, methalox.stoichiometricFuelPermille, "methalox does not burn clean at 1:4")
+    }
+
+    /**
+     * ⚠️ **The onset follows the propellant**, which is what the chamber readout is coloured by.
+     * Hydrogen lights at 773 K and methane at 810, and a fleet constant would call a methalox
+     * chamber lit while it was still thirty kelvin short of burning anything.
+     */
+    @Test
+    fun `ignition is the locked row's onset`() {
+        val unlocked = Rocket(engineAt, Direction.Right)
+        assertEquals(Rocket.IGNITION_KELVIN, unlocked.ignitionKelvin, "an unlocked engine lost hydrogen's onset")
+        assertEquals(773, Rocket(engineAt, Direction.Right, propellant = Species.Hydrogen).ignitionKelvin)
+        assertEquals(810, Rocket(engineAt, Direction.Right, propellant = Species.Methane).ignitionKelvin)
+    }
+
+    /**
+     * ⛔ **Every rung of the dial is a whole engine**, because the list is derived rather than typed:
+     * a row added to [org.emerge.demo.outofspace.chem.REACTIONS] appears here the same day. So the
+     * thing worth asserting is not which propellants exist but that each one answers every question
+     * the machine asks of it — a rung that named no oxidiser would be a lock that opens one door.
+     */
+    @Test
+    fun `every propellant is a complete engine`() {
+        assertTrue(Rocket.PROPELLANTS.size >= 2, "the propellant ladder collapsed")
+        for (row in Rocket.PROPELLANTS) {
+            val m = Rocket(engineAt, Direction.Right, propellant = row.principal)
+            assertEquals(row.principal, m.propellant)
+            assertTrue(m.oxidiser != null, "${row.principal} burns in nothing")
+            assertTrue(m.oxidiser != m.propellant, "${row.principal} burns in itself")
+            val clean = m.stoichiometricFuelPermille
+            assertTrue(clean != null && clean in 1..999, "${row.principal} has no mass ratio")
+            assertTrue(m.ignitionKelvin > 0, "${row.principal} has no onset")
+        }
+        // The two the design was written against, so that a table edit that dropped either is a
+        // failure here rather than a menu that quietly got shorter.
+        val fuels = Rocket.PROPELLANTS.map { it.principal }
+        assertTrue(Species.Hydrogen in fuels, "hydrolox is not on the dial")
+        assertTrue(Species.Methane in fuels, "methalox is not on the dial")
+    }
+
 
     @Test
     fun `the two rear doors fill two different stores`() {
@@ -283,12 +405,17 @@ class RocketTest {
         // ⛔ **Three stores and two dials**, and the chamber is the one a round-trip is most likely to
         // drop: it is the only store on this machine that no port serves, so nothing outside the
         // save loop would ever notice it missing until an engine reloaded stone cold.
-        val before = run(engine(mix = 500), 40)
+        val before = run(engine(mix = 500, propellant = Species.Methane), 40)
         val text = Save.write(before)
         val after = Save.read(text)
 
         val m = after.deck[engineAt] as Rocket
         assertEquals(500, m.fuelPermille, "the mixture dial did not survive")
+        // ⛔ **Written by name, so this is also the assertion that nothing saved an ordinal.** A
+        // propellant that came back as a different species after a table edit is the failure the
+        // save format is shaped to prevent, and the only way to see it is to round-trip one that is
+        // not first on the list.
+        assertEquals(Species.Methane, m.propellant, "the propellant lock did not survive")
         assertEquals(Rocket.DEFAULT_SETPOINT, m.setTemperature, "the ceiling did not survive")
         assertEquals(ThrusterControl.Wire, m.control, "the control mode did not survive")
         assertEquals(chamber(before).total, chamber(after).total, "the chamber came back a different size")

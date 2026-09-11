@@ -507,7 +507,12 @@ object OutofspaceAgentHarness {
                         when (t[3].lowercase()) {
                             "temp" -> controller.cycleDecomposerTemperature(at, 1)
                             "dwell" -> controller.cycleDecomposerDwell(at, 1)
-                            else -> error("cannot tune '${t[3]}' (have temp, dwell)")
+                            // A rocket's three dials. `fuel` steps the propellant lock, which
+                            // includes the unlocked rung — see `cycleRocketPropellant`.
+                            "fuel" -> controller.cycleRocketPropellant(at, 1)
+                            "mix" -> controller.cycleRocketMixture(at, 1)
+                            "ignite" -> controller.cycleRocketTemperature(at, 1)
+                            else -> error("cannot tune '${t[3]}' (have temp, dwell, fuel, mix, ignite)")
                         }
                         controller.stepOnce()
                     }

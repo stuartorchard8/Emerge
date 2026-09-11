@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.world.machine.Electrolyzer
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DockingPort
@@ -118,7 +119,7 @@ fun inputBufferRole(machine: DeckMachine): BufferRole? = when (machine) {
 }
 
 /**
- * The store the input port **at [at]** fills, or null if nothing behind that tile takes deliveries.
+ * The store a delivery of [cargo] arriving **at [at]** fills, or null if nothing takes it.
  *
  * ⛔ **A machine with two doors cannot answer [inputBufferRole], and asking it is the bug.** That
  * function takes a machine and no place, which was a complete question while every kind had at most
@@ -130,9 +131,31 @@ fun inputBufferRole(machine: DeckMachine): BufferRole? = when (machine) {
  * the same tile and the answer is a lookup rather than a table. [Storage] is the one exception, and
  * it is the exception here for the same reason it is one above — its pooled store is the volume of
  * the building, not a queue at either door.
+ *
+ * ### ⛔ A locked rocket answers by CONTENTS, and it is the only kind that does
+ *
+ * Geometry is the wrong question for a machine whose two mouths are interchangeable. A rocket that
+ * knows what it burns can put a delivery where it belongs — hydrogen to the fuel store, oxygen to
+ * the oxidiser store — whichever door it came in at, and that is what lets both doors ask the
+ * network for the same thing. See [Rocket.propellant], which carries the argument.
+ *
+ * ⚠️ **It cannot strand anything, because the demand pass asks for exactly these two species.**
+ * Something that is neither is something the network never routed here, so the null below is a
+ * statement about an impossible delivery rather than a refusal a belt can back up behind.
+ *
+ * ⚠️ **[Mixture.dominant] and not "contains", because a delivery is a lump and not a list.** A
+ * packet that is mostly hydrogen with a trace of something else is hydrogen for this purpose — the
+ * same line `SpeciesFilter` draws, so the door and the demand agree about what a lump *is*.
  */
-fun inputBufferRoleAt(grid: Grid, machine: DeckMachine, at: TileIndex): BufferRole? {
+fun inputBufferRoleAt(grid: Grid, machine: DeckMachine, at: TileIndex, cargo: Mixture): BufferRole? {
     if (machine is Storage) return BufferRole.Inside
+    if (machine is Rocket && machine.propellant != null) {
+        return when (cargo.dominant) {
+            machine.propellant -> BufferRole.Input
+            machine.oxidiser -> BufferRole.Oxidiser
+            else -> null
+        }
+    }
     for (role in INPUT_ROLES) {
         if (localBufferOffset(machine, role) == NO_OFFSET) continue
         if (bufferTile(grid, machine, machine.center, role) == at) return role

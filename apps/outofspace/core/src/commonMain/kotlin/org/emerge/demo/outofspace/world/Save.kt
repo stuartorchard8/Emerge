@@ -827,6 +827,10 @@ object Save {
                 // Omitted at the defaults, like the wiring: the file shows the choices somebody made.
                 if (m.fuelPermille != Rocket.DEFAULT_FUEL_PERMILLE) put("mix", m.fuelPermille.toString())
                 if (m.setTemperature != Rocket.DEFAULT_SETPOINT) put("temp", m.setTemperature.toString())
+                // ⛔ **By name, never by a rung of [Rocket.PROPELLANTS].** That list is derived from
+                // the reaction table, so an index would re-plumb every rocket in every save the day
+                // a row is added. Absent means unlocked, which is what every save before this one is.
+                m.propellant?.let { put("fuel", it.name) }
                 if (m.control != ThrusterControl.Flight) put("control", m.control.name)
                 if (m.firing != 0) put("firing", m.firing.toString())
             }
@@ -2199,6 +2203,9 @@ object Save {
                 carry = massNum("carry", 0L),
                 fuelPermille = num("mix", Rocket.DEFAULT_FUEL_PERMILLE.toLong()).toInt(),
                 setTemperature = num("temp", Rocket.DEFAULT_SETPOINT.toLong()).toInt(),
+                propellant = f["fuel"]?.let { name ->
+                    Species.ALL.firstOrNull { it.name == name } ?: fail("unknown rocket propellant '$name'")
+                },
                 control = f["control"]?.let { name ->
                     ThrusterControl.ALL.firstOrNull { it.name == name } ?: fail("unknown thruster control '$name'")
                 } ?: ThrusterControl.Flight,

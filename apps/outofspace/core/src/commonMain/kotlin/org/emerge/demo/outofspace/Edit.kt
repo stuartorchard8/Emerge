@@ -167,8 +167,18 @@ sealed interface Edit {
      * ⚠️ **The mixture is the interesting half**, and it is why this is a separate edit from
      * [TuneDecomposer] rather than a reuse of it: a furnace's two dials are how long and how hot, and
      * a rocket's are how hot and *what*. Absolute rather than a step, for [TuneDecomposer]'s reason.
+     *
+     * ⚠️ **[propellant] is nullable because unlocked is a setting and not the absence of one** — see
+     * [org.emerge.demo.outofspace.world.machine.Rocket.propellant]. A player stepping off the end of
+     * the ladder is asking for an engine that takes any fluid at either door, which is a thing to
+     * ask for and the behaviour every save before this had.
      */
-    data class TuneRocket(val tile: TileIndex, val fuelPermille: Int, val setTemperature: Int) : Edit
+    data class TuneRocket(
+        val tile: TileIndex,
+        val fuelPermille: Int,
+        val setTemperature: Int,
+        val propellant: Species?,
+    ) : Edit
 
     /**
      * Turns the autopilot on or off — see [org.emerge.demo.outofspace.world.Sas].

@@ -102,6 +102,28 @@ class Reaction(
     /** Which entry of [reagents] is the principal, so the react path can skip its own ratio. */
     val principalIndex: Int = reagents.indexOfFirst { it.first == principal }
 
+    /** Mass of a whole stoichiometric pass — every reagent's formula units together. */
+    private val passMass: Long = reagentMasses.sum()
+
+    /**
+     * Permille **by mass** of a stoichiometric charge that is [species], or zero if this row does
+     * not consume it.
+     *
+     * ⛔ **The one place a mole ratio becomes a mass ratio, so that nothing else has to try.** The
+     * table states formula units — `2 H₂ + O₂` — and a machine metering two feeds together needs a
+     * fraction of a mass. Deriving it here keeps the class note's rule intact: the molar masses are
+     * asked once, where [reagentMasses] already lives, rather than hand-written at the call site as
+     * "hydrogen is a ninth of hydrolox". That figure is right until somebody edits a coefficient.
+     *
+     * ⚠️ **Permille, not per cent**, because that is what the machines that read it are dialled in —
+     * see `Rocket.fuelPermille`, whose whole ladder is thousandths.
+     */
+    fun massPermilleOf(species: Species): Int {
+        val i = reagents.indexOfFirst { it.first == species }
+        if (i < 0) return 0
+        return (reagentMasses[i] * 1000L / passMass).toInt()
+    }
+
     /**
      * How much of reagent [i] goes with [principalMass] of the principal, on the stoichiometric
      * line.
