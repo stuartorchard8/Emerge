@@ -57,6 +57,12 @@ import org.emerge.demo.outofspace.world.Wiring
  * ceiling is also what stops the low-throttle case running away, since ungated the equilibrium at a
  * tenth of a mass flow is a temperature nothing is made of.
  *
+ * ⛔ **And it heats only while it is firing.** The ceiling is a ceiling on a *running* engine; an
+ * idle one is cold iron. Left ungated, a rocket nobody was flying held its chamber at
+ * [setTemperature] for ever on minted [IGNITER_POWER] and pushed all of it out through nine tiles of
+ * casing into the ship. ⚠️ The price is a light-up delay of a couple of ticks from cold — see
+ * `OutofspaceSim.burn`, where the gate is and where the arithmetic is.
+ *
  * ⚠️ **For a bipropellant the thermostat's job is ignition, not bulk heating.** Getting a small
  * chamber to 773 K is affordable; heating a full mass flow to a useful temperature is not, and the
  * reaction is what pays for the rest. The element matters far more to a monopropellant, which is the

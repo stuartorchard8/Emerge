@@ -46,6 +46,15 @@ class RocketTest {
 
     private val grid = Grid(20, 14)
 
+    /**
+     * How long a cold engine is given to reach its onset once the stick moves.
+     *
+     * Generous against the two-or-three ticks the arithmetic predicts, because what is being pinned
+     * is *a light-up rather than a stall* — an exact count here would be a test of the mixture's
+     * heat capacity wearing a rocket's clothes.
+     */
+    private val LIGHT_UP_TICKS = 20
+
     /** The engine at (8,6) facing right: fuel (7,5), oxidiser (7,7), chamber (8,6), bell (9,6). */
     private val engineAt = grid.tile(8, 6)
     private val fuelTank = grid.tile(2, 5)
@@ -462,6 +471,53 @@ class RocketTest {
         )
             .stocked(engineAt, hydrogen(), BufferRole.Input)
             .stocked(engineAt, oxygen(), BufferRole.Oxidiser)
+    }
+
+    @Test
+    fun `an idle engine does not run its element`() {
+        // ⛔ **A parked rocket is cold iron.** The element used to hold the chamber at its setpoint
+        // for ever whatever the pilot was doing, minting `IGNITER_POWER` every tick — a hundred-odd
+        // furnaces' worth — and pushing all of it out through nine tiles of casing into the ship. A
+        // ship with four rockets aboard cooked itself while sitting still.
+        //
+        // ⚠️ **On flight control with the stick untouched**, which is the case that matters: a motor
+        // on [ThrusterControl.Flight] never reads its wire, so gating on `on` would have left every
+        // flight-controlled rocket in the game heating exactly as before.
+        val parked = engineOnFlightControl()
+        val before = parked.generatedEnergy
+        val after = run(parked, 120)
+
+        assertEquals(before, after.generatedEnergy, "an idle engine minted heat")
+        assertTrue(
+            chamberKelvin(after) < Rocket.IGNITION_KELVIN,
+            "an idle chamber lit itself: ${chamberKelvin(after)} K",
+        )
+        assertEquals(0L, after.exhaustMomentumX, "an idle engine threw something")
+    }
+
+    @Test
+    fun `it lights within a few ticks of the stick moving`() {
+        // ⚠️ **The price of the gate above, pinned so it stays a price and not a stall.** The chamber
+        // is two ticks of mass flow and the element is sized to raise one tick of it from ambient to
+        // ignition, so a cold engine reaches its onset a handful of ticks after the pilot asks — not
+        // the ten seconds a furnace's element took, which is the measurement `IGNITER_POWER` exists
+        // because of.
+        val cfg = OutofspaceConfig(initialGrid = grid)
+        val controller = OutofspaceController(cfg, engineOnFlightControl())
+        controller.mode = Mode.Flight
+        repeat(30) { controller.stepOnce() }   // parked, and so cold
+        assertTrue(
+            chamberKelvin(controller.state) < Rocket.IGNITION_KELVIN,
+            "the chamber was already lit before the stick moved",
+        )
+
+        controller.heldKeys = InputKey.Left.bit
+        var lit = -1
+        repeat(LIGHT_UP_TICKS) {
+            controller.stepOnce()
+            if (lit < 0 && chamberKelvin(controller.state) >= Rocket.IGNITION_KELVIN) lit = it
+        }
+        assertTrue(lit in 0 until LIGHT_UP_TICKS, "a cold engine never lit in $LIGHT_UP_TICKS ticks")
     }
 
     @Test

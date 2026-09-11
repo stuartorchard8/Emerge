@@ -515,9 +515,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // in the same tick.** A rocket that mixed after firing would throw last tick's
                     // charge for ever and never spend the fresh one; one that heated after firing
                     // would spend the element on gas that had already left.
-                    is Rocket -> w.fire(
-                        cfg, w.burn(m, tile), w.throttleOf(state, m, on, flight, tile), tile, structure,
-                    )
+                    // ⚠️ **The throttle is worked out once and handed to both halves**, because the
+                    // igniter is gated on it — see [Work.burn]. Asking twice would be free today and
+                    // would stop being free the moment the answer depended on anything this loop
+                    // writes.
+                    is Rocket -> {
+                        val throttle = w.throttleOf(state, m, on, flight, tile)
+                        w.fire(cfg, w.burn(m, throttle, tile), throttle, tile, structure)
+                    }
                     is Electrolyzer -> w.split(m, on, tile)
                     is Concentrator -> w.refine(cfg, m, on, tile)
                     is Furnace -> w.refine(cfg, m, on, tile)
@@ -2030,8 +2035,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
      * element in the game is, because there is no power system to draw from. The combustion's own
      * enthalpy is *not* minted: the chemistry pass fires `2 H₂ + O₂ → 2 H₂O` in this store on its own
      * schedule, and that energy is a real reaction's.
+     *
+     * ⛔ **Which is why the element runs only while the engine is firing.** Minted heat with no
+     * meter on it is exactly the thing that must not idle: see the gate below.
+     *
+     * ⚠️ **The refill is not gated, and that is this increment's boundary rather than an oversight.**
+     * An idle chamber still fills, still burns what it holds, and still sits on the products — so
+     * the first burn after a long idle throws water before it throws mixture. Fixing *that* is the
+     * continuous-evacuation change, which needs a decision about what a bleed does to the flight
+     * balance (it is thrust, booked at the bell like any other) and about what "off" means for a
+     * motor that never reads its wire.
      */
-    private fun Work.burn(m: Rocket, tile: TileIndex): Rocket {
+    private fun Work.burn(m: Rocket, throttle: Int, tile: TileIndex): Rocket {
         val chamberTile = bufferTile(grid, m, tile, BufferRole.Inside)!!
         val held = store(m, tile, BufferRole.Inside)
         val room = Rocket.CHAMBER_CAP - (held?.total ?: 0L)
@@ -2044,11 +2059,31 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             drawInto(m, tile, BufferRole.Oxidiser, chamberTile, room - wantFuel)
         }
 
-        // ⚠️ **After the refill, so the element is sized against what is actually in there.** Heating
-        // first and then pouring cold gas on top would report a chamber at temperature that is not.
-        val shortfall = buffers.stuff.heatCapacityAt(chamberTile) *
-            (m.setTemperature - buffers.stuff.kelvinAt(chamberTile))
-        if (shortfall > 0L) heatBuffer(chamberTile, minOf(shortfall, Rocket.IGNITER_POWER))
+        // ⛔ **Nothing is lit unless the engine was told to fire.** An idle rocket used to hold its
+        // chamber at [Rocket.setTemperature] for ever — minting [Rocket.IGNITER_POWER] every tick,
+        // which is a hundred-odd furnaces' worth, and bleeding all of it through nine tiles of
+        // casing into the room. A parked ship cooked itself, and the engine doing it was not even
+        // throwing anything.
+        //
+        // ⚠️ **The gate is the throttle and not the wire**, because a motor on flight control never
+        // consults the wire at all — see [throttleOf], where `on` is read only for
+        // [ThrusterControl.Wire]. Gating on `on` would leave every flight-controlled rocket in the
+        // game heating exactly as before, which is the case this exists for.
+        //
+        // ⚠️ This costs a **light-up delay**, and it is meant to: the chamber is two ticks of mass
+        // flow and the element is sized to raise one tick of it from ambient to ignition, so a cold
+        // engine reaches its onset a couple of ticks after the stick moves rather than instantly.
+        // ⛔ That is latency and not a duty cycle — the chamber still vents on every tick it is told
+        // to, at whatever temperature it has got to, which is what `it never stops to reach its
+        // setpoint` pins. See `PLAN_chemical_rockets.md`.
+        if (throttle > 0) {
+            // ⚠️ **After the refill, so the element is sized against what is actually in there.**
+            // Heating first and then pouring cold gas on top would report a chamber at temperature
+            // that is not.
+            val shortfall = buffers.stuff.heatCapacityAt(chamberTile) *
+                (m.setTemperature - buffers.stuff.kelvinAt(chamberTile))
+            if (shortfall > 0L) heatBuffer(chamberTile, minOf(shortfall, Rocket.IGNITER_POWER))
+        }
         return m
     }
 
