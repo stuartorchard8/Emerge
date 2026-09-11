@@ -1942,6 +1942,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 mass = ejectedMass,
                 metresPerSecond = speed,
                 kelvin = kelvinOf(chunk.energy, thermalMassOf(chunk)),
+                firing = activation,
                 mixture = chunk,
                 reach = path.path.size,
                 clear = path.isClear,

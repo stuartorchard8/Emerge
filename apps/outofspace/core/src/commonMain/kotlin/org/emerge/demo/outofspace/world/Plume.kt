@@ -1,6 +1,8 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.chem.Mixture
+import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.num.Budget
 
 /**
  * **One engine's exhaust, for the tick it left by** — everything a picture or a noise of a burning
@@ -50,6 +52,16 @@ class Plume(
     val metresPerSecond: Long,
     /** How hot the parcel was as it went, in kelvin. */
     val kelvin: Int,
+    /**
+     * What the motor was told to do, in permille — [org.emerge.demo.outofspace.world.machine.Engine.firing]
+     * as of this tick.
+     *
+     * ⚠️ **Not the same thing as [mass], and both are here on purpose.** A motor at full throttle
+     * with a nearly-empty store throws almost nothing; a motor at a tenth throttle with a full one
+     * throws a tenth of its rate. A picture of a jet wants the first — how hard it is being asked to
+     * work — and a noise of one wants the second, because it is the mass flow that makes the roar.
+     */
+    val firing: Int,
     /** What went: the parcel [org.emerge.demo.outofspace.OutofspaceSim] drew, after it was drawn. */
     val mixture: Mixture,
     /**
@@ -70,4 +82,30 @@ class Plume(
      * in front of it. Drawing and sounding nothing there would hide the one mistake this reports.
      */
     val clear: Boolean,
-)
+) {
+    /**
+     * **What one mole of this exhaust weighs, in grams** — the number the velocity was priced off,
+     * and the one an ear hears: a light molecule leaves fast and hisses, a heavy one leaves slowly
+     * and roars.
+     *
+     * Derived rather than stored, because most plumes are never asked: the renderer wants a colour
+     * and the speakers want this, and neither should pay for the other's arithmetic. A parcel of
+     * exhaust is half a kilogram, far below the mole table's overflow — see `millimolesOf`, which a
+     * store-sized heap would send negative.
+     *
+     * Zero for a parcel too thin to weigh, which is the same answer
+     * [org.emerge.demo.outofspace.world.machine.Thruster.exhaustVelocity] gives it.
+     */
+    val gramsPerMole: Int
+        get() {
+            var millimoles = 0L
+            for (s in Species.ALL) {
+                val held = mixture[s]
+                if (held != 0L) millimoles += millimolesOf(held, s)
+            }
+            if (millimoles <= 0L) return 0
+            // The ratio before the divide: flooring to whole grams first loses a light propellant
+            // entirely, which is the lesson `kelvinOf` learned and `exhaustVelocity` repeats.
+            return (mixture.total * 1_000L / (Budget.GRAM * millimoles)).toInt()
+        }
+}

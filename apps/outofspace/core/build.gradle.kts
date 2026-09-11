@@ -64,8 +64,9 @@ android {
 }
 
 // Turns .vert / .frag files under src/commonMain/shaders/ into Kotlin string sources, so a custom
-// shader works identically on desktop GL, Android GLES and WebGL. Uncomment when you add one.
-// registerShaderCodegen(packageName = "org.emerge.demo.outofspace.shader")
+// shader works identically on desktop GL, Android GLES and WebGL. `exhaust.vert` / `exhaust.frag`
+// become `ExhaustShaderSources`, which `shader/ExhaustShader.kt` compiles.
+registerShaderCodegen(packageName = "org.emerge.demo.outofspace.shader")
 
 // Generates BuildInfo.kt (git commit + date + dirty flag) — worth wiring into a title screen so a
 // running build, desktop or APK, can be identified without guessing.

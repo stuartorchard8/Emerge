@@ -4,6 +4,7 @@ import org.emerge.demo.outofspace.chem.MINERALS
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
+import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.TerminalRole
@@ -56,6 +57,8 @@ import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.DockingPort
 import org.emerge.demo.outofspace.world.machine.Furnace
+import org.emerge.demo.outofspace.shader.ExhaustShader
+import org.emerge.demo.outofspace.world.Plume
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.Mat4
 import org.emerge.render.torus.shader.StarscapeShader
@@ -89,6 +92,12 @@ class OutofspaceRenderer {
 
     private val rects = UiRectRenderer(maxRects = MAX_RECTS)
     private val starscape = StarscapeShader()
+
+    /**
+     * The one thing in this game that is not a rectangle — see [ExhaustShader], which holds the
+     * argument for why a plume gets a shader when a smelter does not.
+     */
+    private val exhaust = ExhaustShader()
 
     private var resW = 1f
     private var resH = 1f
@@ -482,13 +491,170 @@ class OutofspaceRenderer {
         if (plan != null) drawPlan(state, plan)
 
         rects.drawInstanced(count, matrices, colors)
+        // ⚠️ **After the batch, not into it.** Every rect on screen goes out in that one call, so
+        // anything drawn before it is drawn *under* the entire world. A plume is light and belongs
+        // over the hull it is bolted to — and it is additive, which is a blend mode the batch does
+        // not use and cannot be asked to.
+        drawPlumes(state)
         GPU.disableBlend()
     }
 
     fun cleanup() {
         starscape.deleteProgram()
+        exhaust.deleteProgram()
         rects.deleteProgram()
     }
+
+    // ── Exhaust ───────────────────────────────────────────────────────────────
+
+    /** The plume batch, refilled each frame — one triangle and four vectors per burning engine. */
+    private val plumeMatrices = FloatArray(ExhaustShader.DEFAULT_MAX_PLUMES * Mat4.FLOATS)
+    private val plumeFlows = FloatArray(ExhaustShader.DEFAULT_MAX_PLUMES * 4)
+    private val plumeStuffs = FloatArray(ExhaustShader.DEFAULT_MAX_PLUMES * 4)
+    private val plumeShapes = FloatArray(ExhaustShader.DEFAULT_MAX_PLUMES * 4)
+
+    /**
+     * Scratch for [plumeTransform]. Seven matrices rather than one product expression because
+     * [Mat4.setProduct] writes in place and a frame allocates nothing — the same trade [ViewTurn]
+     * makes, for the same reason.
+     */
+    private val plumeProduct = Mat4.scratch()
+    private val plumeCarry = Mat4.scratch()
+    private val plumeScale = Mat4.scratch()
+    private val plumeTurn = Mat4.scratch()
+    private val plumeShift = Mat4.scratch()
+    private val plumeToNdc = Mat4.scratch()
+    private val plumeOrigin = Mat4.scratch()
+
+    /**
+     * Every engine that fired this tick, drawn as one instanced triangle each.
+     *
+     * ### What decides how long a jet is
+     *
+     * Two things, and the smaller wins. What the propellant is *worth* — [Plume.metresPerSecond],
+     * throttled by what the motor was told — and what room it actually had, which is
+     * [Plume.reach] and is the sim's own answer rather than a guess made here. So a motor firing
+     * along a corridor draws a stub that stops at the wall, and a motor bolted bell-first against a
+     * plate draws almost nothing at all, both without a case of their own.
+     *
+     * ⚠️ **Nothing here is faded between ticks.** A burn is either happening or it is not, and the
+     * sim says which at 64 Hz — faster than a display refreshes. The flicker comes from the
+     * fragment stage's own clock; what would be gained by interpolating the *parameters* is a
+     * frame's worth of smoothing on a quantity nobody can see change that fast.
+     */
+    private fun drawPlumes(state: VesselState) {
+        if (state.plumes.isEmpty()) return
+        val grid = state.grid
+        var n = 0
+        for (plume in state.plumes) {
+            if (n >= ExhaustShader.DEFAULT_MAX_PLUMES) break
+            val throttle = (plume.firing.toFloat() / 1000f).coerceIn(0f, 1f)
+            if (throttle <= 0f) continue
+            val kmPerSecond = plume.metresPerSecond.toFloat() / 1000f
+            // Half a tile of room even when blocked: the exhaust of a motor with a wall against its
+            // nozzle lands in the bell itself, which is a real tile with real gas in it and not a
+            // case that draws nothing.
+            val room = plume.reach.toFloat() + 0.5f
+            val visible = minOf(
+                (PLUME_MIN_TILES + PLUME_TILES_PER_KM_S * kmPerSecond) * throttle,
+                room,
+            )
+            if (visible < PLUME_NEGLIGIBLE_TILES) continue
+
+            // The triangle is longer than the part of it that shows: its tip is upstream of the
+            // nozzle, inside the machine, and the fragment stage discards everything before
+            // [PLUME_ANCHOR]. See the constant, which is the one number to move to put the tip at
+            // the nozzle instead.
+            val lengthTiles = visible / (1f - PLUME_ANCHOR)
+            val widthTiles = PLUME_WIDTH_TILES * (0.45f + 0.55f * throttle)
+            plumeTransform(grid, plume, lengthTiles * tilePx, widthTiles * tilePx)
+            plumeProduct.copyInto(plumeMatrices, n * Mat4.FLOATS)
+
+            val at = n * 4
+            plumeFlows[at] = kmPerSecond
+            plumeFlows[at + 1] = plume.kelvin.toFloat() / 1000f
+            plumeFlows[at + 2] = plume.mass.toFloat() / Budget.KILOGRAM
+            plumeFlows[at + 3] = throttle
+
+            val tint = plume.mixture.color
+            plumeStuffs[at] = ((tint shr 24) and 0xFF).toFloat() / 255f
+            plumeStuffs[at + 1] = ((tint shr 16) and 0xFF).toFloat() / 255f
+            plumeStuffs[at + 2] = ((tint shr 8) and 0xFF).toFloat() / 255f
+            plumeStuffs[at + 3] = plume.gramsPerMole.toFloat()
+
+            plumeShapes[at] = lengthTiles
+            plumeShapes[at + 1] = widthTiles
+            plumeShapes[at + 2] = PLUME_ANCHOR
+            // Off the nozzle's own tile, so a motor's flicker is its own and is the same from one
+            // frame to the next. The golden ratio spreads consecutive tiles across the whole range
+            // rather than giving two motors side by side near-identical seeds.
+            plumeShapes[at + 3] = (plume.bell.index * 0.6180339f) % 1f
+            n++
+        }
+        if (n == 0) return
+        // Additive: a jet only ever brightens what it is drawn over, and two overlapping plumes are
+        // brighter than one rather than the nearer one winning.
+        GPU.setBlendFuncSrcAlphaOne()
+        exhaust.drawInstanced(n, plumeMatrices, plumeFlows, plumeStuffs, plumeShapes, plumePhase())
+        GPU.setBlendFuncSrcAlphaOneMinusSrcAlpha()
+    }
+
+    /**
+     * Plume space → clip, into [plumeProduct]: the whole of what a plume's geometry is.
+     *
+     * Read right to left, which is the order a vertex travels:
+     *
+     *  1. `T(−anchor)` slides plume space so the nozzle is at the origin
+     *  2. `S(length, width)` gives it its size **in pixels**, the two axes independently — which is
+     *     why a long thin jet is not a sheared one
+     *  3. `R` turns it onto the exhaust direction, in the pixel frame the grid uses (y down)
+     *  4. `S(2/w, −2/h)` is pixels → NDC, and the only place the y flip lives
+     *  5. `T(ndc)` puts the nozzle where the bell is on screen
+     *  6. [viewTransform] turns the whole scene, exactly as it turns every rect
+     *
+     * ⚠️ **Steps 2 and 4 are two different scales and cannot be merged.** The first is the plume's
+     * own shape and happens before the turn; the second is the screen's aspect and happens after it.
+     * Folded into one, a plume pointing along the screen's short axis would be the wrong length —
+     * the same shear [ViewTurn] exists to prevent, arrived at from the other side.
+     */
+    private fun plumeTransform(grid: Grid, plume: Plume, lengthPx: Float, widthPx: Float) {
+        val wx = (grid.xOf(plume.bell) + 0.5f) * tilePx
+        val wy = (grid.yOf(plume.bell) + 0.5f) * tilePx
+        val px = wx - camX * tilePx + resW * 0.5f
+        val py = wy - camY * tilePx + resH * 0.5f
+
+        plumeProduct.setProduct(
+            plumeScale.setScale(lengthPx, widthPx),
+            plumeShift.setTranslation(-PLUME_ANCHOR, 0f),
+        )
+        // The grid's own axes: +x right, +y down. The view's rotation is not applied here — it is
+        // the last thing that happens, to the scene as a whole.
+        plumeCarry.setProduct(
+            plumeTurn.setRotationZ(plume.facing.dx.toFloat(), plume.facing.dy.toFloat()),
+            plumeProduct,
+        )
+        plumeProduct.setProduct(plumeToNdc.setScale(2f / resW, -2f / resH), plumeCarry)
+        plumeCarry.setProduct(
+            plumeOrigin.setTranslation(px / resW * 2f - 1f, 1f - py / resH * 2f),
+            plumeProduct,
+        )
+        plumeProduct.setProduct(viewTransform, plumeCarry)
+    }
+
+    /**
+     * The clock the flicker runs on, in **ticks**, wrapped.
+     *
+     * Ticks and not seconds, because the tick is this game's unit of time — see
+     * [OutofspaceConfig.ticksPerSecond], which is a speed dial and nothing else. A plume flickers
+     * faster when the world is run faster, and a paused world's engines hold still.
+     *
+     * ⚠️ **Wrapped, and a screenshot reads zero.** A `Float` has 24 bits of mantissa and a session
+     * left running would quietly lose the fractional part, at which point every plume in the game
+     * stops moving — a bug that takes an afternoon to reproduce. [SETTLED] is infinite by design, so
+     * a capture gets a still frame rather than a NaN.
+     */
+    private fun plumePhase(): Float =
+        if (simTime.isFinite()) (simTime % PLUME_PHASE_WRAP).toFloat() else 0f
 
     /**
      * One tile of pipe.
@@ -1836,6 +2002,44 @@ class OutofspaceRenderer {
 
         /** Reach of the largest footprint, used to widen the machine pass past the screen edge. */
         private const val MAX_REACH = 2
+
+        // ── Plume tuning ────────────────────────────────────────────────
+        //
+        // ⚠️ **These five numbers are a look and not a fact**, and they are here rather than in the
+        // shader because they are the ones the *geometry* is built from — a fragment stage cannot
+        // make a triangle longer. Everything about how a plume is coloured and how it flickers is in
+        // `exhaust.frag` instead. Stu tunes both.
+
+        /**
+         * **Where the nozzle sits along the triangle**, in plume space: 0 is its tip and 1 its
+         * mouth, and everything upstream of this is discarded by the fragment stage.
+         *
+         * ⭐ `2/3` puts the triangle's **centroid** on the bell, which is the arrangement Stu asked
+         * for — the tip points back into the machine and the flame spreads outboard of it. It is the
+         * one number to move to change that reading: **0** puts the tip exactly at the nozzle and
+         * makes the whole triangle visible, and nothing else has to change, because the length below
+         * is stated as the part that *shows* and the transform divides this out.
+         */
+        private const val PLUME_ANCHOR = 2f / 3f
+
+        /** How far a jet reaches per km/s of exhaust velocity, in tiles, at full throttle. */
+        private const val PLUME_TILES_PER_KM_S = 0.55f
+
+        /** What even the feeblest propellant is worth in length, so a cold puff is still visible. */
+        private const val PLUME_MIN_TILES = 0.7f
+
+        /** How wide the mouth is at full throttle, in tiles. */
+        private const val PLUME_WIDTH_TILES = 0.9f
+
+        /** Shorter than this and the triangle is smaller than the line around it. */
+        private const val PLUME_NEGLIGIBLE_TILES = 0.05f
+
+        /**
+         * How many ticks the flicker clock runs before it starts again — about seventeen minutes at
+         * the base rate, which leaves a `Float` four thousandths of a tick of resolution at the top
+         * of the range and puts the seam somewhere nobody is looking.
+         */
+        private const val PLUME_PHASE_WRAP = 65_536.0
 
         /** Bar-full reference for machine buffers — a machine holding this much is visibly backed up. */
         private const val BUFFER_BAR_FULL = 4_000f
