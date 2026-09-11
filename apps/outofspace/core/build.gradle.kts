@@ -38,6 +38,9 @@ kotlin {
                 api(project(":engine:render:torus"))
                 // Deterministic tick/reducer contract, fixed-point primitives, ECS.
                 api(project(":engine:sim:core"))
+                // Oscillators, noise and filters — what the exhaust is sounded with. Common code,
+                // so the judgements about how an engine sounds are the same on every platform.
+                api(project(":engine:audio:synth"))
                 // Uncomment when you want lockstep/client-server multiplayer:
                 // api(project(":engine:net:api"))
                 // api(project(":engine:sim:sync"))

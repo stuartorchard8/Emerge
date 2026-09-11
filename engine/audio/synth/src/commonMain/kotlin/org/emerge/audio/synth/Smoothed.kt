@@ -53,8 +53,7 @@ class Smoothed(
     /** The next value, one sample on. */
     fun next(): Float {
         val goal = target
-        val coefficient = if (goal > value) coefficientFor(riseSeconds) else coefficientFor(fallSeconds)
-        value += (goal - value) * coefficient
+        value += (goal - value) * if (goal > value) riseCoefficient() else fallCoefficient()
         return value
     }
 
@@ -68,6 +67,30 @@ class Smoothed(
     fun snapTo(v: Float) {
         target = v
         value = v
+    }
+
+    // ⚠️ **Cached, because this is per sample and `exp` is not free.** A voice with six of these in
+    // it would otherwise spend six transcendental calls per sample doing arithmetic whose inputs
+    // change about once a second. Recomputed only when the time constant itself is written.
+    private var lastRise = Float.NaN
+    private var lastFall = Float.NaN
+    private var rise = 0f
+    private var fall = 0f
+
+    private fun riseCoefficient(): Float {
+        if (riseSeconds != lastRise) {
+            lastRise = riseSeconds
+            rise = coefficientFor(riseSeconds)
+        }
+        return rise
+    }
+
+    private fun fallCoefficient(): Float {
+        if (fallSeconds != lastFall) {
+            lastFall = fallSeconds
+            fall = coefficientFor(fallSeconds)
+        }
+        return fall
     }
 
     /**
