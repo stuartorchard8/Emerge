@@ -163,6 +163,8 @@ import kotlin.math.sign
 import kotlin.time.TimeSource
 import org.emerge.demo.outofspace.world.energyAtKelvin
 import org.emerge.demo.outofspace.world.thermalMassOf
+import org.emerge.demo.outofspace.world.kelvinOf
+import org.emerge.demo.outofspace.world.Plume
 import org.emerge.demo.outofspace.world.thermalMassAt
 import org.emerge.demo.outofspace.world.thermalMass
 import org.emerge.demo.outofspace.world.machine.SolarPanel
@@ -1220,6 +1222,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             airAngImpulse = state.airAngImpulse - airCarriedTorque + airDragTorque,
             motion = motion,
             impacts = bodiesDrifted.impacts,
+            plumes = w.plumes,
             cadences = cadences,
         ).resized(w.fitRequested).also {
         if (_g0) profiler.recordPhase("motion", _g!!.elapsedNow().inWholeNanoseconds)
@@ -1921,6 +1924,30 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         putStore(m, tile, m.propellantRole, (input - chunk).orNull())
 
+        // ── What it looked and sounded like ──────────────────────────────────
+        //
+        // Last, and off the same three numbers the impulse was booked from, so a plume cannot
+        // describe a burn that did not happen: everything above this line returns early rather than
+        // falling through, and a motor that was told to fire and had nothing to throw records
+        // nothing. See [Plume], which is presentation and is read by no pass.
+        //
+        // ⚠️ The **ejected** mass, propellant and entrained gas together — that is what left the
+        // nozzle, and it is the thing an exhaust is a picture of. The chamber's temperature is the
+        // propellant's alone, taken before the corridor's air was folded in: `parcel` is the two
+        // mixed, and the jet's colour is the fuel's rather than the room's.
+        plumes.add(
+            Plume(
+                bell = m.bell(grid),
+                facing = m.facing,
+                mass = ejectedMass,
+                metresPerSecond = speed,
+                kelvin = kelvinOf(chunk.energy, thermalMassOf(chunk)),
+                mixture = chunk,
+                reach = path.path.size,
+                clear = path.isClear,
+            ),
+        )
+
         return m.told(activation, carry)
     }
 
@@ -2207,6 +2234,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * that balance linearly do not balance about the centre of mass unless they straddle it.
          */
         var exhaustTorque: Long = 0L
+
+        /**
+         * What every engine that fired this tick threw, for the renderer and the speakers — see
+         * [Plume]. Empty on a tick where nothing burned, which is most of them, so the list is not
+         * pre-sized: an idle ship allocates nothing here.
+         */
+        val plumes: MutableList<Plume> = ArrayList(0)
 
         /** Atmosphere a thruster's plume carried off the grid — see [OutofspaceReducer.fire]. */
         fun airVentedByExhaust(mass: Long, energy: Long) {

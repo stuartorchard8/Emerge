@@ -158,6 +158,14 @@ data class VesselState(
      */
     val impacts: List<Impact> = emptyList(),
     /**
+     * Which engines threw what, during the tick that produced this state — see [Plume].
+     *
+     * Presentation only, like [impacts], and in the same place for the same reason: the propellant
+     * has been spent and the store it was priced from is empty by the time a host looks. ⚠️ Unlike
+     * [impacts] it is keyed by **tile**, so it is dropped on a resize along with [motion].
+     */
+    val plumes: List<Plume> = emptyList(),
+    /**
      * When the passes a view interpolates last ran — see [Cadences].
      *
      * Presentation only, exactly like [motion] and [impacts]. Unlike them it survives a resize
@@ -1608,6 +1616,9 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         // animates. It must be dropped *explicitly* — `copy()` would carry through arrays sized to
         // the old grid, which the renderer then reads at new-grid tile indices.
         motion = Motion.NONE,
+        // The same, and for the same reason: a [Plume] names the tile its nozzle is at, and every
+        // tile index moved. One frame of dark engines on the tick a grid grew.
+        plumes = emptyList(),
         deck = newDeck,
         // ── ⚠️ The derived maps: re-derived, never carried ────────────────
         //
