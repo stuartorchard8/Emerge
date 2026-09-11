@@ -69,8 +69,8 @@ class FurnaceFeedTest {
             // ⚠️ The coldest rung, which is off: this file is about what *arrives*, and a charge
             // that decomposes on the way in would change the mass under every assertion.
             setTemperature = 200,
-            whitelist = whitelist,
-            ore = ore,
+            book = whitelist,
+            oreByHand = ore,
         )
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 3, kiln.first, 3)

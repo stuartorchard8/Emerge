@@ -1,6 +1,8 @@
 package org.emerge.demo.outofspace.world.machine
 
+import org.emerge.demo.outofspace.chem.Reaction
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.chem.BASE_RATE
@@ -56,8 +58,13 @@ import org.emerge.demo.outofspace.world.Wiring
  * same moment. The element is modelled as being *in* the chamber, so the charge is what gets hot and
  * the casing is what the heat then bleeds into — slowly, at the buffer's own contact conductance —
  * and from there into the room. A decomposer working steadily is a heat source you have to plan
- * around, and that is also the argument for putting it somewhere the ventilation has been thought
- * about: its gaseous products leave by the room, not by a belt.
+ * around.
+ *
+ * ⛔ **Its gaseous products do NOT leave by the room, and this note used to say they did.** Off-gassing
+ * is opt-in and a machine's buffer never vents — `AmbientChemistry`: *"a machine's buffer never vents,
+ * so a tonne of liquid oxygen keeps"* — so a charge keeps whatever it turns into and hands the lot on
+ * down the belt. ⚠️ Which is also why a chamber's **total mass is invariant while it reacts**, and why
+ * [chargedPrincipal] exists: mass cannot measure conversion when mass never changes.
  */
 data class Furnace(
     override val center: TileIndex,
@@ -91,9 +98,49 @@ data class Furnace(
      * cooked and calcite left alone at 1100 K is asking something the temperature cannot express.
      * Stu, 2026-09-10.
      */
-    override val whitelist: Set<Species> = emptySet(),
+    val book: Set<Species> = emptySet(),
     /** Whether mixed ore may be sent here — see [FeedBook.ore]. */
-    override val ore: Boolean = false,
+    val oreByHand: Boolean = false,
+    /**
+     * The single reaction this furnace is plumbed for, or null for **broad mode**.
+     *
+     * ⛔ **This is a MODE, not a dial beside the others.** Setting it swaps the whole control
+     * surface: [whitelist] and [setTemperature] stop being things the player states and become
+     * things the recipe says, and [dwellTicks] gives way to [completionPermille]. Broad mode is
+     * untouched and is what every save before this is.
+     *
+     * ⛔ **The book is DERIVED here rather than stated alongside**, and that is what keeps
+     * `sinkAdmits`' rule intact: *"two statements of one fact are one edit away from disagreeing."*
+     * A recipe is a precise way of *writing* a feed list, not a second opinion about one, so
+     * [whitelist] reads the reagents and the demand pass never learns that recipes exist.
+     *
+     * ⚠️ **Saved by the principal's NAME, never an index**, for [Rocket.propellant]'s reason.
+     */
+    val recipe: Reaction? = null,
+    /**
+     * How far a recipe charge is taken before it is handed on, in permille of the principal.
+     *
+     * ⚠️ **Only meaningful in recipe mode, and that is the deep reason the two modes exist.** A
+     * completion percentage needs exactly one reaction to be a percentage *of*. A broad furnace
+     * holding serpentine and ammonia and hematite at 1100 K is running three conversions at once and
+     * "95% done" names nothing — so broad mode states a duration instead and this dial is not shown.
+     *
+     * ⛔ **It is a threshold the PLAYER states, which is what makes it legal.** The warning this
+     * machine was built around — *"any rule claiming to find [the moment a charge is finished] is
+     * either an invented threshold or a wait that never ends"* — is a warning against the *designer*
+     * inventing one. Asked for, it is a control exactly as [dwellTicks] is.
+     */
+    val completionPermille: Int = DEFAULT_COMPLETION,
+    /**
+     * How much principal the current recipe charge started with, so completion can be measured.
+     *
+     * ⛔ **Recorded at load, because the charge's MASS cannot answer.** Nothing vents out of a
+     * machine buffer — `AmbientChemistry` says so in as many words, *"a machine's buffer never vents,
+     * so a tonne of liquid oxygen keeps"* — so a chamber's total is invariant while it reacts and
+     * tells you nothing at all about how far it has got. What moves is the principal, and only
+     * against what was loaded.
+     */
+    val chargedPrincipal: Long = 0L,
     override val wiring: Wiring = Wiring.RUNNING,
 ) : DirectedDeckMachine, FeedBook {
     override val kind: DeckMachineKind get() = DeckMachineKind.Furnace
@@ -101,8 +148,66 @@ data class Furnace(
     override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
     override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
 
+    /**
+     * ⛔ **The recipe's reagents when there is one, and the player's list otherwise.** One statement
+     * of what may be sent, which is the whole of [FeedBook]'s contract — the demand pass, the panel,
+     * the save and the stamp all read this and none of them has to know which mode produced it.
+     */
+    override val whitelist: Set<Species>
+        get() = recipe?.reagents?.mapTo(mutableSetOf()) { it.first } ?: book
+
+    /**
+     * ⚠️ **A locked furnace takes no ore, whatever the switch said.** A recipe is a statement about
+     * pure species in an exact ratio; a blend has no single species to meter and would arrive as an
+     * unmeasurable fraction of two of them. The player's own setting is kept in [oreByHand] and comes
+     * back when the recipe is cleared.
+     */
+    override val ore: Boolean get() = if (recipe != null) false else oreByHand
+
     override fun withFeed(whitelist: Set<Species>, ore: Boolean): FeedBook =
-        copy(whitelist = whitelist, ore = ore)
+        copy(book = whitelist, oreByHand = ore)
+
+    /** Locked onto [recipe], or broad when it is null — [Rocket.withPropellant]'s twin. */
+    fun withRecipe(recipe: Reaction?): Furnace = copy(recipe = recipe)
+
+    fun withCompletion(permille: Int): Furnace =
+        copy(completionPermille = permille.coerceIn(COMPLETIONS.first(), COMPLETIONS.last()))
+
+    /**
+     * The temperature this furnace actually holds: the recipe's, or the player's in broad mode.
+     *
+     * ⛔ **The lowest rung ABOVE the onset, never the onset itself.** [SETPOINTS] carries the
+     * argument — a reaction *at* its onset runs at [BASE_RATE] and essentially nothing happens, so
+     * "the lowest valid temperature for this recipe" is the slowest one that technically qualifies.
+     * One rung up is the cheapest setting that actually converts.
+     *
+     * ⚠️ **Falls back to the player's number if the ladder cannot clear the onset**, which is a
+     * reaction hotter than 2400 K. Nothing in the table is today — the hottest onset is 2000 K — and
+     * `FurnaceRecipeTest` pins that, since a row added above the ladder would otherwise get a
+     * setpoint that silently cannot run it.
+     */
+    val heldKelvin: Int
+        get() = recipe?.let { r -> SETPOINTS.firstOrNull { it > r.onsetKelvin } } ?: setTemperature
+
+    /** Which reagent of the locked recipe a store holds, or null for a store that is not a feed. */
+    fun speciesFor(role: BufferRole): Species? {
+        val reagents = recipe?.reagents ?: return null
+        val at = when (role) {
+            BufferRole.Input -> 0
+            BufferRole.SecondReagent -> 1
+            BufferRole.ThirdReagent -> 2
+            else -> return null
+        }
+        return reagents.getOrNull(at)?.first
+    }
+
+    /** The store [species] belongs in, or null if the locked recipe does not use it. */
+    fun roleFor(species: Species): BufferRole? = when (recipe?.reagents?.indexOfFirst { it.first == species }) {
+        0 -> BufferRole.Input
+        1 -> BufferRole.SecondReagent
+        2 -> BufferRole.ThirdReagent
+        else -> null
+    }
 
     companion object {
         /**
@@ -136,5 +241,33 @@ data class Furnace(
          * it is at temperature.
          */
         val DWELLS: List<Int> = listOf(0, 100, 250, 500, 1_000, 2_500, 5_000)
+
+        /**
+         * The conversion targets a recipe furnace offers, in permille of the principal.
+         *
+         * ⚠️ **It stops at 990 and that is not timidity.** Conversion is first-order decay, so every
+         * extra nine costs as much time as all the nines before it put together: at fifty kelvin over
+         * onset, 950‰ is about six hundred passes and 990‰ about twice that. A rung at 999‰ would be
+         * a setting that looks like the others and quietly costs an hour.
+         */
+        val COMPLETIONS: List<Int> = listOf(500, 750, 900, 950, 990)
+
+        /** Nine tenths — converted enough to be worth shipping, cheap enough to be worth waiting for. */
+        const val DEFAULT_COMPLETION: Int = 900
+
+        /**
+         * The longest a recipe charge is held before it is handed on regardless, in ticks.
+         *
+         * ⛔ **A charge that cannot reach its target must still LEAVE.** Conversion is asymptotic, so
+         * a furnace whose chemistry has stalled — a reagent the player re-plumbed away, a recipe
+         * whose row somebody edited — would otherwise hold one charge for the rest of the game with
+         * nothing on the panel to say why. This is the bound that turns "hangs" into "hands on
+         * early", which is a thing the player can see and diagnose.
+         *
+         * ⚠️ **Generous on purpose.** Twenty thousand ticks is far past what any rung of [COMPLETIONS]
+         * needs at any rung of [SETPOINTS]; it is a stop, not a second dial, and a charge that hits it
+         * is reporting a fault rather than making a trade.
+         */
+        const val RECIPE_TIMEOUT_TICKS: Int = 20_000
     }
 }

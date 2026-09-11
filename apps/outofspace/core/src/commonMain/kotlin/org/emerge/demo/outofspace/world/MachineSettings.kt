@@ -272,9 +272,9 @@ fun DeckMachine.withSettings(settings: MachineSettings): DeckMachine {
             // "cook these, at that". A stamp that carried the temperature and left the list behind
             // would paste a kiln that is hot and shut.
             if (settings.whitelist is Setting.Present) {
-                result = result.copy(whitelist = settings.whitelist.value.species, ore = settings.whitelist.value.ore)
+                result = result.copy(book = settings.whitelist.value.species, oreByHand = settings.whitelist.value.ore)
             }
-            if (settings.whitelist is Setting.Empty) result = result.copy(whitelist = emptySet(), ore = false)
+            if (settings.whitelist is Setting.Empty) result = result.copy(book = emptySet(), oreByHand = false)
             result
         }
         DeckMachineKind.Thruster -> {

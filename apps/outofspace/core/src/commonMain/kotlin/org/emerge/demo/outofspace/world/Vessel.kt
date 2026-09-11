@@ -1332,6 +1332,20 @@ private fun labelOf(machine: DeckMachine, role: BufferRole): String = when (mach
         else -> "FEED"
     }
 
+    // ⭐ **A locked furnace names its hoppers after what is IN them**, which is the only thing that
+    // makes three input stores readable. `SecondReagent` is an ordinal and CARBON is a fact; the
+    // role has to be the first so that the panel can say the second — see [BufferRole.SecondReagent],
+    // where the argument for ordinal role names lives.
+    //
+    // ⚠️ **An unlocked furnace falls through to the neutral words below**, because it has no recipe
+    // to read and its one input genuinely is just an input. The two modes are a different machine to
+    // read as well as to operate.
+    is Furnace -> when (role) {
+        BufferRole.Inside -> "CHARGE"
+        BufferRole.Product -> "OUTPUT"
+        else -> machine.speciesFor(role)?.name?.uppercase() ?: "INPUT"
+    }
+
     // ⚠️ **Neutral on purpose, and it must stay neutral.** This is what a machine with no entry of
     // its own says — which is most of them, deliberately — so anything specific written here is a
     // claim made on behalf of every machine that has not been thought about yet. That is exactly how
@@ -1346,6 +1360,8 @@ private fun labelOf(machine: DeckMachine, role: BufferRole): String = when (mach
         // Nothing but a cell has these, and a cell says its own words above.
         BufferRole.Cathode -> "CATHODE"
         BufferRole.Anode -> "ANODE"
+        // Nothing but a furnace has these, and a furnace says its own words above.
+        BufferRole.SecondReagent, BufferRole.ThirdReagent -> "INPUT"
     }
 }
 

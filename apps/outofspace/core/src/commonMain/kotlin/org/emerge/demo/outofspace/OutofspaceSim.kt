@@ -1516,6 +1516,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // energy this machine spends is the element's, below, and billing a handling cost as well
         // would be a second, invisible answer to "what does this cost to run".
         val charge = store(m, tile, BufferRole.Inside) ?: run {
+            // ⭐ **A recipe builds its charge; a broad furnace is tipped into.** The two loading
+            // rules are the whole behavioural difference between the modes — see [chargeRecipe].
+            if (m.recipe != null) return chargeRecipe(m, tile, chamber)
             val fresh = store(m, tile, BufferRole.Input) ?: return m
             putStore(m, tile, BufferRole.Input, null)
             putStore(m, tile, BufferRole.Inside, fresh)
@@ -1532,10 +1535,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // tick of an element sized for a chamberful. The heat that then leaks into the firebrick and
         // out into the room is conduction doing it, at the buffer's own contact conductance, which
         // is the slow bleed the machine is supposed to have rather than a rule written here.
-        val shortfall = buffers.stuff.heatCapacityAt(chamber) * (m.setTemperature - buffers.stuff.kelvinAt(chamber))
+        // ⚠️ **[Furnace.heldKelvin], not the dial** — a locked furnace holds the temperature its
+        // recipe implies and the setpoint it carries is the one it will go back to when unlocked.
+        val shortfall = buffers.stuff.heatCapacityAt(chamber) * (m.heldKelvin - buffers.stuff.kelvinAt(chamber))
         if (shortfall > 0L) {
             heatBuffer(chamber, minOf(shortfall, HEATER_POWER))
-            return m
+            // ⛔ **A recipe charge goes on converting while the element is still working**, which a
+            // broad charge does not need to care about: reduction is endothermic enough to drag
+            // itself back under its own onset (measured, 1250 K → 1185 K in ten passes for
+            // ferrosilite), so a hold that only counted at-temperature ticks would count almost
+            // none of them. The chemistry pass runs on this store either way; what this skips is
+            // only the *release*, below.
+            if (m.recipe == null) return m
         }
 
         // At temperature. Whether it is *finished* is a question with no answer — a reaction
@@ -1546,16 +1557,96 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // ⚠️ **The dwell only runs here**, below the ramp and below the activation check, which is
         // what makes it a residence time: a charge still heating is not being held at anything, and
         // neither is one in a machine with no signal.
-        if (m.heldTicks < m.dwellTicks) return m.copy(heldTicks = m.heldTicks + 1)
+        // ⭐ **Recipe mode releases on CONVERSION, not on a clock.** See [Furnace.completionPermille]
+        // for why a percentage is a control rather than the invented threshold this machine's notes
+        // warn about, and why it only means anything when there is exactly one reaction to be a
+        // percentage of.
+        if (m.recipe != null) {
+            val principal = m.recipe.principal
+            val left = charge[principal]
+            val loaded = m.chargedPrincipal
+            // ⛔ **Against what was LOADED, never against the charge's mass.** Nothing vents out of a
+            // machine buffer, so the chamber's total is invariant while it reacts and says nothing
+            // about progress at all. See [Furnace.chargedPrincipal].
+            val converted = if (loaded <= 0L) 1000L else (loaded - left) * 1000L / loaded
+            val done = converted >= m.completionPermille
+            // ⛔ **The bound, and it is what stops a stall becoming a hang.** A charge whose
+            // chemistry cannot reach the target — a row edited, a temperature that cannot be held —
+            // is handed on late rather than held for ever. See [Furnace.RECIPE_TIMEOUT_TICKS].
+            val gaveUp = m.heldTicks >= Furnace.RECIPE_TIMEOUT_TICKS
+            if (!done && !gaveUp) return m.copy(heldTicks = m.heldTicks + 1)
+        } else if (m.heldTicks < m.dwellTicks) {
+            return m.copy(heldTicks = m.heldTicks + 1)
+        }
 
         // Held long enough: hand the charge on, if there is anywhere to put it. Re-read rather than
         // reusing what was pulled in, because the whole point of the wait is that chemistry may have
-        // changed it — and a gaseous product will already have left through the room.
+        // changed it.
+        //
+        // ⛔ **It has not got any LIGHTER, and this comment used to claim it had.** A machine's
+        // buffer never vents, so gaseous products stay in the charge and ride out on the belt with
+        // everything else. See `Furnace`, where the correction is written down.
         if (store(m, tile, BufferRole.Product) != null) return m
         putStore(m, tile, BufferRole.Inside, null)
         putStore(m, tile, BufferRole.Product, charge)
         // The next charge serves its own dwell, not the remainder of this one's.
-        return m.copy(heldTicks = 0)
+        return m.copy(heldTicks = 0, chargedPrincipal = 0L)
+    }
+
+    /**
+     * Builds one **exactly stoichiometric** charge out of a locked furnace's reagent hoppers, or
+     * waits until it can.
+     *
+     * ⛔ **All or nothing, which is the opposite of what a [Rocket] does and deliberately so.** A
+     * rocket draws what it can and a short feed simply makes a lean chamber, because a pilot
+     * mid-burn needs thrust more than it needs a ratio. A furnace has no such urgency and the
+     * opposite requirement: a charge mixed short of one reagent converts until that reagent is gone
+     * and then sits at whatever percentage it reached, which is exactly the stall the completion
+     * hold has no answer for. So nothing is loaded until every reagent is there in proportion.
+     *
+     * ⚠️ **The ratio comes off the row** — [Reaction.reagentFor] against the principal, the same
+     * arithmetic `react` itself uses — so the charge cannot disagree with the reaction it was built
+     * for. ⛔ Never a hand-written mass fraction; see `Reaction.massPermilleOf`.
+     *
+     * ⚠️ **[Mixture.take] and never a scaling**, for `drawInto`'s reason: it is the only exact draw,
+     * and the complement sums back to the hopper to the microgram.
+     */
+    private fun Work.chargeRecipe(m: Furnace, tile: TileIndex, chamber: TileIndex): Furnace {
+        val row = m.recipe ?: return m
+        // What a full charge would be, capped by the hopper that can least afford it. The principal
+        // sets the scale and every other reagent is derived from it, exactly as `react` does.
+        //
+        // ⛔ **The chamber's cap is on the WHOLE charge, not on the principal.** Capping the principal
+        // and then deriving the reagents on top of it overfills by however much the rest of the row
+        // weighs — measured, a 200 kg cap taking a 254 kg charge. The principal's share of a
+        // stoichiometric pass is what [Reaction.massPermilleOf] answers, so that is the conversion.
+        val chamberful = MACHINE_BUFFER_CAP * row.massPermilleOf(row.principal) / 1000L
+        var principalMass = minOf(chamberful, store(m, tile, BufferRole.Input)?.get(row.principal) ?: 0L)
+        for ((i, reagent) in row.reagents.withIndex()) {
+            if (i == row.principalIndex) continue
+            val role = m.roleFor(reagent.first) ?: return m
+            val have = store(m, tile, role)?.get(reagent.first) ?: 0L
+            // How much principal this hopper's contents can actually support.
+            val supports = row.principalFor(i, have)
+            if (supports < principalMass) principalMass = supports
+        }
+        if (principalMass <= 0L) return m
+
+        var loaded = 0L
+        for ((i, reagent) in row.reagents.withIndex()) {
+            val role = m.roleFor(reagent.first) ?: return m
+            val want = row.reagentFor(i, principalMass)
+            if (want <= 0L) return m
+            val hopper = store(m, tile, role) ?: return m
+            val drawn = hopper.take(minOf(want, hopper.total))
+            putStore(m, tile, role, (hopper - drawn).orNull())
+            buffers.put(chamber, buffers.resourceAt(chamber)?.plus(drawn) ?: drawn)
+            if (i == row.principalIndex) loaded = drawn[row.principal]
+        }
+        // ⚠️ **What actually landed, not what was asked for.** The draw is exact but a hopper may
+        // hold traces of something else, so the principal that arrived is the only honest baseline
+        // for the conversion measurement.
+        return m.copy(chargedPrincipal = loaded, heldTicks = 0)
     }
 
     /**

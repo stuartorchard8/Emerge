@@ -59,6 +59,31 @@ enum class BufferRole {
      */
     Cathode,
     Anode,
+
+    /**
+     * ⭐ **The second and third things a recipe names**, for a [Furnace] metering a charge.
+     *
+     * ⛔ **Not [Oxidiser] reused, for that role's own reason.** A carbon hopper labelled OXIDISER
+     * would be a lie in the one place a reader looks, which is the argument [Oxidiser] itself is the
+     * result of. A reduction's second reagent is not an oxidiser — it is very often the opposite.
+     *
+     * ⚠️ **Ordinal names, because the roles are ordinal and the meaning is not theirs to hold.** What
+     * is actually in these is whatever the locked recipe's reagent list says, so the *inspector*
+     * names them from the recipe — a furnace reducing ferrosilite labels this one CARBON — and the
+     * role only has to be honest about being the second one. A name like `Reductant` would be a
+     * claim about chemistry that the next recipe falsifies.
+     *
+     * ⚠️ **Three is the whole table**, not a guess: forty of forty-nine rows take two reagents, eight
+     * take one, and exactly one — photosynthesis — takes three. `FurnaceRecipeTest` pins that, so a
+     * four-reagent row arriving is a test failure rather than a reagent silently dropped.
+     *
+     * ⛔ **Neither has a port, and that is the machine.** A recipe furnace has ONE door and sorts
+     * what arrives by what it is — see [inputBufferRoleAt] — so these are stores the network never
+     * addresses directly. [Inside] has been the role with no port since the beginning; these are the
+     * second and third.
+     */
+    SecondReagent,
+    ThirdReagent,
 }
 
 /**
@@ -132,12 +157,14 @@ fun inputBufferRole(machine: DeckMachine): BufferRole? = when (machine) {
  * it is the exception here for the same reason it is one above — its pooled store is the volume of
  * the building, not a queue at either door.
  *
- * ### ⛔ A locked rocket answers by CONTENTS, and it is the only kind that does
+ * ### ⛔ A machine that knows what it wants answers by CONTENTS
  *
- * Geometry is the wrong question for a machine whose two mouths are interchangeable. A rocket that
- * knows what it burns can put a delivery where it belongs — hydrogen to the fuel store, oxygen to
- * the oxidiser store — whichever door it came in at, and that is what lets both doors ask the
- * network for the same thing. See [Rocket.propellant], which carries the argument.
+ * Geometry is the wrong question for a machine whose mouths are interchangeable — or which has
+ * fewer mouths than stores. A rocket that knows what it burns puts a delivery where it belongs
+ * whichever of its two doors it came in at, which is what lets both doors ask the network for the
+ * same thing; a furnace locked to a recipe has one door and three hoppers, so the door was never
+ * going to answer. Both read a list they already hold and sort by what arrived. See
+ * [Rocket.propellant] and [Furnace.recipe], which carry the argument.
  *
  * ⚠️ **It cannot strand anything, because the demand pass asks for exactly these two species.**
  * Something that is neither is something the network never routed here, so the null below is a
@@ -149,6 +176,12 @@ fun inputBufferRole(machine: DeckMachine): BufferRole? = when (machine) {
  */
 fun inputBufferRoleAt(grid: Grid, machine: DeckMachine, at: TileIndex, cargo: Mixture): BufferRole? {
     if (machine is Storage) return BufferRole.Inside
+    // ⭐ **A locked furnace has ONE door and three hoppers**, so the door cannot be the question —
+    // see [BufferRole.SecondReagent]. Same rule as the rocket below and for the same reason, with
+    // the roles coming off the recipe's reagent list instead of off a fuel and its oxidiser.
+    if (machine is Furnace && machine.recipe != null) {
+        return cargo.dominant?.let { machine.roleFor(it) }
+    }
     if (machine is Rocket && machine.propellant != null) {
         return when (cargo.dominant) {
             machine.propellant -> BufferRole.Input
@@ -217,7 +250,8 @@ internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
             BufferRole.Inside -> pack(0, 0)
             BufferRole.Product -> pack(fp.ahead, 0)
             BufferRole.Waste -> pack(0, fp.below)
-            BufferRole.Oxidiser, BufferRole.Cathode, BufferRole.Anode -> NO_OFFSET
+            BufferRole.Oxidiser, BufferRole.Cathode, BufferRole.Anode,
+            BufferRole.SecondReagent, BufferRole.ThirdReagent -> NO_OFFSET
         }
 
         // Fuel in at one back corner, oxidiser in at the other, and the chamber between them at the
@@ -227,7 +261,8 @@ internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
             BufferRole.Input -> pack(-fp.behind, -fp.above)
             BufferRole.Oxidiser -> pack(-fp.behind, fp.below)
             BufferRole.Inside -> pack(0, 0)
-            BufferRole.Product, BufferRole.Waste, BufferRole.Cathode, BufferRole.Anode -> NO_OFFSET
+            BufferRole.Product, BufferRole.Waste, BufferRole.Cathode, BufferRole.Anode,
+            BufferRole.SecondReagent, BufferRole.ThirdReagent -> NO_OFFSET
         }
         // ⛔ **No [BufferRole.Inside], and that is the machine rather than an omission.** An
         // electrolyzer works at a rate straight out of its feed into its two hoppers; there is no
@@ -247,13 +282,22 @@ internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
             BufferRole.Cathode -> pack(-fp.behind, 0)
             BufferRole.Input -> pack(0, 0)
             BufferRole.Anode -> pack(fp.ahead, 0)
-            BufferRole.Inside, BufferRole.Oxidiser, BufferRole.Product, BufferRole.Waste, BufferRole.Cathode, BufferRole.Anode -> NO_OFFSET
+            BufferRole.Inside, BufferRole.Oxidiser, BufferRole.Product, BufferRole.Waste, BufferRole.Cathode, BufferRole.Anode,
+            BufferRole.SecondReagent, BufferRole.ThirdReagent -> NO_OFFSET
         }
+        // In at the back, out at the front, a charge in the middle — and, for a locked recipe, two
+        // more hoppers stacked behind the door. ⚠️ **Stacked exactly as a [Rocket]'s two feeds are**,
+        // because it is the same shape for the same reason: several things that have to be kept
+        // apart until something mixes them deliberately. The difference is that only the middle one
+        // carries a port; see [BufferRole.SecondReagent].
         is Furnace -> when (role) {
             BufferRole.Input -> pack(-fp.behind, 0)
+            BufferRole.SecondReagent -> pack(-fp.behind, -fp.above)
+            BufferRole.ThirdReagent -> pack(-fp.behind, fp.below)
             BufferRole.Inside -> pack(0, 0)
             BufferRole.Product -> pack(fp.ahead, 0)
-            BufferRole.Waste, BufferRole.Oxidiser, BufferRole.Cathode, BufferRole.Anode -> NO_OFFSET
+            BufferRole.Waste, BufferRole.Oxidiser, BufferRole.Cathode, BufferRole.Anode,
+            BufferRole.SecondReagent, BufferRole.ThirdReagent -> NO_OFFSET
         }
         // One store, on the one port it has — a pump is one tile, so both are its anchor. What it
         // banks is what it has drawn out of the room and not yet handed to a belt.
@@ -280,7 +324,8 @@ internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
             BufferRole.Input -> pack(-fp.behind, 0)
             BufferRole.Inside -> pack(0, 0)
             BufferRole.Product -> pack(fp.ahead, 0)
-            BufferRole.Waste, BufferRole.Oxidiser, BufferRole.Cathode, BufferRole.Anode -> NO_OFFSET
+            BufferRole.Waste, BufferRole.Oxidiser, BufferRole.Cathode, BufferRole.Anode,
+            BufferRole.SecondReagent, BufferRole.ThirdReagent -> NO_OFFSET
         }
         else -> NO_OFFSET
     }

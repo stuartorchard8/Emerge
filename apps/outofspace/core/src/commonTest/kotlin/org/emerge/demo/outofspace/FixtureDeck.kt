@@ -188,7 +188,7 @@ fun fixtureStorage(
  * anything the world does.
  */
 fun fixtureStalledSink(center: TileIndex, facing: Direction): Furnace =
-    Furnace(center, facing, wiring = Wiring(emptyMap()), whitelist = Species.ALL.toSet(), ore = true)
+    Furnace(center, facing, wiring = Wiring(emptyMap()), book = Species.ALL.toSet(), oreByHand = true)
 
 /**
  * A sensor with the dials wide open — as near as there is to what `Sensor(tile, facing)` used to be.

@@ -6,6 +6,7 @@ import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.chem.fluid
 import org.emerge.demo.outofspace.chem.Mixture
+import org.emerge.demo.outofspace.chem.REACTIONS
 import org.emerge.demo.outofspace.chem.Species
 
 import org.emerge.demo.outofspace.logistics.FluidPacket
@@ -732,6 +733,15 @@ object Save {
                 // a real state: dropping `held` would silently restart every hold on every load.
                 put("dwell", m.dwellTicks.toString())
                 put("held", m.heldTicks.toString())
+                // ⛔ **The principal's name, never a row index** — [REACTIONS] is edited, and an
+                // index would re-plumb every furnace in every save the day a row moves.
+                m.recipe?.let {
+                    put("recipe", it.principal.name)
+                    put("done", m.completionPermille.toString())
+                    // Without this a reload restarts the conversion measurement against whatever is
+                    // left in the chamber, and a charge 80% done would read as 0% and hold again.
+                    put("charged", m.chargedPrincipal.toString())
+                }
             }
             // An extractor is its facing and its one store, both written by the common code around
             // this. Its `carry` and `rate` went with the second store: the rail sets the throughput.
@@ -2174,8 +2184,17 @@ object Save {
                 setTemperature = num("temp", 900L).toInt(),
                 dwellTicks = num("dwell", 0L).toInt(),
                 heldTicks = num("held", 0L).toInt(),
-                whitelist = feedSpecies(f, fail),
-                ore = feedOre(f),
+                book = feedSpecies(f, fail),
+                oreByHand = feedOre(f),
+                // Absent means broad mode, which is every file written before recipes existed.
+                recipe = f["recipe"]?.let { name ->
+                    val principal = Species.ALL.firstOrNull { it.name == name }
+                        ?: fail("unknown furnace recipe '$name'")
+                    REACTIONS.firstOrNull { it.principal == principal }
+                        ?: fail("no reaction has '$name' as its principal")
+                },
+                completionPermille = num("done", Furnace.DEFAULT_COMPLETION.toLong()).toInt(),
+                chargedPrincipal = massNum("charged", 0L),
             )
             // ⚠️ An older file's `carry`, `rate` and `in` (the cell in its jaws) are simply not read.
             // The first two no longer exist, and the third is a hopper's worth of ore that a loaded
