@@ -4,6 +4,9 @@ import org.emerge.demo.outofspace.FrameShift
 import org.emerge.demo.outofspace.OutofspaceController
 import org.emerge.demo.outofspace.OutofspaceHud
 import org.emerge.demo.outofspace.OutofspaceRenderer
+import org.emerge.audio.SynthStream
+import org.emerge.audio.synth.Mixer
+import org.emerge.demo.outofspace.audio.ExhaustAudioSystem
 import org.emerge.demo.outofspace.audio.ImpactAudioSystem
 import org.emerge.demo.outofspace.DeleteLayer
 import org.emerge.demo.outofspace.Tool
@@ -67,6 +70,20 @@ fun main() {
     // Sound is a host's business and the loop's last passenger: it reads the state the tick just
     // produced and never writes to it, so a machine with no sound device simply skips these lines.
     val impactAudio = ImpactAudioSystem(DesktopImpactAudioEngine())
+    // ── The other kind of sound ──────────────────────────────────────────────
+    //
+    // A bang is a clip; a burn is not. An engine's noise is a *continuous* function of numbers the
+    // player is changing, so there is nothing to record and the samples are made as they are needed
+    // — see `ExhaustVoice` for what is made, and `SynthStream` for what carries it.
+    //
+    // ⚠️ The mixer's roster is fixed at construction and never changes, which is what makes this
+    // safe without a lock: the frame loop only ever writes volatile floats on voices the pump thread
+    // is reading. See `Mixer`, which holds the argument.
+    val exhaustAudio = ExhaustAudioSystem(SAMPLE_RATE)
+    val mixer = Mixer(*exhaustAudio.voices.toTypedArray())
+    val synth = SynthStream(SAMPLE_RATE) { out, frames -> mixer.renderBlock(out, frames) }
+    synth.setGain(EXHAUST_GAIN)
+    synth.start()
 
     hud.onTogglePause = { controller.paused = !controller.paused }
     hud.onReset = { controller.reset(); renderer.centreOn(controller.state) }
@@ -450,6 +467,7 @@ fun main() {
         // After the camera has been moved for this frame and before it is used again, because the
         // falloff is measured from where the player is actually looking.
         impactAudio.onFrame(state, renderer.camX, renderer.camY)
+        exhaustAudio.onFrame(state, renderer.camX, renderer.camY)
 
         renderer.draw(
             state, controller.inspectTile, controller.inspectLayer, hovered, controller.overlay,
@@ -462,6 +480,7 @@ fun main() {
     }
 
     impactAudio.release()
+    synth.release()
     renderer.cleanup()
     ui.cleanup()
     glfwDestroyWindow(window)
@@ -476,6 +495,23 @@ fun main() {
  * round on both counts.
  */
 private const val KEY_PAN_PIXELS_PER_SECOND = 900f
+
+/**
+ * What the synthesised sound is made and played at.
+ *
+ * 48 kHz because it is what the hardware wants: 44.1 is resampled by nearly every sound card made
+ * this century, and the resampler is a worse filter than anything in `:engine:audio:synth`.
+ */
+private const val SAMPLE_RATE = 48_000
+
+/**
+ * How loud the engines are against the rest of the game.
+ *
+ * ⚠️ **A placeholder until there is a mix.** It is here rather than inside the voice because it is a
+ * judgement about this *host's* output against everything else coming out of it, and the moment
+ * there is a second synthesised sound it becomes a fader on a bus rather than a constant.
+ */
+private const val EXHAUST_GAIN = 0.7f
 
 /** How far one wheel notch moves a scrollable UI list. Cyto's number, for the same gesture. */
 private const val WHEEL_SCROLL_PX = 48f

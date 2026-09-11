@@ -4,11 +4,8 @@ import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.net.JarURLConnection
 import java.net.URL
-import java.nio.ByteBuffer
-import java.nio.IntBuffer
 import java.nio.ShortBuffer
 import java.util.jar.JarFile
-import org.lwjgl.openal.AL
 import org.lwjgl.openal.AL10.AL_BUFFER
 import org.lwjgl.openal.AL10.AL_FORMAT_MONO16
 import org.lwjgl.openal.AL10.AL_FORMAT_STEREO16
@@ -27,12 +24,6 @@ import org.lwjgl.openal.AL10.alGetSourcei
 import org.lwjgl.openal.AL10.alSourcePlay
 import org.lwjgl.openal.AL10.alSourcef
 import org.lwjgl.openal.AL10.alSourcei
-import org.lwjgl.openal.ALC
-import org.lwjgl.openal.ALC10.alcCloseDevice
-import org.lwjgl.openal.ALC10.alcCreateContext
-import org.lwjgl.openal.ALC10.alcDestroyContext
-import org.lwjgl.openal.ALC10.alcMakeContextCurrent
-import org.lwjgl.openal.ALC10.alcOpenDevice
 import org.lwjgl.stb.STBVorbis.stb_vorbis_decode_memory
 import org.lwjgl.system.MemoryStack
 import org.lwjgl.system.MemoryUtil
@@ -83,26 +74,18 @@ class OggSfxPlayer(
     /** A master gain over everything this player emits. */
     private val busGain: Float = 1f,
 ) {
-    private val device: Long = alcOpenDevice(null as ByteBuffer?)
-    private val context: Long =
-        if (device != MemoryUtil.NULL) alcCreateContext(device, null as IntBuffer?) else MemoryUtil.NULL
     private val banks = mutableListOf<ClipBank>()
     private val activeSources = ArrayDeque<Int>()
 
-    /** False when there is no sound device, or its context could not be made. */
-    var ready = false
+    /**
+     * False when there is no sound device, or its context could not be made.
+     *
+     * ⚠️ **The device is [AlDevice]'s and not this player's.** It used to be opened and closed right
+     * here, which worked for exactly as long as this was the only thing in the process making a
+     * noise — see [AlDevice], which holds the argument.
+     */
+    var ready = AlDevice.retain()
         private set
-
-    init {
-        if (device == MemoryUtil.NULL || context == MemoryUtil.NULL) {
-            System.err.println("audio: OpenAL init failed; sound effects disabled")
-        } else {
-            alcMakeContextCurrent(context)
-            ALC.createCapabilities(device)
-            AL.createCapabilities(ALC.getCapabilities())
-            ready = true
-        }
-    }
 
     /**
      * Every `.ogg` directly inside [resourceDir] on the classpath, decoded, **sorted by name** — so
@@ -154,10 +137,10 @@ class OggSfxPlayer(
         activeSources.clear()
         for (bank in banks) for (buffer in bank.buffers) alDeleteBuffers(buffer)
         banks.clear()
-        alcMakeContextCurrent(MemoryUtil.NULL)
-        alcDestroyContext(context)
-        alcCloseDevice(device)
         ready = false
+        // ⚠️ Last, and only once — the device outlives this player if anything else is still using
+        // it. Guarded by the `ready` flag above, since a host releasing twice is an ordinary thing.
+        AlDevice.release()
     }
 
     private fun reapFinishedSources() {
