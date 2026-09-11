@@ -202,6 +202,7 @@ data class Furnace(
     }
 
     /** The store [species] belongs in, or null if the locked recipe does not use it. */
+
     fun roleFor(species: Species): BufferRole? = when (recipe?.reagents?.indexOfFirst { it.first == species }) {
         0 -> BufferRole.Input
         1 -> BufferRole.SecondReagent

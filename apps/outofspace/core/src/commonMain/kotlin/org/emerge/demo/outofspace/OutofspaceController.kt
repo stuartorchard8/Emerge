@@ -1194,6 +1194,17 @@ class OutofspaceController(
      * out of quartz, and the row is how. Two rows sharing a principal would make this ambiguous and
      * none do.
      */
+    /**
+     * Sets a furnace's recipe outright, by the row's principal — what the sheet presses.
+     *
+     * ⚠️ **Absolute rather than a step**, for [Edit.TuneDecomposer]'s reason: the sheet names the row
+     * it wants, and a relative edit would land somewhere else if anything moved in between.
+     */
+    fun setFurnaceRecipe(tile: TileIndex, principal: Species?) {
+        val m = state.machineCovering(tile) as? Furnace ?: return
+        pending.add(Edit.TuneFurnaceRecipe(tile, principal, m.completionPermille))
+    }
+
     fun cycleFurnaceRecipe(tile: TileIndex, delta: Int) {
         val m = state.machineCovering(tile) as? Furnace ?: return
         val all: List<Species?> = listOf(null) + REACTIONS.map { it.principal }.distinct()

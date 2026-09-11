@@ -46,6 +46,26 @@ tune furnace furnace recipe 21
 inspect furnace furnace DECK
 shot reduction
 
+# ── The picker ───────────────────────────────────────────────────────────────────────────────────
+#
+# ⛔ **A sheet, not a cycling button.** One row per reaction is a list whose length is the
+# chemistry's, and stepping forty-five rungs to reach the one you want is not a control.
+#
+#   `sheet` -- the picker. BROAD is the first row and is always offered: it is the other half of the
+#              machine, not an escape from the list. Every other row is a reaction this vessel could
+#              actually run right now -- ⚠️ **filtered by what is aboard PURE**, so a starter vessel
+#              holding only iron shows very little. The column beside each is the temperature it
+#              would be held at, which is the cost of running it, and the dim line under each row is
+#              the whole reaction: what goes in on the left, what comes out on the right.
+#              ⛔ **The row that is already set never disappears**, even once its reagents are spent
+#              -- the whitelist sheet's rule, and for its reason: losing the row would take away the
+#              only control that could change it.
+# ⚠️ **`RUNS` and not `MODE`.** `tapLabel` falls back to a substring match, and "MODE" is also in
+# "BUILD MODE" on the top bar -- tapping that put the harness into FLIGHT MODE and shot a panel that
+# was never opened. Both buttons open the picker; this is the one whose label is unique on screen.
+tap RUNS
+shot sheet
+
 # Nothing is plumbed to it, so the kiln states an appetite and waits -- which is the correct idle
 # state for a demand network and not a stall.
 expect massBalance = 0

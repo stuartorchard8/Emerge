@@ -1513,6 +1513,16 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     private fun Work.refine(cfg: OutofspaceConfig, m: Furnace, on: Boolean, tile: TileIndex): Furnace {
         val chamber = bufferTile(grid, m, tile, BufferRole.Inside)!!
 
+        // ⛔ **A locked kiln clears out what its recipe does not name, every tick.** Re-plumbing a
+        // furnace strands whatever its old recipe had already pulled in, and a hopper of carbon in
+        // front of a machine that now cracks ammonia is dead weight the player cannot reach: there
+        // is no door on a reagent hopper and no control that empties one.
+        //
+        // ⛔ **A standing rule and NOT a one-shot on the edit**, which is what makes it survive a
+        // full output. The eviction simply does not happen this tick and is tried again next, so a
+        // backed-up belt delays it instead of dropping it on the floor.
+        if (m.recipe != null) evictStrangers(m, tile)
+
         // An empty chamber takes the next charge. Nothing is charged for the loading itself — the
         // energy this machine spends is the element's, below, and billing a handling cost as well
         // would be a second, invisible answer to "what does this cost to run".
@@ -1592,6 +1602,57 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         putStore(m, tile, BufferRole.Product, charge)
         // The next charge serves its own dwell, not the remainder of this one's.
         return m.copy(heldTicks = 0, chargedPrincipal = 0L)
+    }
+
+    /**
+     * The three hoppers a recipe's reagents land in, in the order [Reaction.reagents] names them —
+     * see [Furnace.speciesFor], which is the other half of the same mapping.
+     */
+    private val RECIPE_FEED_ROLES = listOf(BufferRole.Input, BufferRole.SecondReagent, BufferRole.ThirdReagent)
+
+    /**
+     * Moves anything sitting in a reagent hopper that the current recipe does not want **there**.
+     *
+     * ⛔ **Two different wrongs, and they want different answers.** A species the recipe does not use
+     * at all goes out of the product mouth, where a belt can carry it off and the player can see it
+     * leave. A species the recipe *does* use but in a different hopper is moved straight across —
+     * sending it out to be re-demanded and re-delivered would be a round trip through the whole
+     * network to end up two tiles away.
+     *
+     * ⚠️ **Whole stores, decided by [Mixture.dominant].** There is no species-selective draw —
+     * [Mixture.take] is proportional, and picking one species out of a heap is the microgram
+     * deadlock — so the unit of eviction is the hopper. That is exact rather than approximate
+     * because a hopper only ever receives *pure* deliveries: the book is a list of pure species.
+     *
+     * ⚠️ **A hopper CAN hold two things for a tick.** A delivery routed by the new recipe may land
+     * on the old recipe's leavings before this pass sweeps them, and then the blend leaves together.
+     * One tick's window, self-correcting, and not worth a door refusal to prevent — this file's own
+     * rule is that a sink states what it wants rather than rejecting at the mouth.
+     */
+    private fun Work.evictStrangers(m: Furnace, tile: TileIndex) {
+        // The three hoppers, in the order a recipe names its reagents.
+        for (role in RECIPE_FEED_ROLES) {
+            val held = store(m, tile, role) ?: continue
+            val what = held.dominant ?: continue
+            if (m.speciesFor(role) == what) continue
+
+            // Wanted, but in the wrong hopper: move it across, if there is room where it belongs.
+            val belongs = m.roleFor(what)
+            if (belongs != null) {
+                val into = store(m, tile, belongs)
+                if ((into?.total ?: 0L) + held.total > MACHINE_BUFFER_CAP) continue
+                putStore(m, tile, belongs, if (into == null) held else into + held)
+                putStore(m, tile, role, null)
+                continue
+            }
+
+            // Not wanted at all: out of the product mouth, if it will fit beside what is already
+            // waiting there. A full output is a reason to wait, not a reason to destroy anything.
+            val out = store(m, tile, BufferRole.Product)
+            if ((out?.total ?: 0L) + held.total > MACHINE_BUFFER_CAP) continue
+            putStore(m, tile, BufferRole.Product, if (out == null) held else out + held)
+            putStore(m, tile, role, null)
+        }
     }
 
     /**

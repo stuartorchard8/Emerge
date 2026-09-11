@@ -3,6 +3,8 @@ package org.emerge.demo.outofspace
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.ReactionInfo
+import org.emerge.demo.outofspace.chem.REACTIONS
+import org.emerge.demo.outofspace.chem.Reaction
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.abundanceOf
 import org.emerge.demo.outofspace.chem.abundanceRank
@@ -61,7 +63,7 @@ import org.emerge.demo.outofspace.world.BodyKind
 import kotlin.math.sqrt
 
 /** A full-screen overlay: the game's own controls, or the sim's readouts. One at a time. */
-enum class Sheet { None, Menu, Readouts, SaveLoad, Trade, Feed }
+enum class Sheet { None, Menu, Readouts, SaveLoad, Trade, Feed, Recipe }
 
 /**
  * How many buildable species the stockpile panel names before it stops counting.
@@ -288,7 +290,7 @@ class OutofspaceHud {
             // The save dialog is holding the keyboard as well as the screen, so it gets shut down
             // rather than merely hidden.
             Sheet.SaveLoad -> closeSaveLoadDialog()
-            Sheet.Readouts, Sheet.Trade, Sheet.Feed -> openSheet = Sheet.None
+            Sheet.Readouts, Sheet.Trade, Sheet.Feed, Sheet.Recipe -> openSheet = Sheet.None
             Sheet.None -> if (!controller.escape()) openMenu(controller)
         }
     }
@@ -336,6 +338,18 @@ class OutofspaceHud {
      * below the ranking rather than inside it.
      */
     var feedRowsHaveOre: Boolean = false
+
+    /** Which furnace the recipe sheet is open on. */
+    private var recipeTile: TileIndex = TileIndex.NONE
+
+    /**
+     * The recipes the sheet is offering, frozen when it was opened.
+     *
+     * ⛔ **Frozen for [feedRows]' reason, which bites harder here.** The list is filtered by what is
+     * aboard, and a reduction whose carbon runs out mid-read would otherwise take its own row away
+     * while the player was reaching for it. REFRESH is how a player asks for the list again.
+     */
+    var recipeRows: List<Reaction> = emptyList()
         private set
 
     /**
@@ -345,6 +359,41 @@ class OutofspaceHud {
      * player's other way of saying REFRESH, and a sheet that reopened onto a stale list would make
      * that gesture do nothing.
      */
+    /**
+     * Open the recipe sheet on the furnace at [tile], with a freshly taken list.
+     *
+     * ⚠️ **A sheet rather than a cycling button**, which the feed list settled first: a control with
+     * one row per reaction in the game is a list whose length is the chemistry's, and stepping
+     * forty-five rungs to reach the one you want is not a control at all.
+     */
+    internal fun openRecipeSheet(tile: TileIndex, selected: Reaction?, stock: Stockpile) {
+        recipeTile = tile
+        refreshRecipeRows(selected, stock)
+        openSheet = Sheet.Recipe
+    }
+
+    /**
+     * Which reactions deserve a row **right now**: the ones this vessel could actually run, plus
+     * whichever one is already set.
+     *
+     * ⛔ **The second half is the whitelist sheet's rule, and it is not a nicety.** A recipe whose
+     * reagents have been used up would otherwise vanish off the list, taking with it the only
+     * control that could change it — leaving a furnace locked to something the player can see on its
+     * panel and cannot reach from anywhere.
+     *
+     * ⚠️ **[Stockpile.buildable] and not a sum over every buffer**, exactly as [feedSpecies] uses it:
+     * a reagent means that species **pure**, so iron dissolved in a hold of rock does not make a
+     * reduction runnable.
+     *
+     * ⚠️ **Ordered by the table**, not by how much is aboard. A ladder whose rungs re-order
+     * themselves as the holds change is one a player cannot learn.
+     */
+    fun refreshRecipeRows(selected: Reaction?, stock: Stockpile) {
+        recipeRows = REACTIONS.filter { r ->
+            r === selected || r.reagents.all { stock.buildable(it.first) > 0L }
+        }
+    }
+
     internal fun openFeedSheet(tile: TileIndex, target: FeedTarget, stock: Stockpile) {
         feedTile = tile
         refreshFeedRows(target.listed, target.ore, stock)
@@ -694,6 +743,7 @@ class OutofspaceHud {
                 Sheet.SaveLoad -> saveLoadSheet(controller)
                 Sheet.Trade -> tradeSheet(controller)
                 Sheet.Feed -> feedSheet(controller, stock)
+                Sheet.Recipe -> recipeSheet(controller, stock)
             }
         }
         // Clear one-shot status messages after they've been displayed.
@@ -1353,6 +1403,108 @@ class OutofspaceHud {
         } else {
             sheet("oos-eject", words.title, onDismiss = dismiss, heightFraction = 0.85f, rowHeight = 34f, textSize = 15f, body = body)
         }
+    }
+
+    /**
+     * **Which reaction a furnace runs**, as a list of what this vessel can actually make.
+     *
+     * ⛔ **BROAD is the first row and is always offered.** It is not an escape from the list, it is
+     * the other half of the machine — see [Furnace.recipe] — and a player who locks a kiln has to be
+     * able to get the general one back with the feed list they built still on it.
+     */
+    private fun UiBuilder.recipeSheet(controller: OutofspaceController, stock: Stockpile) {
+        val s = controller.state
+        val machine = s.machineCovering(recipeTile) as? Furnace
+
+        val body: PanelBuilder.() -> Unit = {
+            if (machine == null) {
+                // Taken apart or moved while its list was open — the feed sheet's case exactly, and
+                // said rather than dismissed so it does not read as a misclick.
+                text("that machine is no longer there", 0x9A9A9AFFL)
+            } else {
+                row(gapPx = 6f) {
+                    button("REFRESH", 0x2E5A6BFFL) { refreshRecipeRows(machine.recipe, stock) }
+                    text("re-check what is aboard", 0x7A7A7AFFL)
+                }
+                gap()
+
+                // ── Broad mode ───────────────────────────────────────────────
+                row(gapPx = 2f) {
+                    button(EJECT_NAME_W.named("BROAD"), 0x00000000L) { }
+                    text(EJECT_MASS_W.cell("any list"), 0x9A9A9AFFL)
+                    button(
+                        "RUN",
+                        if (machine.recipe == null) 0x2E7B4BFFL else EJECT_OFF,
+                        widthEm = EJECT_SWITCH_EM,
+                    ) {
+                        controller.setFurnaceRecipe(recipeTile, null)
+                        openSheet = Sheet.None
+                    }
+                }
+                text("  cook whatever is on the feed list, for a set time", 0x5A5A5AFFL)
+
+                gap()
+                row(gapPx = 2f) {
+                    text(EJECT_NAME_W.named("RUNS"), 0x7A7A7AFFL)
+                    text(EJECT_MASS_W.cell("HOLDS AT"), 0x7A7A7AFFL)
+                }
+                for (r in recipeRows) recipeRow(controller, machine, r)
+
+                if (recipeRows.isEmpty()) {
+                    text("(nothing aboard that any reaction could use)", 0x9A9A9AFFL)
+                }
+            }
+        }
+        val dismiss = { openSheet = Sheet.None }
+        if (screenW > NARROW_MAX_DP * density) {
+            val w = minOf(EJECT_WIDTH_DP * density, screenW * 0.92f)
+            val h = screenH * 0.85f
+            sheet(
+                "oos-recipe", "RECIPE", onDismiss = dismiss,
+                boxX = (screenW - w) * 0.5f, boxY = (screenH - h) * 0.5f, boxW = w, boxH = h,
+                rowHeight = SHEET_ROW_DP, textSize = 14f, body = body,
+            )
+        } else {
+            sheet("oos-recipe", "RECIPE", onDismiss = dismiss, heightFraction = 0.85f, rowHeight = 34f, textSize = 15f, body = body)
+        }
+    }
+
+    /**
+     * One reaction: what it consumes, the temperature it will be held at, and a press to run it.
+     *
+     * ⚠️ **Named by its principal and described underneath**, because the principal alone is not
+     * enough to choose by — a player is picking by what comes *out*, and `Reaction.principal` is
+     * what goes in. The arrow line is the whole reaction in the order a chemist writes it.
+     */
+    private fun PanelBuilder.recipeRow(
+        controller: OutofspaceController,
+        machine: Furnace,
+        r: Reaction,
+    ) {
+        val on = machine.recipe === r
+        row(gapPx = 2f) {
+            button(EJECT_NAME_W.named(r.principal.name.uppercase()), 0x00000000L) {
+                controller.openWiki(r.principal)
+            }
+            // The temperature this row would be held at, which is the cost of running it and the
+            // one number a player compares rows by. See [Furnace.heldKelvin].
+            text(
+                EJECT_MASS_W.cell("${Furnace.SETPOINTS.firstOrNull { it > r.onsetKelvin } ?: r.onsetKelvin} K"),
+                0x9AC0E0FFL,
+            )
+            button("RUN", if (on) 0x2E7B4BFFL else EJECT_OFF, widthEm = EJECT_SWITCH_EM) {
+                controller.setFurnaceRecipe(recipeTile, r.principal)
+                openSheet = Sheet.None
+            }
+        }
+        // ⛔ **Two lines, because the sheet CLIPS rather than wrapping.** Both halves on one row ran
+        // off the edge mid-word — "IRON + SILICON + CARBONMO" — which is the failure mode the feed
+        // sheet's REFRESH caption note also records. A screenshot caught it; no test could have.
+        //
+        // ⚠️ **The panel's own words**, so a player reading a row here and the machine afterwards is
+        // reading one vocabulary.
+        text("  TAKES   " + r.reagents.joinToString(" + ") { it.first.name.uppercase() }, 0x5A5A5AFFL)
+        text("  YIELDS  " + r.products.joinToString(" + ") { it.first.name.uppercase() }, 0x5A5A5AFFL)
     }
 
     /**
@@ -2748,7 +2900,7 @@ class OutofspaceHud {
                 (if (machine.recipe == null) "BROAD" else "RECIPE") to 0xFFFFFFFFL,
             ),
             0x2E5A6BFFL,
-        ) { controller.cycleFurnaceRecipe(tile, 1) }
+        ) { openRecipeSheet(tile, machine.recipe, controller.state.stockpile) }
 
         // ⛔ **Not `clauseRow`**, though the storage lock next door uses one. That control is a
         // *clause* editor — "AT LEAST | 70% | pure" — and its middle cell is a fixed three
@@ -2775,7 +2927,7 @@ class OutofspaceHud {
             button(
                 listOf("RUNS  " to 0x9A9A9AFFL, machine.recipe.principal.name.uppercase() to 0xFFFFFFFFL),
                 0x2E5A6BFFL,
-            ) { controller.cycleFurnaceRecipe(tile, 1) }
+            ) { openRecipeSheet(tile, machine.recipe, controller.state.stockpile) }
             button(
                 listOf(
                     "UNTIL  " to 0x9A9A9AFFL,

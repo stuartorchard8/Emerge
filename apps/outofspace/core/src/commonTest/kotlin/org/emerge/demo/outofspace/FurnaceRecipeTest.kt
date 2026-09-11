@@ -314,6 +314,79 @@ class FurnaceRecipeTest {
         assertEquals(0L, reductant[Species.Ferrosilite], "mineral landed in the reductant hopper")
     }
 
+    // ── Re-plumbing ──────────────────────────────────────────────────────────
+
+    @Test
+    fun `a species the new recipe does not want leaves by the product mouth`() {
+        // ⛔ **Otherwise it is dead weight the player cannot reach.** A reagent hopper has no door
+        // and no control that empties one, so carbon left in front of a kiln that now cracks
+        // ammonia would sit there for the rest of the game.
+        // ⚠️ **Small stocks on purpose.** A full hopper apiece is more than the output mouth holds,
+        // so evicting both takes more than one drain — correct, and not what this test is about.
+        val started = run(kiln(ore = mineral(20 * kg), reductant = carbon(20 * kg)), 2)
+        val switched = started.copy(
+            deck = started.deck.also {
+                it[kilnAt] = kiln(started).withRecipe(REACTIONS.first { r -> r.principal == Species.Ammonia })
+            },
+        )
+        val after = run(switched, 20)
+
+        assertEquals(0L, store(after, BufferRole.SecondReagent)?.get(Species.Carbon) ?: 0L, "the carbon stayed put")
+        assertTrue(
+            (store(after, BufferRole.Product)?.get(Species.Carbon) ?: 0L) > 0L,
+            "the carbon did not come out of the product mouth",
+        )
+    }
+
+    @Test
+    fun `a species the new recipe wants elsewhere moves across rather than out`() {
+        // ⛔ **Sending it out to be re-demanded would be a round trip through the whole network to
+        // end up two tiles away.** Carbon is the principal of its own oxidation row, so switching to
+        // that row means the carbon belongs in the FIRST hopper rather than the second.
+        val started = run(kiln(ore = mineral(20 * kg), reductant = carbon(20 * kg)), 2)
+        val carbonRow = REACTIONS.first { it.principal == Species.Carbon }
+        val switched = started.copy(
+            deck = started.deck.also { it[kilnAt] = kiln(started).withRecipe(carbonRow) },
+        )
+        val after = run(switched, 20)
+
+        assertEquals(BufferRole.Input, kiln(after).roleFor(Species.Carbon), "carbon is not the principal here")
+        assertTrue(
+            (store(after, BufferRole.Input)?.get(Species.Carbon) ?: 0L) > 0L,
+            "the carbon did not move into the hopper it now belongs in",
+        )
+        assertEquals(
+            0L, store(after, BufferRole.Product)?.get(Species.Carbon) ?: 0L,
+            "carbon the recipe still wants was thrown out anyway",
+        )
+    }
+
+    @Test
+    fun `a full output mouth delays the eviction rather than losing it`() {
+        // ⛔ **The reason this is a standing rule and not a one-shot on the edit.** With the product
+        // mouth full there is nowhere to put the stranded reagent this tick; a one-shot would have
+        // dropped it on the floor, and the hopper would have kept it for ever.
+        val started = run(kiln(ore = mineral(20 * kg), reductant = carbon(20 * kg)), 2)
+        val blocked = started
+            .copy(deck = started.deck.also {
+                it[kilnAt] = kiln(started).withRecipe(REACTIONS.first { r -> r.principal == Species.Ammonia })
+            })
+            .stocked(kilnAt, mineral(200 * kg), BufferRole.Product)
+        val stuck = run(blocked, 20)
+        assertTrue(
+            (store(stuck, BufferRole.SecondReagent)?.get(Species.Carbon) ?: 0L) > 0L,
+            "the carbon was evicted into a full mouth, so it went nowhere",
+        )
+
+        // Drain the mouth and it leaves on its own, with nothing having been lost in between.
+        val drained = stuck.stocked(kilnAt, null, BufferRole.Product)
+        val after = run(drained, 20)
+        assertTrue(
+            (store(after, BufferRole.Product)?.get(Species.Carbon) ?: 0L) > 0L,
+            "the eviction did not happen once there was room",
+        )
+    }
+
     // ── Persistence ──────────────────────────────────────────────────────────
 
     @Test
