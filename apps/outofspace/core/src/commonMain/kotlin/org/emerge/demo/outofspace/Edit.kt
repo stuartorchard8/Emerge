@@ -150,6 +150,24 @@ sealed interface Edit {
      * setting than the one the player saw.
      */
     data class TuneDecomposer(val tile: TileIndex, val setTemperature: Int, val dwellTicks: Int) : Edit
+
+    /**
+     * A furnace's **recipe mode**: which reaction it runs, and how far it takes each charge.
+     *
+     * ⚠️ **A separate edit from [TuneDecomposer] because it is a separate control surface**, not a
+     * third dial beside those two. A furnace in recipe mode does not show a setpoint or a dwell at
+     * all — see [org.emerge.demo.outofspace.world.machine.Furnace.recipe] — so an edit carrying all
+     * four would be describing a machine that does not exist.
+     *
+     * ⚠️ **[recipe] is nullable because broad mode is a mode and not the absence of one.** Stepping
+     * off the end of the ladder is asking for the general machine back, with the feed list the
+     * player built still on it.
+     */
+    data class TuneFurnaceRecipe(
+        val tile: TileIndex,
+        val recipe: Species?,
+        val completionPermille: Int,
+    ) : Edit
     data class TuneSensor(val tile: TileIndex, val threshold: Int, val delay: Int, val release: Int) : Edit
 
     /**

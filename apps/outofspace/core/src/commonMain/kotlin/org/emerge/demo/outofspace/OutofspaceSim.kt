@@ -7,6 +7,7 @@ import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.chem.electrolyteStrength
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.chem.CELL_FEED
+import org.emerge.demo.outofspace.chem.REACTIONS
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.MachineSettings
 import org.emerge.demo.outofspace.world.aimed
@@ -2729,6 +2730,23 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         // can see in the inspector, rather than a quiet deletion of two tonnes of
                         // hydrogen. Nothing else here discards a charge either.
                         .withPropellant(edit.propellant)
+                }
+                is Edit.TuneFurnaceRecipe -> {
+                    val tile = originAt(edit.tile) ?: return
+                    val m = deck[tile]
+                    if (m is Furnace) {
+                        // ⛔ **Switching mode discards the charge's PROGRESS, not the charge.** The
+                        // conversion so far was measured against a recipe that is no longer the one
+                        // running, and carrying `chargedPrincipal` across would have the next
+                        // release compare a new charge to an old baseline. Whatever is in the
+                        // chamber stays there and is handed on by whichever rule now applies.
+                        val recipe = edit.recipe?.let { p -> REACTIONS.firstOrNull { it.principal == p } }
+                        val changed = recipe?.principal != m.recipe?.principal
+                        deck[tile] = m
+                            .withRecipe(recipe)
+                            .withCompletion(edit.completionPermille)
+                            .let { if (changed) it.copy(heldTicks = 0, chargedPrincipal = 0L) else it }
+                    }
                 }
                 is Edit.TuneDecomposer -> {
                     val tile = originAt(edit.tile) ?: return

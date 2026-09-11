@@ -2739,22 +2739,55 @@ class OutofspaceHud {
         val chamber = bufferTile(grid, machine, machine.center, BufferRole.Inside)
         val chargeKelvin = chamber?.let { controller.state.buffers.stuff.kelvinAt(it) } ?: 0
 
+        // ⛔ **The mode, first, because everything under it changes meaning.** A furnace does two
+        // jobs — cook whatever is on a list, or run one reaction to a stated conversion — and the
+        // controls for them have nothing in common. See [Furnace.recipe].
+        button(
+            listOf(
+                "MODE  " to 0x9A9A9AFFL,
+                (if (machine.recipe == null) "BROAD" else "RECIPE") to 0xFFFFFFFFL,
+            ),
+            0x2E5A6BFFL,
+        ) { controller.cycleFurnaceRecipe(tile, 1) }
+
         // ⛔ **Not `clauseRow`**, though the storage lock next door uses one. That control is a
         // *clause* editor — "AT LEAST | 70% | pure" — and its middle cell is a fixed three
         // characters wide, sized for a comparison operator. "2400 K" and "5000 TICKS" do not fit in
         // it, and the way they do not fit is to be silently clipped: the panel renders, reads almost
         // right, and shows the player "NO HOLI".
-        button(
-            listOf("HOLD AT  " to 0x9A9A9AFFL, "${machine.setTemperature} K" to 0xFFFFFFFFL),
-            0x2E5A6BFFL,
-        ) { controller.cycleDecomposerTemperature(tile, 1) }
-        button(
-            listOf(
-                "FOR  " to 0x9A9A9AFFL,
-                (if (machine.dwellTicks == 0) "NO HOLD" else "${machine.dwellTicks} TICKS") to 0xFFFFFFFFL,
-            ),
-            0x2E5A6BFFL,
-        ) { controller.cycleDecomposerDwell(tile, 1) }
+        if (machine.recipe == null) {
+            button(
+                listOf("HOLD AT  " to 0x9A9A9AFFL, "${machine.setTemperature} K" to 0xFFFFFFFFL),
+                0x2E5A6BFFL,
+            ) { controller.cycleDecomposerTemperature(tile, 1) }
+            button(
+                listOf(
+                    "FOR  " to 0x9A9A9AFFL,
+                    (if (machine.dwellTicks == 0) "NO HOLD" else "${machine.dwellTicks} TICKS") to 0xFFFFFFFFL,
+                ),
+                0x2E5A6BFFL,
+            ) { controller.cycleDecomposerDwell(tile, 1) }
+        } else {
+            // ⛔ **"RUNS", never "MAKES".** A reaction is named here by its PRINCIPAL, which is what
+            // it consumes — `Reaction.principal` is *"what the rate is a fraction of"* — so a kiln
+            // cracking ammonia would read "MAKES AMMONIA" and mean the opposite of what it says.
+            // What it makes is on the YIELDS row below.
+            button(
+                listOf("RUNS  " to 0x9A9A9AFFL, machine.recipe.principal.name.uppercase() to 0xFFFFFFFFL),
+                0x2E5A6BFFL,
+            ) { controller.cycleFurnaceRecipe(tile, 1) }
+            button(
+                listOf(
+                    "UNTIL  " to 0x9A9A9AFFL,
+                    "${machine.completionPermille / 10}% CONVERTED" to 0xFFFFFFFFL,
+                ),
+                0x2E5A6BFFL,
+            ) { controller.cycleFurnaceCompletion(tile, 1) }
+            // ⚠️ **A readout and not a dial, which is the whole of what "recipe mode" means.** The
+            // temperature is the lowest rung that actually converts this row — see
+            // [Furnace.heldKelvin], where the argument against using the onset itself lives.
+            keyValue("HOLDS AT", "${machine.heldKelvin} K", 0x9A9A9AFFL, 0x9AC0E0FFL)
+        }
 
         // ── What the belts may send here ─────────────────────────────────────
         //
@@ -2765,7 +2798,28 @@ class OutofspaceHud {
         // ⚠️ **An empty list is called out in words.** "0 species" is a number a player reads past;
         // "cooks nothing" is the sentence that explains why the belt behind the machine is solid —
         // and a decomposer loaded out of a file written before it had a list is *exactly* that.
-        if (machine.isShut) {
+        if (machine.recipe != null) {
+            // ⛔ **Derived, so it is shown and not offered.** The book IS the reagent list — one
+            // statement of what may be sent — and a FEED LIST button here would be a second way to
+            // say a thing the recipe already said. See [Furnace.whitelist].
+            // ⚠️ **Only when it says something the button did not.** A single-reagent row's feed
+            // list is its principal, and "RUNS AMMONIA / TAKES AMMONIA" is a line that teaches the
+            // player nothing and makes them read it twice to find that out.
+            if (machine.recipe.reagents.size > 1) {
+                keyValue(
+                    "TAKES",
+                    machine.recipe.reagents.joinToString(" + ") { it.first.name.uppercase() },
+                    0x9A9A9AFFL,
+                    0xE0864AFFL,
+                )
+            }
+            keyValue(
+                "YIELDS",
+                machine.recipe.products.joinToString(" + ") { it.first.name.uppercase() },
+                0x9A9A9AFFL,
+                0x9ED0B0FFL,
+            )
+        } else if (machine.isShut) {
             keyValue("COOKING", "nothing", 0x9A9A9AFFL, 0x9A9A9AFFL)
             text("name a species and the belts will feed it", 0x5A5A5AFFL)
         } else {
@@ -2780,8 +2834,10 @@ class OutofspaceHud {
         }
         // The stockpile is read HERE, in the press — see the ejector's note, which is the same sweep
         // for the same reason.
-        button("FEED LIST", 0x2E5A6BFFL) {
-            FeedTarget.of(controller, machine)?.let { openFeedSheet(tile, it, controller.state.stockpile) }
+        if (machine.recipe == null) {
+            button("FEED LIST", 0x2E5A6BFFL) {
+                FeedTarget.of(controller, machine)?.let { openFeedSheet(tile, it, controller.state.stockpile) }
+            }
         }
 
         if (chamber != null && controller.state.buffers.resourceAt(chamber) != null) {
@@ -2791,9 +2847,23 @@ class OutofspaceHud {
                 "CHARGE",
                 "$chargeKelvin K  (${chargeKelvin - 273}C)",
                 0x9A9A9AFFL,
-                if (chargeKelvin >= machine.setTemperature) 0xE0864AFFL else 0x9AC0E0FFL,
+                if (chargeKelvin >= machine.heldKelvin) 0xE0864AFFL else 0x9AC0E0FFL,
             )
-            if (machine.dwellTicks > 0) {
+            // ⭐ **How far along it is, which is the only progress reading a recipe charge has.**
+            // ⚠️ Measured against what was LOADED — the chamber's mass never changes, so there is
+            // nothing else it could be measured against. See [Furnace.chargedPrincipal].
+            val loaded = machine.chargedPrincipal
+            if (machine.recipe != null && loaded > 0L) {
+                val left = controller.state.buffers.resourceAt(chamber)?.get(machine.recipe.principal) ?: 0L
+                val done = ((loaded - left) * 100L / loaded).toInt()
+                keyValue(
+                    "CONVERTED",
+                    "$done%  of ${machine.completionPermille / 10}%",
+                    0x9A9A9AFFL,
+                    if (done * 10 >= machine.completionPermille) 0x6EE08AFFL else 0xE0A93AFFL,
+                )
+            }
+            if (machine.recipe == null && machine.dwellTicks > 0) {
                 keyValue(
                     "HELD",
                     "${machine.heldTicks} of ${machine.dwellTicks}",

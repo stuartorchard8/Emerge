@@ -1,0 +1,51 @@
+# The furnace's two modes: cook a list, or run one reaction to a stated conversion.
+#
+# A recipe furnace and a general one are not two machines. They share both dials a furnace already
+# had -- a temperature and a residence time -- and differ only in what they are being asked, so this
+# is one machine with a mode rather than a second kind on the build menu.
+#
+# ⛔ **What makes the split principled: a completion percentage only has a referent when there is
+# exactly ONE reaction to be complete.** A broad kiln whitelisted to serpentine, ammonia and hematite
+# is running three conversions at once and "95% done" names nothing -- so broad mode states a
+# duration, and recipe mode states a percentage. The dials differ because the question differs.
+#
+# What to read in the shots:
+#   `broad`   -- the general furnace, unchanged and still the default. HOLD AT / FOR / FEED LIST, and
+#                COOKING says how many species the player named. This is every furnace in every save.
+#   `cracking`  -- one press of MODE, which lands on the first row in the table: ammonia cracking, a
+#                  SINGLE-reagent reaction. The control surface has SWAPPED -- RUNS and UNTIL replace
+#                  the two dials, HOLDS AT is a readout rather than a button, and the FEED LIST
+#                  button is gone because a recipe IS a feed list. ⚠️ **RUNS names what it CONSUMES**
+#                  (`Reaction.principal`); what comes out is on YIELDS, and there is no TAKES row
+#                  because a one-reagent row would only repeat the button.
+#   `reduction` -- stepped on to ferrosilite reduction, which is the case the whole plan was written
+#                  against. Now TAKES appears -- FERROSILITE + CARBON, the two the network will route
+#                  here and the two the kiln will meter into a charge. ⚠️ **1250 K is the lowest rung
+#                  ABOVE the 1200 K onset**, never the onset itself: a reaction at its onset runs at
+#                  BASE_RATE and essentially nothing happens.
+new
+creative 1
+
+brush FURNACE right
+material Firebrick
+place 24 14
+landmarks
+
+inspect furnace furnace DECK
+shot broad
+
+# Into recipe mode. The first rung off "broad" is the first row of REACTIONS, so this walks the
+# whole table in the order it is written -- there is no curated list to keep in step.
+tune furnace furnace recipe
+inspect furnace furnace DECK
+shot cracking
+
+# On to ferrosilite reduction. ⚠️ The rung number is the table's, not a designed position, which is
+# the cost of deriving the ladder rather than writing one out.
+tune furnace furnace recipe 21
+inspect furnace furnace DECK
+shot reduction
+
+# Nothing is plumbed to it, so the kiln states an appetite and waits -- which is the correct idle
+# state for a demand network and not a stall.
+expect massBalance = 0

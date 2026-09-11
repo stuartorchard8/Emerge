@@ -512,7 +512,13 @@ object OutofspaceAgentHarness {
                             "fuel" -> controller.cycleRocketPropellant(at, 1)
                             "mix" -> controller.cycleRocketMixture(at, 1)
                             "ignite" -> controller.cycleRocketTemperature(at, 1)
-                            else -> error("cannot tune '${t[3]}' (have temp, dwell, fuel, mix, ignite)")
+                            // A furnace's recipe mode. `recipe` steps the reaction, which includes
+                            // the broad-mode rung — see `cycleFurnaceRecipe`.
+                            "recipe" -> controller.cycleFurnaceRecipe(at, 1)
+                            "done" -> controller.cycleFurnaceCompletion(at, 1)
+                            else -> error(
+                                "cannot tune '${t[3]}' (have temp, dwell, fuel, mix, ignite, recipe, done)",
+                            )
                         }
                         controller.stepOnce()
                     }

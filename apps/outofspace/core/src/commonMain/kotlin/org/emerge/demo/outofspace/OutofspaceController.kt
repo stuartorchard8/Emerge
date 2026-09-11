@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.REACTIONS
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.BufferRole
@@ -1180,6 +1181,34 @@ class OutofspaceController(
         val all: List<Species?> = listOf(null) + Rocket.PROPELLANTS.map { it.principal }
         val at = all.indexOf(m.propellant).coerceAtLeast(0)
         pending.add(Edit.TuneRocket(tile, m.fuelPermille, m.setTemperature, all[wrap(at + delta, all.size)]))
+    }
+
+    /**
+     * Steps a furnace's recipe through every reaction in the table, wrapping **through broad mode**.
+     *
+     * ⛔ **Broad mode is a rung, not an escape from the ladder**, exactly as an unlocked rocket is —
+     * see [cycleRocketPropellant]. A player who locks a kiln has to be able to get the general
+     * machine back, and their feed list is still on it when they do.
+     *
+     * ⚠️ **Keyed by the principal**, because that is what a player is choosing: they want silicon
+     * out of quartz, and the row is how. Two rows sharing a principal would make this ambiguous and
+     * none do.
+     */
+    fun cycleFurnaceRecipe(tile: TileIndex, delta: Int) {
+        val m = state.machineCovering(tile) as? Furnace ?: return
+        val all: List<Species?> = listOf(null) + REACTIONS.map { it.principal }.distinct()
+        val at = all.indexOf(m.recipe?.principal).coerceAtLeast(0)
+        pending.add(Edit.TuneFurnaceRecipe(tile, all[wrap(at + delta, all.size)], m.completionPermille))
+    }
+
+    /** Steps a recipe furnace's conversion target through [Furnace.COMPLETIONS], wrapping. */
+    fun cycleFurnaceCompletion(tile: TileIndex, delta: Int) {
+        val m = state.machineCovering(tile) as? Furnace ?: return
+        val all = Furnace.COMPLETIONS
+        val at = all.indexOf(m.completionPermille).let {
+            if (it >= 0) it else all.indexOfLast { rung -> rung <= m.completionPermille }.coerceAtLeast(0)
+        }
+        pending.add(Edit.TuneFurnaceRecipe(tile, m.recipe?.principal, all[wrap(at + delta, all.size)]))
     }
 
     /** Steps a decomposer's residence time through [Furnace.DWELLS], wrapping. */
