@@ -48,7 +48,7 @@ creative 1
 camera centre 25 14 40
 
 # ── Two furnaces, one tuned and one not ──────────────────────────────────────
-material Firebrick
+material Forsterite
 brush FURNACE Right
 # ⚠️ Clear of the starter vessel's own machinery — `field build` is how those tiles were found.
 place 22 13

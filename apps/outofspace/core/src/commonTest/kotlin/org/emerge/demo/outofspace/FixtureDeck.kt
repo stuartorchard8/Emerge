@@ -119,7 +119,7 @@ fun fixtureConductance(conduit: Conduit): Long =
  * interesting, not about a category the game recognises.
  */
 val FORMER_MATERIALS: List<Species> = listOf(
-    Species.Steel, Species.Iron, Species.Copper, Species.Titanium, Species.Firebrick,
+    Species.Steel, Species.Iron, Species.Copper, Species.Titanium, Species.Forsterite,
 )
 
 /*

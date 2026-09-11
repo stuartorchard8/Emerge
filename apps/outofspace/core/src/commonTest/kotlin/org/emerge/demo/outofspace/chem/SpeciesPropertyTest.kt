@@ -107,20 +107,28 @@ class SpeciesPropertyTest {
     }
 
     /**
-     * ⛔ **Firebrick must outlast the furnace it lines**, or the one machine that makes heat is the
-     * one machine heat destroys.
+     * ⛔ **A furnace lining must outlast the furnace it lines**, or the one machine that makes heat is
+     * the one machine heat destroys.
      *
-     * ⚠️ **And it does not, by a hundred and ten kelvin.** A forsterite refractory softens at about
-     * 1890 K and `REACTIONS` has a row at 2000 K — quartz reduction, the head of the chain that
-     * reaches silicon, magnesium and titanium. This is asserted in the direction it actually holds,
-     * with the collision named, so that whoever wires melting in meets it here rather than in a save.
+     * ⚠️ **And it does not, and the gap got wider rather than narrower on 2026-09-11.** This used to
+     * name `Firebrick`, which softened at 1890 K against a hottest row of 2000 K — a shortfall of
+     * 110 K. That species is deleted and a furnace is lined with [Species.Forsterite], which melts at
+     * a genuinely higher 2163 K; but the hottest row moved further still, because the silicothermic
+     * magnesium reduction was corrected from a vacuum onset of 1500 K to the 2200 K it needs at one
+     * atmosphere. So the shortfall is now 37 K.
+     *
+     * ⚠️ **It is asserted in the direction it actually holds**, with the collision named, so that
+     * whoever wires melting in meets it here rather than in a save. ⛔ **Do not "fix" this by cooling
+     * a reaction.** Every onset in the reduction section is an Ellingham crossing derived from
+     * [FORMATION_ENTHALPY] and standard entropies; the lining is what has to improve, or melting has
+     * to become a thing a machine can survive for a while.
      */
     @Test
-    fun `firebrick softens below the hottest reaction the game asks a furnace for`() {
+    fun `a furnace lining softens below the hottest reaction the game asks a furnace for`() {
         val hottest = REACTIONS.maxOf { it.onsetKelvin }
         assertTrue(
-            Species.Firebrick.meltingKelvin < hottest,
-            "firebrick now outlasts the hottest row (${Species.Firebrick.meltingKelvin} vs $hottest) — " +
+            Species.Forsterite.meltingKelvin < hottest,
+            "forsterite now outlasts the hottest row (${Species.Forsterite.meltingKelvin} vs $hottest) — " +
                 "if that is deliberate this test is the thing to delete, but it was not true when written",
         )
     }

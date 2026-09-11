@@ -28,7 +28,7 @@ import org.emerge.demo.outofspace.FORMER_MATERIALS
  * checks that keep the derivation honest, and the record of what it moved.
  *
  * ⛔ **The five numbers this replaced were not physics and could not all be kept.** Measured against
- * their own densities and conductivities they implied tick durations from 1,025 s (firebrick) to
+ * their own densities and conductivities they implied tick durations from 1,025 s (forsterite) to
  * 13,110 s (copper). The calibration chosen is one hour, which is the round number nearest their
  * geometric mean and so the anchor that moves each of them the least it can.
  */
@@ -83,13 +83,29 @@ class MaterialThermalTest {
     /**
      * ⛔ **The ordering the whole table exists to express**, and the thing a calibration cannot break
      * however it is chosen: a furnace lining insulates and a cable does not.
+     *
+     * ⚠️ **The margin halved on 2026-09-11 and the claim did not.** This named `Firebrick` at
+     * 2.5 W/m/K, which came out **160×** slower than copper, and the threshold was written at 100×
+     * with that in hand. Firebrick is deleted — it claimed a formula the MgO–SiO₂ system has no
+     * compound at — and a furnace is lined with [Species.Forsterite], which is 5.0 W/m/K and
+     * measures **64×** (13474 centiticks against copper's 211). So the constant moved to 50.
+     *
+     * ⛔ **That is not the conductivity getting worse, it is the porosity leaving.** 2500 was quoting
+     * a *fired brick*, 20–30% void; 5000 is fully dense forsterite, which is how every other figure
+     * in [Species] is quoted. Porosity is modelled where it belongs, in
+     * `DeckMachineKind.fillPermille`, which already puts a quarter of a tile in a furnace wall.
+     *
+     * ⚠️ **50 is still a round number under a measurement, not the measurement.** What is being
+     * asserted is two orders of magnitude of clear air between a lining and a cable; if a future
+     * lining makes this fail again, the question to ask is whether the *ordering* broke, not whether
+     * the constant can come down once more.
      */
     @Test
-    fun `a firebrick joint is slow and a copper one is quick`() {
+    fun `a forsterite joint is slow and a copper one is quick`() {
         fun centiTicks(species: Species) = conductanceCentiTicksOf(Mixture.of(species to 1_000L, energy = 0L))
         assertTrue(
-            centiTicks(Species.Firebrick) > centiTicks(Species.Copper) * 100L,
-            "firebrick (${centiTicks(Species.Firebrick)}) is supposed to be far slower " +
+            centiTicks(Species.Forsterite) > centiTicks(Species.Copper) * 50L,
+            "forsterite (${centiTicks(Species.Forsterite)}) is supposed to be far slower " +
                 "than copper (${centiTicks(Species.Copper)})",
         )
         for (species in FORMER_MATERIALS) {
@@ -105,17 +121,17 @@ class MaterialThermalTest {
      */
     @Test
     fun `the poor conductor governs a mixture`() {
-        val half = Mixture.of(Species.Copper to 500L, Species.Firebrick to 500L, energy = 0L)
+        val half = Mixture.of(Species.Copper to 500L, Species.Forsterite to 500L, energy = 0L)
         val arithmetic = (Species.Copper.milliWattsPerMetreKelvin +
-            Species.Firebrick.milliWattsPerMetreKelvin) / 2L
+            Species.Forsterite.milliWattsPerMetreKelvin) / 2L
         val k = conductivityOf(half)
         assertTrue(
             k < arithmetic / 10L,
             "half copper by mass conducts at $k, which is far too near the arithmetic mean $arithmetic",
         )
         assertTrue(
-            k > Species.Firebrick.milliWattsPerMetreKelvin,
-            "adding copper to firebrick made it conduct worse than firebrick",
+            k > Species.Forsterite.milliWattsPerMetreKelvin,
+            "adding copper to forsterite made it conduct worse than forsterite",
         )
         // And a pure mixture is exactly its species, with no fixed-point round trip in the way.
         assertEquals(
@@ -165,7 +181,7 @@ class MaterialThermalTest {
 
         val iron = conductanceMadeOf(Species.Iron)
         val copper = conductanceMadeOf(Species.Copper)
-        val firebrick = conductanceMadeOf(Species.Firebrick)
+        val forsterite = conductanceMadeOf(Species.Forsterite)
 
         assertEquals(
             conductanceOf(Species.Iron, Conduit.Rail.fillPermille),
@@ -173,7 +189,7 @@ class MaterialThermalTest {
             "an iron rail should conduct exactly what a tile of iron at rail fill does",
         )
         assertTrue(copper > iron * 2L, "a copper rail ($copper) barely beat an iron one ($iron)")
-        assertTrue(firebrick < iron / 2L, "a firebrick rail ($firebrick) conducted like metal")
+        assertTrue(forsterite < iron / 2L, "a forsterite rail ($forsterite) conducted like metal")
     }
 
     /**

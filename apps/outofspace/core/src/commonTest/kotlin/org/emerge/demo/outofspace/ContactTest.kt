@@ -388,7 +388,7 @@ class ContactTest {
     @Test
     fun `grip follows the bond, so every metal slides and every mineral grips`() {
         val metals = listOf(Species.Steel, Species.Iron, Species.Copper, Species.Titanium)
-        val minerals = listOf(Species.Firebrick, Species.Forsterite, Species.Anorthite, Species.Quartz)
+        val minerals = listOf(Species.Enstatite, Species.Forsterite, Species.Anorthite, Species.Quartz)
         for (metal in metals) {
             for (mineral in minerals) {
                 assertTrue(

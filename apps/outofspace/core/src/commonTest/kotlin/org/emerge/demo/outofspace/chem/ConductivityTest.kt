@@ -134,7 +134,7 @@ class ConductivityTest {
     fun steelConductsThoughItHasAFormula() {
         assertTrue(MINERALS[Species.Steel] != null, "steel is a compound in the table")
         assertTrue(electricalConductivityOf(Species.Steel) > 0L, "steel must still conduct")
-        assertEquals(0L, electricalConductivityOf(Species.Firebrick), "firebrick must not")
+        assertEquals(0L, electricalConductivityOf(Species.Forsterite), "forsterite must not")
     }
 
     /** Rock, ice and air conduct nothing, which is most of the table. */

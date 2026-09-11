@@ -621,6 +621,23 @@ is the thing that lets it build the calciner.
 and CaO–SiO₂ forms low-melting eutectics. A quartz-lime lining is a furnace wall that dissolves
 itself. Periclase costs the same to reach and is a real brick.
 
+⛔ **SUPERSEDED 2026-09-11 — `Firebrick` is deleted and a furnace is lined with `Forsterite`.** The
+argument above is intact; the species is not. `(MgO)₁₁(SiO₂)₆` is not a compound the MgO–SiO₂ binary
+has — that system holds forsterite `Mg₂SiO₄` and enstatite `MgSiO₃` and nothing else between the two
+oxides — so the entry was a 55:45 *mass* recipe wearing a formula's clothes, and its formation
+enthalpy was *defined* as the sum of its reagents', which forced the firing row to be athermal.
+
+What a magnesia-silica refractory fires to is forsterite, and the deleted species said so itself: it
+quoted its melting point as "the softening point of a forsterite refractory". So the firing row is
+now `2 MgO + SiO₂ → Mg₂SiO₄` at −59 kJ/mol, which lands on the measured −62 from entries that were
+independently sourced. ⭐ **It also fixes the bootstrap this section worries about**: forsterite is
+native and the second most abundant mineral in the game, so a first furnace no longer has to be
+manufactured before a furnace exists. The firing row survives as a way to upgrade periclase and
+quartz tailings rather than as the only route to a lining.
+
+Old saves are migrated by name in `Save.RENAMED_SPECIES`; see `ProductStabilityTest` for the rule
+that came out of the same session, and the two silicate reduction rows it corrected.
+
 ## Still open
 
 - **Material selection.** This cuts straight to one recipe per machine. Choosing a material per

@@ -565,20 +565,29 @@ private val WRITTEN: List<Reaction> = listOf(
 
     // ══ MAKING THINGS THE VESSEL IS BUILT OF ══════════════════════════════════════════════════
     //
-    // The two rows that turn a *recipe* into a *reaction*. Steel and firebrick used to be
-    // `Material` compositions — mixtures a construction site had to be fed in the right ratio, tile
-    // by tile, from the ore field onwards — and the tolerance that made routing them survivable is
-    // the same tolerance that let a microgram of water ice into a hull plate. Here the ratio is
-    // arranged once, hot, in one place, and what comes out is one species that a belt, a filter and
-    // a ghost can each say a single thing about.
+    // The rows that turn a *recipe* into a *reaction*. Steel used to be a `Material` composition —
+    // a mixture a construction site had to be fed in the right ratio, tile by tile, from the ore
+    // field onwards — and the tolerance that made routing it survivable is the same tolerance that
+    // let a microgram of water ice into a hull plate. Here the ratio is arranged once, hot, in one
+    // place, and what comes out is one species that a belt, a filter and a ghost can each say a
+    // single thing about.
     //
-    // ⛔ **Both are quoted at zero enthalpy, and that is a statement rather than a gap.** Forming a
-    // solid solution or a two-phase ceramic from its ingredients releases essentially nothing; the
-    // energy a foundry and a brick kiln actually spend is spent *getting the charge to temperature*,
-    // which is what [onsetKelvin] already makes the player pay for. ⚠️ What is genuinely not charged
-    // is iron's heat of fusion — you cannot alloy steel without melting the iron, and the game has
-    // no melting model to take it out of. Charging it here would be putting a melting cost inside a
-    // reaction that is not melting, so it is left out and named instead.
+    // ⛔ **FIREBRICK IS GONE, and it was a fiction rather than a bodge that had earned its keep.**
+    // `(MgO)11(SiO2)6` was quoted as a species, given a formation enthalpy defined as the sum of its
+    // parts, and fired by a row of its own. The MgO–SiO₂ binary has exactly **two** intermediate
+    // compounds — forsterite `Mg2SiO4` and enstatite `MgSiO3` — and that was not one of them. What a
+    // magnesia-silica refractory actually fires to is forsterite, which the deleted species' own doc
+    // comment admitted by quoting *"the softening point of a forsterite refractory"* for its melting
+    // point. So the firing row below makes the real phase, at the real energy, and the furnaces that
+    // were lined with firebrick are lined with forsterite: see `StarterVessel.madeOf`.
+    //
+    // ⚠️ **Steel is quoted at zero enthalpy, and that is a statement rather than a gap.** Forming a
+    // solid solution from its ingredients releases essentially nothing; the energy a foundry
+    // actually spends is spent *getting the charge to temperature*, which is what [onsetKelvin]
+    // already makes the player pay for. ⚠️ What is genuinely not charged is iron's heat of fusion —
+    // you cannot alloy steel without melting the iron, and the game has no melting model to take it
+    // out of. Charging it here would be putting a melting cost inside a reaction that is not
+    // melting, so it is left out and named instead.
 
     // 99 Fe + C -> Fe99C. Onset is iron's melting point, 1811 K: below it there is no liquid for the
     // carbon to dissolve into, and above it a furnace holding the charge there makes steel.
@@ -589,20 +598,32 @@ private val WRITTEN: List<Reaction> = listOf(
         onsetKelvin = 1811,
         baseRate = BASE_RATE,
     ),
-    // 11 MgO + 6 SiO2 -> (MgO)11(SiO2)6. Refractories are fired somewhat above the temperature they
-    // are then asked to survive, and 1700 K is the low end of a real magnesia-silica firing.
+    // 2 MgO + SiO2 -> Mg2SiO4. Firing a magnesia-silica refractory, and what it fires *to* is
+    // forsterite — the magnesium end of the MgO–SiO₂ binary, and a real compound with a real
+    // formation enthalpy instead of the invented `(MgO)11(SiO2)6` that stood here.
     //
-    // ⚠️ **The onset is chosen to sit under what a carbon fire reaches** (~2300 K), because a
-    // furnace lined with firebrick is otherwise the one machine you need heat to build. That the
-    // temperature is reachable is a fact; that lighting a carbon fire in a charge of periclase and
-    // quartz actually fires it **has not been played through** and is intent rather than a measured
-    // bootstrap. The starter vessel ships no furnace today, so until it does (or until this path is
-    // demonstrated) a fresh world cannot reach firebrick at all.
+    // ⭐ **The −59 kJ this row is worth is not a number anybody typed.** [FORMATION_ENTHALPY] has
+    // forsterite at −2174, periclase at −602 and quartz at −911, so Hess makes it
+    // `−2174 − (2·−602 + −911) = −59`, and the measured enthalpy of forsterite from its oxides is
+    // −62 kJ/mol. The table reproduced a laboratory figure it was never fitted to, which is the
+    // strongest evidence available that this row is the real reaction and the one it replaced was
+    // not.
+    //
+    // ⚠️ **The onset is kinetic, not thermodynamic**, and it is the one number here that is chosen.
+    // At −59 kJ with almost no entropy change this row's ΔG is negative at every temperature, so
+    // thermodynamics says nothing about when it starts — what gates it is solid-state diffusion
+    // between two oxide grains, which is measurable and starts around 1200–1300 °C. 1500 K is the
+    // low end of that, the same *kind* of number as the steel row's 1811 K.
+    //
+    // ⭐ **A fresh world can reach this, where it could never reach firebrick.** Forsterite is native
+    // and the second most abundant mineral in the game, so a furnace lining no longer has to be
+    // manufactured before the first furnace exists; this row is now the way to *upgrade* periclase
+    // and quartz tailings into lining rather than the only way to get any.
     Reaction(
         principal = Species.Periclase,
-        reagents = listOf(Species.Periclase to 11, Species.Quartz to 6),
-        products = listOf(Species.Firebrick to 1),
-        onsetKelvin = 1700,
+        reagents = listOf(Species.Periclase to 2, Species.Quartz to 1),
+        products = listOf(Species.Forsterite to 1),
+        onsetKelvin = 1500,
         baseRate = BASE_RATE,
     ),
 
@@ -713,46 +734,118 @@ private val WRITTEN: List<Reaction> = listOf(
         onsetKelvin = 2000,
         baseRate = BASE_RATE,
     ),
-    // 2 MgO + Si → 2 Mg + SiO₂. The Pidgeon process, really done under vacuum — the magnesium comes
-    // off as a vapour and is condensed. Here it stays a solid, because no metal in this game boils
-    // and inventing a phase for this one would be a rule that applies to nothing else.
+    // MgO + C → Mg + CO. Carbothermic reduction of magnesia, and the row that makes magnesium out of
+    // the commonest thing a refinery has lying about instead of out of silicon.
     //
-    // Note what it gives back: the quartz returns, so the silicon is the only thing spent.
+    // ⚠️ **2050 K is the Ellingham crossing, derived rather than chosen.** ΔH° is
+    // `[147.1 + −110.5] − [−601.6] = +638 kJ` and ΔS° is `[148.7 + 197.7] − [26.9 + 5.7] = +314 J/K`,
+    // so ΔG reaches zero at 2034 K. Magnesium is quoted **as a vapour** in that arithmetic, at its
+    // +147 kJ/mol heat of sublimation, because above 1363 K that is what magnesium is — and whether
+    // [Fluid] happens to carry a column for it is a fact about this program, not about the metal.
+    // That is the rule every onset in this section is now quoted by.
+    //
+    // ⚠️ **ΔCp is neglected**, which is ordinary Ellingham practice and is worth perhaps ±50 K over
+    // a 1700 K extrapolation. The number is rounded to 2050 rather than left at 2034 so that it does
+    // not read as more precise than it is.
+    //
+    // ⛔ **Reversion is why the real world does not do this, and the game has no model of it.**
+    // `Mg + CO → MgO + C` runs backwards the moment the vapour cools, which is the entire reason
+    // industry uses the silicothermic row below instead of this cheaper one. Here the cheaper row
+    // simply wins. That is a known gap, named rather than papered over with an invented onset.
+    Reaction(
+        principal = Species.Periclase,
+        reagents = listOf(Species.Periclase to 1, Species.Carbon to 1),
+        products = listOf(Species.Magnesium to 1, Species.CarbonMonoxide to 1),
+        onsetKelvin = 2050,
+        baseRate = BASE_RATE,
+    ),
+    // 2 MgO + Si → 2 Mg + SiO₂. The Pidgeon process. Note what it gives back: the quartz returns, so
+    // the silicon is the only thing spent.
+    //
+    // ⛔ **It fired at 1500 K until 2026-09-11, and 1500 K was a VACUUM number used at one
+    // atmosphere.** Real silicothermic reduction runs at 10⁻⁴–10⁻⁵ atm precisely because the magnesium
+    // has to leave as vapour for the entropy term to carry it; the retort pressure is not a detail of
+    // the process, it *is* the process. At one atmosphere ΔH° = +587 kJ against ΔS° = +266 J/K, so
+    // ΔG reaches zero at **2206 K**, and 1500 K was seven hundred kelvin early.
+    //
+    // ⚠️ **That error had a visible consequence and this is what it was.** The two silicate
+    // reduction rows below used to make periclase and silicon — exactly this row's reagents — at
+    // 1800 K, three hundred kelvin *above* where this one claimed to start. So smelting forsterite
+    // did not yield what it said it yielded: the charge went straight on to magnesium and quartz, and
+    // the quartz then met the leftover periclase and fired to brick. `ProductStabilityTest` is the
+    // rule that now forbids that shape, and it was written from this bug.
+    //
+    // ⚠️ **Fixing the pressure did not on its own fix the ordering.** What makes the table
+    // coherent is that forsterite and enstatite no longer stop at periclase-and-silicon on the way
+    // past — see the two rows below, which go to the metal in one step because the arithmetic says
+    // there is no temperature at which they do anything else.
     Reaction(
         principal = Species.Periclase,
         reagents = listOf(Species.Periclase to 2, Species.Silicon to 1),
         products = listOf(Species.Magnesium to 2, Species.Quartz to 1),
-        onsetKelvin = 1500,
+        onsetKelvin = 2200,
         baseRate = BASE_RATE,
     ),
-    // Mg₂SiO₄ + 4 C → 2 MgO + Si + 2 C + 2 CO. Driven at extreme heat to force carbothermic
-    // reduction, then allowed to revert on slow cooling. The un-reverted carbon monoxide vents,
-    // leaving an intimate solid mixture of magnesia, silicon metal and carbon soot.
+    // Mg₂SiO₄ + 4 C → 2 Mg + Si + 4 CO. Carbothermic reduction of olivine, taken all the way to the
+    // two metals in one step — which is not a simplification but the only thing the arithmetic
+    // permits.
+    //
+    // ⛔ **It stopped at 2 MgO + Si + 2 C + 2 CO at 1800 K until 2026-09-11, and every part of that
+    // was wrong.** Three separate errors, and they are worth keeping apart:
+    //
+    //  - **1800 K was below the silica it was reducing.** The quartz row above needs 2000 K to take
+    //    silicon out of *free* SiO₂, and forsterite holds its silica **tighter** than free quartz
+    //    does — by exactly the 59 kJ/mol the firing row above is worth. Reducing it had to cost more
+    //    than reducing quartz, and the table said it cost less.
+    //  - **The partial products were not a resting place.** Stopping at magnesia and silicon crosses
+    //    ΔG = 0 at `748 kJ / 362 J/K = 2069 K`; going all the way to the metal crosses at
+    //    `2024 kJ / 989 J/K = 2047 K`. Full reduction is the **cheaper** of the two, because four CO
+    //    and two magnesium vapours carry 989 J/K of entropy between them. There is no temperature at
+    //    which the old products are what comes out.
+    //  - **Two of the four carbons were spectators.** `4 C` in and `2 C` out is `2 C` with noise on
+    //    it, and the noise was not free: it doubled the carbon a recipe furnace metered into the
+    //    charge, and it put carbon in the *product* list where `MgO + C → Mg + CO` could read it.
+    //
+    // ⚠️ **So this row is now a magnesium ore as much as a silicon one**, and that is the real
+    // behaviour rather than a buff: olivine is a magnesium feedstock in the world too. What it costs
+    // is 2050 K, which only the top rung of `Furnace.SETPOINTS` clears.
+    //
+    // ⚠️ **[enthalpyPerKg] reads +1730 kJ and the derivation above says +2024**, and the gap is
+    // magnesium's heat of sublimation twice over. [FORMATION_ENTHALPY] quotes Mg as the solid at
+    // zero, per its own reference-phase rule, so the game charges the player for making the metal
+    // but not for boiling it. The same kind of gap as the steel row's missing heat of fusion, and
+    // named here for the same reason.
     Reaction(
         principal = Species.Forsterite,
         reagents = listOf(Species.Forsterite to 1, Species.Carbon to 4),
         products = listOf(
-            Species.Periclase to 2,
+            Species.Magnesium to 2,
             Species.Silicon to 1,
-            Species.Carbon to 2,
-            Species.CarbonMonoxide to 2,
+            Species.CarbonMonoxide to 4,
         ),
-        onsetKelvin = 1800,
+        onsetKelvin = 2050,
         baseRate = BASE_RATE,
     ),
-    // MgSiO₃ + 3 C → MgO + Si + C + 2 CO. Pyroxene processing at high heat. Enstatite carries far
-    // more silica than forsterite, so its slow-cooled reversion yields a structural surplus of
-    // silicon metal while venting a cleaner ratio of carbon monoxide.
+    // MgSiO₃ + 3 C → Mg + Si + 3 CO. Pyroxene, reduced the same way and for the same reasons — see
+    // the forsterite row above, which this one is the silica-rich sibling of.
+    //
+    // ⚠️ **Here the two routes are a genuine tie and the choice is made on the other row's grounds.**
+    // Enstatite stopping at magnesia crosses at `723 kJ / 362 J/K = 1998 K`; going to the metal
+    // crosses at `1361 kJ / 676 J/K = 2015 K`. Seventeen kelvin apart is inside what neglecting ΔCp
+    // over a 1700 K extrapolation is worth, so thermodynamics does not separate them. What does is
+    // that the partial products are `Periclase + Silicon`, which is the Pidgeon row's reagent pair,
+    // and a row may not hand another row its whole charge below its own onset —
+    // `ProductStabilityTest`. Written to the metal, the two silicates also behave alike, which is
+    // what a player is entitled to expect of two rocks this similar.
     Reaction(
         principal = Species.Enstatite,
         reagents = listOf(Species.Enstatite to 1, Species.Carbon to 3),
         products = listOf(
-            Species.Periclase to 1,
+            Species.Magnesium to 1,
             Species.Silicon to 1,
-            Species.Carbon to 1,
-            Species.CarbonMonoxide to 2,
+            Species.CarbonMonoxide to 3,
         ),
-        onsetKelvin = 1800,
+        onsetKelvin = 2000,
         baseRate = BASE_RATE,
     ),
     // Fe₂SiO₄ + 4 C → 2 Fe + Si + 4 CO. Iron holds oxygen less tightly than magnesium does, so this

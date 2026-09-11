@@ -2520,8 +2520,8 @@ class OutofspaceHud {
     /**
      * Milliwatts per metre per kelvin, printed as watts with one decimal.
      *
-     * ⚠️ **One decimal because the insulators are the interesting end.** Firebrick is 2.5 W/m/K and
-     * forsterite 5.0; rounded to whole watts they and every ice and salt in the table would read as
+     * ⚠️ **One decimal because the insulators are the interesting end.** Forsterite is 5.0 W/m/K and
+     * quartz 7.7; rounded to whole watts they and every ice and salt in the table would read as
      * the same number, which is exactly the distinction the column exists to show. See
      * [Species.milliWattsPerMetreKelvin], which is stated in milliwatts for the same reason.
      */

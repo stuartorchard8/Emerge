@@ -132,12 +132,12 @@ class ElectrolyzerTest {
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
         val power = arrayOfNulls<Segment>(grid.size)
-        // ⛔ **Firebrick, and it is `PLAN_power_network.md` §5 rather than decoration.** A machine's
+        // ⛔ **Forsterite, and it is `PLAN_power_network.md` §5 rather than decoration.** A machine's
         // casing is a *parallel path* between its own two terminals, so a cell cased in metal shorts
         // around its own electrolyte and does nothing but warm up. Built from `materialBefore`'s
         // metal this fixture measured **556 mV** across a cell that needed 1230, with the current
         // going round the outside — which is the mechanic working, not a wiring fault.
-        deck.stand(Electrolyzer(plantAt, Direction.Left), withCasing = true, material = Species.Firebrick)
+        deck.stand(Electrolyzer(plantAt, Direction.Left), withCasing = true, material = Species.Forsterite)
         deck += fixtureStorage(hydrogenTank, Direction.Right)    // input port at (8,5)
         deck += fixtureStorage(oxygenTank, Direction.Left)       // input port at (2,5)
         deck.stand(SolarPanel(panelAt), withCasing = true, material = Species.Silicon)
@@ -181,7 +181,7 @@ class ElectrolyzerTest {
     /** The same plant with a chosen casing and, optionally, no cable at all. */
     private fun plant(feed: Mixture, casing: Species, wired: Boolean = true): VesselState {
         val whole = plant(feed)
-        if (wired && casing == Species.Firebrick) return whole
+        if (wired && casing == Species.Forsterite) return whole
         val deck = DeckArray(grid)
         for (m in listOf(hydrogenTank, oxygenTank).mapNotNull { whole.deck[it] }) {
             deck.stand(m, withCasing = true, material = materialBefore(m.kind))
@@ -221,7 +221,7 @@ class ElectrolyzerTest {
      */
     @Test
     fun `a cell with nothing wired to it does nothing`() {
-        val after = run(plant(brine(), Species.Firebrick, wired = false), 200)
+        val after = run(plant(brine(), Species.Forsterite, wired = false), 200)
         assertEquals(0L, madeAnything(after), "an unwired cell split water")
     }
 

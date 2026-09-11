@@ -66,6 +66,29 @@ class SaveError(message: String) : Exception(message)
  * Not `when`-exhaustive by accident: every branch is a kind that existed at version 20, and a kind
  * added later cannot appear in a file that old.
  */
+/**
+ * **A species by the name a save file writes**, or null if no species answers to it.
+ *
+ * ⛔ **The one lookup, because a species can be DELETED and a file cannot be.** Every name in a save
+ * is written by `Species.name` and read back by matching it, which is exact and unversioned and was
+ * fine for as long as the enum only ever grew. It does not only grow: `Firebrick` was deleted on
+ * 2026-09-11 for not being a compound (see [org.emerge.demo.outofspace.chem.MINERALS]), and every
+ * world with a furnace in it has that word written against the furnace's casing, its rails' cargo,
+ * its stockpile and possibly a storage filter. Twelve call sites each said `?: fail(...)`, so a
+ * saved game would have refused to load with "unknown material 'Firebrick'" and no way forward.
+ *
+ * ⚠️ **[Save.RENAMED_SPECIES] is a translation, not a fallback.** A name that is not in the enum and
+ * not in that map is still an error and still reaches the caller as null — this does not turn typos
+ * into silence. What it does is let a deletion be *stated*, once, where every reader passes.
+ *
+ * ⛔ **That map already existed and only `readMixture` consulted it**, which is the narrower half of
+ * the same bug: a file could say `Silica` in a rail's cargo and be understood, then say `Silica` as
+ * a storage filter or a machine's casing and be refused. Routing every lookup through here fixes
+ * both deletions at once.
+ */
+internal fun speciesNamed(name: String?): Species? =
+    Species.ALL.firstOrNull { it.name == name } ?: Save.RENAMED_SPECIES[name]
+
 fun materialBefore(kind: DeckMachineKind): Species = when (kind) {
     // ⚠️ Unreachable and stated anyway: a panel postdates version 20, so no file this function reads
     // can contain one, and a terminal postdates it by five more versions. Steel because that is what
@@ -88,7 +111,12 @@ fun materialBefore(kind: DeckMachineKind): Species = when (kind) {
     DeckMachineKind.Electrolyzer,
     DeckMachineKind.Rocket,
     -> Species.Titanium
-    DeckMachineKind.Furnace -> Species.Firebrick
+    // ⚠️ Firebrick until 2026-09-11, and [RENAMED_SPECIES] is the other half of that change: a
+    // v21+ file
+    // says `made=Firebrick` outright and is translated there, while a file older than
+    // [STATED_MATERIAL_VERSION] says nothing and is answered here. Both have to move together
+    // or the same old furnace loads as two different substances depending on its age.
+    DeckMachineKind.Furnace -> Species.Forsterite
     DeckMachineKind.Bridge, DeckMachineKind.Gauge -> materialBefore(Conduit.Rail)
     // A valve stands over track now — it marks where a run may let go of its volatiles.
     DeckMachineKind.Valve -> materialBefore(Conduit.Rail)
@@ -638,7 +666,7 @@ object Save {
         f["eject"].orEmpty().split(',')
             .filter { it.isNotEmpty() && it != EJECT_ORE }
             .mapTo(LinkedHashSet()) { name ->
-                Species.ALL.firstOrNull { it.name == name } ?: fail("unknown species '$name'")
+                speciesNamed(name) ?: fail("unknown species '$name'")
             }
 
     /**
@@ -658,7 +686,7 @@ object Save {
         val raw = f["shortlist"] ?: return Storage.ANY_SPECIES
         if (raw == SHORTLIST_NONE) return emptySet()
         return raw.split(',').filter { it.isNotEmpty() }.mapTo(LinkedHashSet()) { name ->
-            Species.ALL.firstOrNull { it.name == name } ?: fail("unknown species '$name'")
+            speciesNamed(name) ?: fail("unknown species '$name'")
         }
     }
 
@@ -1247,7 +1275,7 @@ object Save {
                     // it lives on the deck's own column and is read off the raw tokens here.
                     val made = tokens.firstOrNull { it.startsWith("made=") }?.removePrefix("made=")
                         ?.let { name ->
-                            Species.ALL.firstOrNull { it.name == name } ?: fail("unknown material '$name'")
+                            speciesNamed(name) ?: fail("unknown material '$name'")
                         }
                         // See [readSegment]: absent is an old file, not an under-specified one.
                         ?: if (version < STATED_MATERIAL_VERSION) materialBefore(dm.kind)
@@ -2121,7 +2149,7 @@ object Save {
                 orders = buildMap {
                     for (entry in f["orders"]?.split(",").orEmpty()) {
                         val parts = entry.split(":")
-                        val species = Species.ALL.firstOrNull { it.name == parts[0] } ?: continue
+                        val species = speciesNamed(parts[0]) ?: continue
                         put(species, readPermission(parts.getOrNull(1), scale) ?: continue)
                     }
                 },
@@ -2136,7 +2164,7 @@ object Save {
                 facing(),
                 kind,
                 filter = f["filter"].let { name ->
-                    val species = Species.ALL.firstOrNull { it.name == name }
+                    val species = speciesNamed(name)
                     val pure = purityBefore(f)
                     if (species == null && pure == null) null
                     else SpeciesFilter(species, pure)
@@ -2188,7 +2216,7 @@ object Save {
                 oreByHand = feedOre(f),
                 // Absent means broad mode, which is every file written before recipes existed.
                 recipe = f["recipe"]?.let { name ->
-                    val principal = Species.ALL.firstOrNull { it.name == name }
+                    val principal = speciesNamed(name)
                         ?: fail("unknown furnace recipe '$name'")
                     REACTIONS.firstOrNull { it.principal == principal }
                         ?: fail("no reaction has '$name' as its principal")
@@ -2206,7 +2234,7 @@ object Save {
                 carry = massNum("carry", 0L),
                 massPerTick = rate(Thruster(tile, Direction.Right).massPerTick),
                 filter = f["filter"].let { name ->
-                    val species = Species.ALL.firstOrNull { it.name == name }
+                    val species = speciesNamed(name)
                     val pure = purityBefore(f)
                     if (species == null && pure == null) null
                     else SpeciesFilter(species, pure)
@@ -2223,7 +2251,7 @@ object Save {
                 fuelPermille = num("mix", Rocket.DEFAULT_FUEL_PERMILLE.toLong()).toInt(),
                 setTemperature = num("temp", Rocket.DEFAULT_SETPOINT.toLong()).toInt(),
                 propellant = f["fuel"]?.let { name ->
-                    Species.ALL.firstOrNull { it.name == name } ?: fail("unknown rocket propellant '$name'")
+                    speciesNamed(name) ?: fail("unknown rocket propellant '$name'")
                 },
                 control = f["control"]?.let { name ->
                     ThrusterControl.ALL.firstOrNull { it.name == name } ?: fail("unknown thruster control '$name'")
@@ -2235,7 +2263,7 @@ object Save {
             DeckMachineKind.Gauge -> Gauge(
                 tile,
                 lastDominant = f["lastspecies"]?.let { name ->
-                    Species.ALL.firstOrNull { it.name == name } ?: fail("unknown species '$name'")
+                    speciesNamed(name) ?: fail("unknown species '$name'")
                 },
                 lastPurity = num("lastpurity", 0L).toInt(),
                 lastMass = massNum("lastmass", 0L),
@@ -2293,7 +2321,7 @@ object Save {
             // see [materialBefore]. From that version on every segment states it, so an absence is
             // a corrupt record rather than an old one.
             material = f["made"]?.let { name ->
-                Species.ALL.firstOrNull { it.name == name } ?: fail("unknown material '$name'")
+                speciesNamed(name) ?: fail("unknown material '$name'")
             } ?: if (version < STATED_MATERIAL_VERSION) materialBefore(conduit)
             else fail("a segment at $tile does not say what it is made of"),
         )
@@ -2319,7 +2347,7 @@ object Save {
             return Gauge(
                 tile,
                 lastDominant = f["lastspecies"]?.let { name ->
-                    Species.ALL.firstOrNull { it.name == name } ?: fail("unknown species '$name'")
+                    speciesNamed(name) ?: fail("unknown species '$name'")
                 },
                 lastPurity = f["lastpurity"]?.toIntOrNull() ?: 0,
                 lastMass = scale.of(f["lastmass"]?.toLongOrNull() ?: 0L),
@@ -2429,12 +2457,31 @@ object Save {
      * would read a lower pressure. That is a real difference and it is the right one, because the
      * old number described nothing.
      *
+     * ⛔ **`Firebrick` is the third, and it is a deletion rather than a rebuild.** It claimed the
+     * formula `(MgO)₁₁(SiO₂)₆`, which is not a compound the MgO–SiO₂ system has — that binary holds
+     * forsterite and enstatite and nothing else between the two oxides — so it was a *mass* recipe,
+     * 55:45, wearing a formula's clothes. It becomes [Species.Forsterite], which is what a
+     * magnesia-silica refractory actually fires to and what the deleted species' own melting point
+     * was quoted as the softening point of. See `REACTIONS` and `StarterVessel.madeOf`.
+     *
+     * ⚠️ **Unlike Silica → Quartz this is not number-for-number.** Firebrick was 3092 kg/m³ at
+     * 824 J/kg/K and 2.5 W/m/K; forsterite is 3270, 840 and 5.0. Mass is conserved — the ledger only
+     * ever counted kilograms — but a loaded furnace wall now holds 2% more heat and leaks it twice as
+     * fast. Both conductivities are honest: 2500 quoted a *porous* brick, and everything else in
+     * [Species] is quoted fully dense, with porosity modelled where it belongs in
+     * `DeckMachineKind.fillPermille`.
+     *
      * Kept as a map rather than a version-gated branch because a name is a name whatever version
      * wrote it, and a file that says `Silica` means quartz regardless of what else it says.
+     *
+     * ⚠️ **Read through [speciesNamed], which is every species lookup in this file.** It used to be
+     * consulted by `readMixture` alone, so a renamed species was understood in a cargo hold and
+     * refused in a storage filter.
      */
-    private val RENAMED_SPECIES: Map<String, Species> = mapOf(
+    internal val RENAMED_SPECIES: Map<String, Species> = mapOf(
         "Silica" to Species.Quartz,
         "RareEarth" to Species.Monazite,
+        "Firebrick" to Species.Forsterite,
     )
 
     /**
@@ -2469,9 +2516,7 @@ object Save {
                 if (energyPart < 0L) fail("negative energy in '$part'")
                 energy += energyPart
             } else {
-                val species = Species.ALL.firstOrNull { it.name == name }
-                    ?: RENAMED_SPECIES[name]
-                    ?: fail("unknown species '$name'")
+                val species = speciesNamed(name) ?: fail("unknown species '$name'")
                 val mass = part.substring(eq + 1).toLongOrNull() ?: fail("bad mass in '$part'")
                 if (mass < 0L) fail("negative mass in '$part'")
                 masses[species.ordinal] += scale.of(mass)

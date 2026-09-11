@@ -27,7 +27,7 @@ new
 creative 1
 
 brush FURNACE right
-material Firebrick
+material Forsterite
 place 24 14
 landmarks
 

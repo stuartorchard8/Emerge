@@ -3,7 +3,7 @@
 #
 # What to read:
 #   `temp`    is the hottest *solid* on each tile — the furnace should stand out sharply, because
-#             firebrick conducts badly and is meant to hold its own heat.
+#             forsterite conducts badly and is meant to hold its own heat.
 #   `airtemp` should show a warm plume ABOVE the furnace rather than a symmetric blob around it.
 #             That asymmetry is the whole result: nothing in the heat pass knows which way is up, so
 #             an updraught can only come from `P = nT` making warm gas light and buoyancy lifting it.

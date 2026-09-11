@@ -417,13 +417,12 @@ enum class Species(
     Sylvite(74, 690, solidKgPerCubicMetre = 1990, relativeAbundance = 20000, milliWattsPerMetreKelvin = 6_500, meltingKelvin = 1043),   // KCl, and Rb with it
     Fluorite(78, 850, solidKgPerCubicMetre = 3180, relativeAbundance = 20000, milliWattsPerMetreKelvin = 9_500, meltingKelvin = 1691),   // CaF2
 
-    // ══ THE MANUFACTURED MATERIALS ════════════════════════════════════════════════════════════
+    // ══ THE MANUFACTURED MATERIAL ═════════════════════════════════════════════════════════════
     //
-    // ⛔ **Made, never found, and neither of them is a compound.** Steel is a solid solution and a
-    // magnesia-silica refractory is a two-phase ceramic; a rock contains neither, so both take the
-    // default [relativeAbundance] of zero and no asteroid will ever hold one.
+    // ⛔ **Made, never found, and not a compound.** Steel is a solid solution; a rock contains none,
+    // so it takes the default [relativeAbundance] of zero and no asteroid will ever hold any.
     //
-    // They are species rather than named-material compositions because
+    // It is a species rather than a named-material composition because
     // a *recipe* is a thing the player should have to arrange once, in a furnace, rather than for
     // ever, on every belt. As a mixture, steel obliged a construction site to be fed iron and carbon
     // in the right ratio all the way from the ore field — nine hundred and ninety to ten, held
@@ -431,12 +430,20 @@ enum class Species(
     // exactly the tolerance that let a microgram of water ice into a hull plate. One species, one
     // reaction, one thing to route.
     //
-    // ⚠️ **Their formulae in [MINERALS] state a ratio, not a molecule**, and that is the whole
+    // ⚠️ **Its formula in [MINERALS] states a ratio, not a molecule**, and that is the whole
     // licence being taken here. Fe₉₉C is not a phase anybody has ever isolated; it is the integer
     // pair that makes 0.22% carbon by mass come out exactly, so the alloying reaction closes atom by
     // atom against the same oracle every real mineral does. The alternative was a mass-fraction row
     // type, which would have put the one table in the game whose conservation is *structural*
     // alongside one whose conservation is a rounding rule.
+    //
+    // ⛔ **`Firebrick` stood here and is deleted.** It claimed the formula `(MgO)₁₁(SiO₂)₆`, which is
+    // not a compound in the MgO–SiO₂ system — that binary has forsterite and enstatite and nothing
+    // else between the two oxides — so unlike Fe₉₉C it was a licence nobody had checked rather than
+    // one stated and bounded. A magnesia-silica refractory fires to [Forsterite], which is a real
+    // phase this table already carried, so what replaced it was already here: see `REACTIONS` and
+    // `StarterVessel.madeOf`. Its melting point was quoted in its own doc comment as *"the softening
+    // point of a forsterite refractory"*, which was the table saying so out loud.
 
     /**
      * Carbon steel: [Iron] with about a fifth of a per cent of [Carbon] dissolved in it.
@@ -460,27 +467,6 @@ enum class Species(
      * own metal has never been offered to a reaction and hull oxidation has never once fired.
      */
     Steel(5556, 490, solidKgPerCubicMetre = 7850, milliWattsPerMetreKelvin = 50_000, meltingKelvin = 1723),
-    /**
-     * Refractory brick: [Periclase] and [Quartz] fired together, 55:45 by mass.
-     *
-     * The same 550:450 the old `Material` mixture stated, and the same
-     * numbers underneath it — 11 MgO to 6 SiO₂ is 55.0% to 45.0%, [specificHeat] is their
-     * mass-weighted mean (823.75, rounded) and [solidKgPerCubicMetre] their harmonic one (3091.7,
-     * rounded), so a furnace lining weighs and warms what it did before to within about a part in
-     * ten thousand. ⚠️ **Not to the unit**, because both figures are integers and neither of those
-     * means is one; the residual is a rounding and is named here rather than claimed away. Nothing
-     * else about this machine moved except what has to be routed to build one.
-     *
-     * ⚠️ **A mass-weighted specific heat is the right answer here and a wrong one for [Steel]**, and
-     * the asymmetry is not an inconsistency. Two oxides sharing a tile are two oxides sharing a tile
-     * — Neumann-Kopp, and their heat capacities add. Carbon dissolved in iron changes the lattice it
-     * is dissolved in, which is why steel's own measured value is 9% off the average of its parts.
-     *
-     * ⚠️ 3092 kg/m³ is the **fully dense** solid, not what a brick off a shelf weighs. A real
-     * refractory is 20–30% porosity, and the game already says so somewhere else:
-     * `DeckMachineKind.fillPermille` puts a quarter of a tile of this in a furnace wall.
-     */
-    Firebrick(800, 824, solidKgPerCubicMetre = 3092, milliWattsPerMetreKelvin = 2_500, meltingKelvin = 1890),   // softening point of a forsterite refractory, NOT a melting point
 
     // ══ THE VOLATILES ═════════════════════════════════════════════════════════════════════════
     //

@@ -30,7 +30,15 @@ private fun madeOf(kind: DeckMachineKind): Species = when (kind) {
     // The skin: cheap, stiff, and the only thing that touches space.
     DeckMachineKind.Hull, DeckMachineKind.Airlock -> Species.Steel
     // A furnace is lined with refractory or it takes itself apart the first time it is lit.
-    DeckMachineKind.Furnace -> Species.Firebrick
+    //
+    // ⭐ **Forsterite, and it is native.** This was `Firebrick` — a species deleted for claiming a
+    // formula the MgO–SiO₂ system has no compound at — and the replacement is not a downgrade:
+    // a magnesia-silica refractory brick fires *to* forsterite, which is what the deleted
+    // species' own melting point was quoted as the softening point of. ⚠️ It also makes the
+    // lining something a fresh world can dig up rather than manufacture, since forsterite is
+    // the second most abundant mineral in the game — see `REACTIONS`, where the firing row
+    // survives as a way to upgrade periclase and quartz tailings rather than as the only route.
+    DeckMachineKind.Furnace -> Species.Forsterite
     // Fittings that sit on a run are the run's metal, so a joint is one substance throughout.
     DeckMachineKind.Bridge, DeckMachineKind.Gauge -> RAIL_METAL
     DeckMachineKind.Valve -> WIRE_METAL

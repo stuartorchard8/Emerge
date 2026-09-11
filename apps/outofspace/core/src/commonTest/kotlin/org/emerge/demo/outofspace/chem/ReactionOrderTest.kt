@@ -38,8 +38,10 @@ class ReactionOrderTest {
      *
      * ⛔ **None of these six is a judgement about which row *deserves* to win.** They are a record of
      * which one does, so that changing it has to be deliberate. Two of them are arguably backwards —
-     * a player picking PERICLASE almost certainly means the magnesium reduction, not firebrick — and
-     * that is an argument for fixing the format, not for reordering the table underneath saved games.
+     * a player picking PERICLASE almost certainly means one of the two magnesium reductions, not the
+     * refractory firing — and that is an argument for fixing the format, not for reordering the table
+     * underneath saved games. ⚠️ Periclase is the principal of **three** rows as of 2026-09-11, so
+     * two of its three meanings are now unreachable from a save rather than one.
      */
     private val resolvesTo: Map<Species, String> = mapOf(
         // The fire, not the cracking. ⛔ The one that had already been silently reversed once.
@@ -50,9 +52,17 @@ class ReactionOrderTest {
         Species.Algae to "100 Algae + 6 Water + 6 CarbonDioxide -> 101 Algae + 6 Oxygen",
         // Rusting, not the making of steel.
         Species.Iron to "4 Iron + 3 Oxygen -> 2 Hematite",
-        // ⚠️ Firebrick firing, **not** the Pidgeon reduction — the pair the memory names as the
-        // original footgun, and it resolves to the one a player is less likely to have meant.
-        Species.Periclase to "11 Periclase + 6 Quartz -> 1 Firebrick",
+        // ⚠️ **Three rows now, not two, and this is still the first of them.** Refractory firing,
+        // ahead of both routes to magnesium — the carbothermic one at 2050 K and the silicothermic
+        // one at 2200 K.
+        //
+        // ⭐ **The one shared principal whose meaning did NOT move on 2026-09-11**, which is luck
+        // worth naming. `Firebrick` was deleted and its firing row replaced by the forsterite one
+        // that the MgO–SiO₂ system actually has, so a furnace saved with `recipe=Periclase` loads as
+        // a different `Reaction` object than it did — but it loads as *the same intent*: fire
+        // periclase and quartz into a lining. The setpoint moves 1700 → 1500 and the product changes
+        // name; nothing about what the player was doing changes.
+        Species.Periclase to "2 Periclase + 1 Quartz -> 1 Forsterite",
         // Roasting to magnetite, not the carbothermic reduction to iron.
         Species.Hematite to "6 Hematite -> 4 Magnetite + 1 Oxygen",
     )

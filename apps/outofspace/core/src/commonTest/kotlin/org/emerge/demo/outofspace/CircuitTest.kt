@@ -34,7 +34,7 @@ import kotlin.test.assertTrue
  * Every test here is a connectivity question and none of them needs any electricity, which is why
  * this increment was split off: the graph carries the design risk and is testable on its own. The
  * three the plan names are all here — a crossing is two circuits, a terminal makes it one, and a
- * copper-cased machine shorts its own ends while a firebrick-cased one does not.
+ * copper-cased machine shorts its own ends while a forsterite-cased one does not.
  */
 class CircuitTest {
 
@@ -182,16 +182,16 @@ class CircuitTest {
 
     /** ⭐ And a resistive casing leaves them apart, which is the machine that works. */
     @Test
-    fun `a firebrick cased cell keeps its two terminals apart`() {
-        val (c, bodies) = cellBetweenStubs(Species.Firebrick)
+    fun `a forsterite cased cell keeps its two terminals apart`() {
+        val (c, bodies) = cellBetweenStubs(Species.Forsterite)
         val centre = grid.tile(6, 4)
         val m = Electrolyzer(centre, Direction.Right)
         val neg = nodeAt(c, bodies, Conduit.Power, terminalTile(grid, m, centre, TerminalRole.Negative)!!)
         val pos = nodeAt(c, bodies, Conduit.Power, terminalTile(grid, m, centre, TerminalRole.Positive)!!)
-        assertTrue(pos != neg, "a firebrick casing conducted between the ends it stands between")
+        assertTrue(pos != neg, "a forsterite casing conducted between the ends it stands between")
         assertTrue(
             bodies.none { it.slot == BodySlot.DeckStore && c.circuitOfBody(bodies.indexOf(it)) != Circuit.NOT_CONDUCTING },
-            "a firebrick casing turned up in the graph at all",
+            "a forsterite casing turned up in the graph at all",
         )
     }
 
@@ -316,7 +316,7 @@ class CircuitTest {
     fun `what a machine is holding is not part of the circuit`() {
         val centre = grid.tile(6, 4)
         val deck = DeckArray(grid)
-        deck.stand(Electrolyzer(centre, Direction.Right), withCasing = true, material = Species.Firebrick)
+        deck.stand(Electrolyzer(centre, Direction.Right), withCasing = true, material = Species.Forsterite)
         val buffers = BufferLayer.forDeck(grid, deck)
         val store = terminalTile(grid, Electrolyzer(centre, Direction.Right), centre, TerminalRole.Negative)!!
         buffers.put(store, Mixture.of(Species.Copper to 400_000L, energy = 120_000_000L))

@@ -284,21 +284,26 @@ val MINERALS: Map<Species, Map<Species, Int>> = mapOf(
     // ── Biology ──
     Species.Algae to mapOf(Species.Carbon to 6, Species.Hydrogen to 12, Species.Oxygen to 6),
 
-    // ── The manufactured materials, which are ratios rather than molecules ──
+    // ── The manufactured material, which is a ratio rather than a molecule ──
     //
-    // ⛔ **Neither of these is a compound and the table knows it.** Steel is a solid solution and
-    // firebrick is a two-phase ceramic; what is written here is the integer formula unit whose mass
-    // split *is* the recipe, so that an alloying reaction closes atom by atom against the same
-    // oracle every real mineral answers to. Fe₉₉C is 0.216% carbon by mass and (MgO)₁₁(SiO₂)₆ is
-    // 55.0% magnesia — the two recipes, with no second place to state them and no rounding rule
+    // ⛔ **This is not a compound and the table knows it.** Steel is a solid solution; what is
+    // written here is the integer formula unit whose mass split *is* the recipe, so that an alloying
+    // reaction closes atom by atom against the same oracle every real mineral answers to. Fe₉₉C is
+    // 0.216% carbon by mass — the recipe, with no second place to state it and no rounding rule
     // standing between the recipe and what conserves.
     //
-    // ⚠️ They are keys here for that arithmetic and for nothing else. Both take
-    // [Species.relativeAbundance] of zero, so no rock rolls either, and `everyMineralIsMinedOrMade`
-    // holds them to the same standard as lime and periclase: something in `REACTIONS` has to make
-    // them or they are dead weight.
+    // ⛔ **Firebrick stood beside it as `(MgO)₁₁(SiO₂)₆` and is deleted.** That formula was the one
+    // entry in this table that no mineralogy backs: the MgO–SiO₂ binary has two intermediate
+    // compounds, forsterite and enstatite, and an eleven-to-six ratio is neither of them. It was a
+    // *mass* recipe — 55:45 — wearing a formula's clothes, and the oracle this file exists to be
+    // cannot check a formula nobody measured. See `REACTIONS`, which now fires periclase and quartz
+    // to the forsterite they really make.
+    //
+    // ⚠️ It is a key here for that arithmetic and for nothing else. It takes
+    // [Species.relativeAbundance] of zero, so no rock rolls it, and `everyMineralIsMinedOrMade`
+    // holds it to the same standard as lime and periclase: something in `REACTIONS` has to make it
+    // or it is dead weight.
     Species.Steel to mapOf(Species.Iron to 99, Species.Carbon to 1),
-    Species.Firebrick to mapOf(Species.Magnesium to 11, Species.Silicon to 6, Species.Oxygen to 23),
 )
 
 /**

@@ -35,7 +35,7 @@ creative 1
 camera centre 20 15 44
 
 # ── Two more stores, of the other two sizes ──────────────────────────────────
-material Firebrick
+material Forsterite
 brush BUFFER Up
 place 30 13
 brush SILO Right

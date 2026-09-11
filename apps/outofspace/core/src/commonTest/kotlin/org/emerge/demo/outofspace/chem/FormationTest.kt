@@ -62,7 +62,10 @@ class FormationTest {
             "1 Steel + 1 Oxygen -> 99 Iron + 1 CarbonDioxide" to -394L,
             // ── Making what the vessel is built of ──
             "99 Iron + 1 Carbon -> 1 Steel" to 0L,
-            "11 Periclase + 6 Quartz -> 1 Firebrick" to 0L,
+            // ⭐ Not a defined zero any more but a derived −59, and it lands on the measured
+            // −62 kJ/mol for forsterite from its oxides. The row this replaced could only ever
+            // have been 0, because firebrick's enthalpy was *defined* as the sum of its reagents'.
+            "2 Periclase + 1 Quartz -> 1 Forsterite" to -59L,
             // ── Thermal decomposition ──
             "1 Calcite -> 1 Lime + 1 CarbonDioxide" to 178L,
             "1 Magnesite -> 1 Periclase + 1 CarbonDioxide" to 117L,
@@ -73,8 +76,20 @@ class FormationTest {
             // ── Reduction ──
             "1 Quartz + 2 Carbon -> 1 Silicon + 2 CarbonMonoxide" to 689L,
             "2 Periclase + 1 Silicon -> 2 Magnesium + 1 Quartz" to 293L,
-            "1 Forsterite + 4 Carbon -> 2 Periclase + 1 Silicon + 2 Carbon + 2 CarbonMonoxide" to 748L,
-            "1 Enstatite + 3 Carbon -> 1 Periclase + 1 Silicon + 1 Carbon + 2 CarbonMonoxide" to 723L,
+            "1 Periclase + 1 Carbon -> 1 Magnesium + 1 CarbonMonoxide" to 491L,
+            // ⚠️ **Both silicates changed shape on 2026-09-11 and got much dearer**, 748 → 1730 and
+            // 723 → 1214. They used to stop at periclase and silicon, which is not a resting place
+            // at any temperature — see [REACTIONS] for the two Ellingham crossings that say so —
+            // and they used to return two of their own carbons unburnt. Priced by hand the same way
+            // as every line here: 4(-111) - (-2174) = 1730, and 3(-111) - (-1547) = 1214.
+            //
+            // ⚠️ **Both under-charge by magnesium's heat of sublimation**, +147 kJ/mol, twice over
+            // for forsterite and once for enstatite. [FORMATION_ENTHALPY] quotes Mg as the solid at
+            // zero per its own reference-phase rule, so the true figures at the temperature these
+            // run at are 2024 and 1361. That is a known gap in the reference phase, not in the
+            // arithmetic, and it is the same gap the steel row has for iron's heat of fusion.
+            "1 Forsterite + 4 Carbon -> 2 Magnesium + 1 Silicon + 4 CarbonMonoxide" to 1730L,
+            "1 Enstatite + 3 Carbon -> 1 Magnesium + 1 Silicon + 3 CarbonMonoxide" to 1214L,
             // ⚠️ **Both rows changed shape on 2026-09-11, not just price** — they made CO₂ beside
             // their own leftover carbon above the Boudouard onset, which is a two-step written as
             // one. Carbon doubled and the product became CO; see [REACTIONS]. Priced by hand the
@@ -134,8 +149,16 @@ class FormationTest {
      * hand-written-to-derived move this list is about; the rows they named no longer exist, and a
      * record keyed by a formula can only honestly hold formulas that are still in the table.
      *
-     * ⛔ **Four of these are roundings and two are genuine unknowns.** Methane, hydrogen sulfide,
-     * ammonia-burning, magnesite, quartz, forsterite, ilmenite and rutile all moved by 1–2 kJ, which
+     * ⚠️ **The forsterite and enstatite rows went the same way later the same day**, and for a
+     * larger reason than a coefficient: their *products* were wrong, not just their price. They used
+     * to stop at periclase and silicon, which is not a stable pair at any temperature — see
+     * `ProductStabilityTest`. They were 750 → 748 and 890 → 723 in the move this list records, both
+     * of which were roundings; they are now 1730 and 1214 against formulas that no longer resemble
+     * the ones named here, so keeping them would be recording a drift that has been overtaken by a
+     * correction.
+     *
+     * ⛔ **Most of these are roundings and two are genuine unknowns.** Methane, hydrogen sulfide,
+     * ammonia-burning, magnesite, quartz, ilmenite and rutile all moved by 1–2 kJ, which
      * is the difference between a textbook's rounded figure and this table's — noise. Serpentine
      * (−91) and pyrite (+38) are **not** noise: they are entries whose ΔH_f nobody has sourced
      * properly, and they are the two rows most worth a reference check. See [FORMATION_ENTHALPY] on
@@ -153,8 +176,6 @@ class FormationTest {
             "1 Pyrite -> 1 Troilite + 1 Sulfur" to 40L,
             "1 Algae -> 1 Methane + 1 CarbonDioxide + 4 Water + 4 Carbon" to 65L,
             "1 Quartz + 2 Carbon -> 1 Silicon + 2 CarbonMonoxide" to 690L,
-            "1 Forsterite + 4 Carbon -> 2 Periclase + 1 Silicon + 2 Carbon + 2 CarbonMonoxide" to 750L,
-            "1 Enstatite + 3 Carbon -> 1 Periclase + 1 Silicon + 1 Carbon + 2 CarbonMonoxide" to 890L,
             "1 Ilmenite + 1 Carbon -> 1 Iron + 1 Rutile + 1 CarbonMonoxide" to 180L,
             "1 Rutile + 2 Magnesium -> 1 Titanium + 2 Periclase" to -259L,
         )
@@ -181,7 +202,7 @@ class FormationTest {
         for (species in FORMATION_ENTHALPY.keys) {
             // An element is a species [MINERALS] has no formula for — it is not made of anything.
             if (MINERALS.containsKey(species)) continue
-            if (species == Species.Steel || species == Species.Firebrick) continue // defined, see the table
+            if (species == Species.Steel) continue // defined, see the table
             assertEquals(
                 0,
                 FORMATION_ENTHALPY[species],

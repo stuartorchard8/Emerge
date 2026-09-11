@@ -159,19 +159,27 @@ val FORMATION_ENTHALPY: Map<Species, Int> = mapOf(
     Species.Stibnite to -175, // Sb2S3
     Species.Bismuthinite to -143, // Bi2S3
 
-    // ══ THE TWO THE VESSEL MAKES OUT OF ITSELF ════════════════════════════════════════════════
+    // ══ THE ONE THE VESSEL MAKES OUT OF ITSELF ════════════════════════════════════════════════
     //
-    // ⚠️ **These two are defined rather than measured, and the definition is a claim already made
-    // elsewhere in this codebase**: `REACTIONS` says of both steel and firebrick that "forming a
-    // solid solution or a two-phase ceramic from its ingredients releases essentially nothing", and
-    // that the energy a foundry spends is spent getting the charge to temperature. Stating each as
-    // the sum of what it is made of is exactly that sentence, written where the arithmetic can read
-    // it — and it keeps both rows at the zero they were hand-written to have.
+    // ⚠️ **This one is defined rather than measured, and the definition is a claim already made
+    // elsewhere in this codebase**: `REACTIONS` says of steel that "forming a solid solution from its
+    // ingredients releases essentially nothing", and that the energy a foundry spends is spent
+    // getting the charge to temperature. Stating it as the sum of what it is made of is exactly that
+    // sentence, written where the arithmetic can read it — and it keeps the row at the zero it was
+    // hand-written to have.
     //
-    // ⛔ They are the only two entries here that a textbook cannot check, because neither is a real
-    // substance. Everything else must be sourced.
+    // ⛔ It is the only entry here that a textbook cannot check, because it is not a real substance.
+    // Everything else must be sourced.
+    //
+    // ⛔ **`Firebrick to -12088` sat beside it and is deleted**, and it is worth being clear about
+    // what that entry was doing wrong. Defining it as `11·(-602) + 6·(-911)` did not merely decline
+    // to source a number — it *forced* the firing row to be athermal, because a species whose
+    // formation enthalpy is by construction the sum of its reagents' can only ever produce a Hess
+    // answer of zero. The real magnesia-silica reaction releases 59 kJ/mol to forsterite and 34 to
+    // enstatite, both of which this table reproduces from entries that *were* sourced. So the
+    // defined entry was not a placeholder for a measurement; it was a guarantee the measurement
+    // could never be noticed. See `REACTIONS`.
     Species.Steel to 0, // Fe99C, from 99 Fe + C, both elements at zero
-    Species.Firebrick to -12088, // (MgO)11(SiO2)6, from 11*(-602) + 6*(-911)
 )
 
 /**
