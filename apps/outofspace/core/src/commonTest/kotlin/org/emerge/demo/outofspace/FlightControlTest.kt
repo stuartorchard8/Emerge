@@ -205,6 +205,170 @@ class FlightControlTest {
     }
 
     /**
+     * **The mirror of the claim above, and the bug this section was written for.** A turn is a
+     * request for torque *and for zero force*, so an opposed pair at unequal arms must be throttled
+     * onto each other rather than each run at whatever its own geometry asks for.
+     *
+     * One tile off the axis and three tiles off it, pushing opposite ways: both turn the ship the
+     * same way, and left alone they fire at 500 and 1000 permille, which yaws the ship *and shoves
+     * it sideways at half a motor*. What the pilot asked for was a yaw.
+     */
+    @Test
+    fun `a turn is balanced so that it does not also shove the ship`() {
+        val near = Motor(Direction.Right, leverX = 0, leverY = -1 * Rotation.MILLI_TILE, push = RATE)
+        val far = Motor(Direction.Left, leverX = 0, leverY = 3 * Rotation.MILLI_TILE, push = RATE)
+
+        val plan = flightActivations(FlightIntent(spin = FlightIntent.FULL), listOf(near, far))
+
+        assertTrue(plan[0] > 0 && plan[1] > 0, "the pair did not turn the ship at all: ${plan.toList()}")
+        assertEquals(0L, netForce(plan, listOf(near, far)).first, "the yaw shoved the ship: ${plan.toList()}")
+        assertEquals(0L, netForce(plan, listOf(near, far)).second)
+    }
+
+    /**
+     * And the same balance is struck on **thrust and not on throttle**, which is what a pair burning
+     * different propellants needs.
+     *
+     * Equal permille out of unequal engines is unequal thrust: hydrogen is worth three times water,
+     * so a symmetric pair of motors with a symmetric pair of *arms* still shoves the ship if all the
+     * balance looks at is the geometry. The weaker engine is the one flat out here.
+     */
+    @Test
+    fun `a couple of unequal engines is throttled onto the weaker one`() {
+        val strong = Motor(Direction.Right, leverX = 0, leverY = -4 * Rotation.MILLI_TILE, push = RATE)
+        val weak = Motor(Direction.Left, leverX = 0, leverY = 4 * Rotation.MILLI_TILE, push = RATE / 2L)
+
+        val plan = flightActivations(FlightIntent(spin = FlightIntent.FULL), listOf(strong, weak))
+
+        assertEquals(FlightIntent.FULL, plan[1], "the weaker motor was not left flat out: ${plan.toList()}")
+        assertTrue(plan[0] < plan[1], "the stronger motor was not throttled back: ${plan.toList()}")
+        // ⚠️ **Not exactly zero, and it cannot be.** A throttle is permille, so the exact half this
+        // balance wants lands between two settings and the stronger motor is opened to 499 rather
+        // than 500. What is left is one permille of one engine — the controls' own resolution — and
+        // it is short of the balance rather than over it, because the scaling truncates and the
+        // weaker side is never scaled up to meet it.
+        val (fx, fy) = netForce(plan, listOf(strong, weak))
+        assertEquals(0L, fy)
+        assertTrue(abs(fx) <= strong.push, "the yaw shoved the ship by more than a permille: $fx")
+    }
+
+    /**
+     * **A motor that could only turn the ship by shoving it stands down, when the ship has better.**
+     *
+     * Two mains either side of the centre of mass and a proper couple. The mains both push forward,
+     * so for a turn exactly one of them lights and there is nothing aboard to cancel it: firing it
+     * would yaw the ship *and* push it forward, when the couple was going to yaw it for nothing.
+     */
+    @Test
+    fun `a motor with nothing to cancel it stands down if the ship can turn without it`() {
+        val portMain = Motor(Direction.Up, leverX = -4 * Rotation.MILLI_TILE, leverY = 0, push = RATE)
+        val starboardMain = Motor(Direction.Up, leverX = 4 * Rotation.MILLI_TILE, leverY = 0, push = RATE)
+        val bow = Motor(Direction.Right, leverX = 0, leverY = -4 * Rotation.MILLI_TILE, push = RATE)
+        val stern = Motor(Direction.Left, leverX = 0, leverY = 4 * Rotation.MILLI_TILE, push = RATE)
+        val motors = listOf(portMain, starboardMain, bow, stern)
+
+        val plan = flightActivations(FlightIntent(spin = FlightIntent.FULL), motors)
+
+        assertTrue(plan[0] <= 0 && plan[1] <= 0, "a main fired for a turn the couple had: ${plan.toList()}")
+        assertEquals(FlightIntent.FULL, plan[2], "the couple did not turn the ship")
+        assertEquals(FlightIntent.FULL, plan[3])
+        assertEquals(Pair(0L, 0L), netForce(plan, motors), "the yaw moved the ship: ${plan.toList()}")
+    }
+
+    /**
+     * ⚠️ **But a ship with nothing better shoves, exactly as it always did.**
+     *
+     * Two engines both facing forward cannot turn the vessel without also moving it — there is no
+     * arrangement of those two throttles that makes a torque and no force. Refusing to fire would be
+     * a ship that cannot turn at all, so it turns and it wallows, and [Sas] is not going to help
+     * because SAS only ever leans on the spin. This is the one case where the rule above gives way.
+     */
+    @Test
+    fun `a ship that can only turn by shoving still turns`() {
+        val port = Motor(Direction.Up, leverX = -4 * Rotation.MILLI_TILE, leverY = 0, push = RATE)
+        val starboard = Motor(Direction.Up, leverX = 4 * Rotation.MILLI_TILE, leverY = 0, push = RATE)
+
+        val plan = flightActivations(FlightIntent(spin = FlightIntent.FULL), listOf(port, starboard))
+
+        assertTrue(plan[0] > 0 || plan[1] > 0, "it would rather not turn than turn untidily")
+    }
+
+    /** An empty motor cannot unbalance anything, so it does not stop the ship turning cleanly. */
+    @Test
+    fun `a motor with a dry tank is weighed at nothing`() {
+        val dry = Motor(Direction.Up, leverX = -4 * Rotation.MILLI_TILE, leverY = 0, push = 0L)
+        val bow = Motor(Direction.Right, leverX = 0, leverY = -4 * Rotation.MILLI_TILE, push = RATE)
+        val stern = Motor(Direction.Left, leverX = 0, leverY = 4 * Rotation.MILLI_TILE, push = RATE)
+        val motors = listOf(dry, bow, stern)
+
+        val plan = flightActivations(FlightIntent(spin = FlightIntent.FULL), motors)
+
+        assertEquals(FlightIntent.FULL, plan[1], "the dry motor stopped the couple turning: ${plan.toList()}")
+        assertEquals(FlightIntent.FULL, plan[2])
+        assertEquals(Pair(0L, 0L), netForce(plan, motors))
+    }
+
+    /**
+     * **The same claim through the reducer, on a ship that exists: yaw the vessel and it stays put.**
+     *
+     * Four motors — a couple bolted bow-port and stern-starboard, pushing opposite ways about the
+     * centre of mass, and two mains in the stern wall.
+     * For a clockwise turn exactly one main lights on geometry alone, and there is nothing aboard
+     * that could cancel the forward shove it makes; the couple can do the whole turn for nothing. So
+     * the answer is the couple, both mains cold, and a ship that comes out of the manoeuvre turning
+     * and **not travelling**.
+     *
+     * The measurement is propellant actually gone from each tank and the vessel's own velocity,
+     * which is the version of this a player can check by holding E and watching the ship.
+     */
+    @Test
+    fun `a pure yaw turns the ship without moving it`() {
+        val cfg = OutofspaceConfig()
+        val grid = cfg.initialGrid
+        // ⚠️ A thruster's push is the **opposite** of its facing, so the motor that shoves the bow to
+        // starboard is the one bolted in the *port* wall with its bell hanging outboard.
+        val bow = grid.tile(HULL_LEFT, BAY_Y - 8)
+        val stern = grid.tile(HULL_RIGHT, BAY_Y + 8)
+        val portMain = grid.tile(MIDSHIPS - 4, HULL_BOTTOM)
+        val starboardMain = grid.tile(MIDSHIPS + 4, HULL_BOTTOM)
+        val controller = OutofspaceController(cfg, yawingShip(grid, bow, stern, portMain, starboardMain))
+        controller.mode = Mode.Flight
+        controller.heldKeys = InputKey.E.bit
+
+        val tiles = listOf(bow, stern, portMain, starboardMain)
+        val before = tiles.map { tank(controller.state, it) }
+        repeat(TICKS) { controller.stepOnce() }
+        val burned = before.zip(tiles.map { tank(controller.state, it) }) { b, a -> b - a }
+
+        val s = controller.state
+        assertTrue(burned[0] > 0L && burned[1] > 0L, "the couple did not turn the ship: $burned")
+        assertTrue(s.angImpulse > 0L, "asked to turn to starboard, the ship turned ${s.angImpulse}")
+        assertEquals(0L, burned[2], "a main burned $burned on a pure yaw")
+        assertEquals(0L, burned[3], "a main burned $burned on a pure yaw")
+        // Nothing left over, and on this ship *exactly* nothing: both halves of the couple are asked
+        // for more than a throttle has, so both sit at full and throw the same mass the same way out
+        // of the same propellant. Measured on the nozzles as well as on the hull, because a ship
+        // that is not moving because its two exhausts cancelled is the claim, and a ship that is not
+        // moving because nothing fired would pass half of it.
+        assertEquals(0L, s.exhaustMomentumX, "the yaw threw more out of one side than the other")
+        assertEquals(0L, s.exhaustMomentumY)
+        assertEquals(0L, s.velocityX, "a pure yaw shoved the ship sideways: ${s.velocityX}")
+        assertEquals(0L, s.velocityY, "a pure yaw pushed the ship along its own axis: ${s.velocityY}")
+    }
+
+    /** What the plan actually pushes the ship with, summed over every motor that is open. */
+    private fun netForce(plan: IntArray, motors: List<Motor>): Pair<Long, Long> {
+        var fx = 0L
+        var fy = 0L
+        for (i in motors.indices) {
+            val open = plan[i].coerceAtLeast(0).toLong()
+            fx += open * motors[i].push * motors[i].thrust.dx
+            fy += open * motors[i].push * motors[i].thrust.dy
+        }
+        return fx to fy
+    }
+
+    /**
      * The same claim again, but through the reducer on a ship that exists: an asymmetric hull with
      * two rearward motors at unequal arms and one beam motor, asked to go forward.
      *
@@ -524,6 +688,43 @@ class FlightControlTest {
             Mixture.of(Species.Hydrogen to 40L * Capacity.PACKET_MASS, energy = 0).atAmbient(),
         )
         return state.copy(angImpulse = SPUN)
+    }
+
+    /**
+     * A box with a proper couple — the bow shoved to starboard and the stern to port, which is a
+     * torque and no force at all — and two mains in the stern wall either side of the axis.
+     */
+    private fun yawingShip(
+        grid: Grid,
+        bow: TileIndex,
+        stern: TileIndex,
+        portMain: TileIndex,
+        starboardMain: TileIndex,
+    ): VesselState {
+        val deck = DeckArray(grid)
+        fun put(x: Int, y: Int) { if (grid.inBounds(x, y) && deck[grid.tile(x, y)] == null) deck += Hull(grid.tile(x, y)) }
+        for (x in HULL_LEFT..HULL_RIGHT) { put(x, HULL_TOP); put(x, HULL_BOTTOM) }
+        for (y in HULL_TOP..HULL_BOTTOM) { put(HULL_LEFT, y); put(HULL_RIGHT, y) }
+        val facings = listOf(
+            bow to Direction.Left,
+            stern to Direction.Right,
+            // Sternward motors exhaust down, so they push the ship up the screen: forward.
+            portMain to Direction.Down,
+            starboardMain to Direction.Down,
+        )
+        for ((tile, facing) in facings) { deck -= tile; deck += Thruster(tile, facing = facing) }
+        return VesselState(
+            grid = grid,
+            deck = deck,
+            air = Stuff.gas(MassArray(grid.size)),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+        ).also { state ->
+            for ((tile, _) in facings) state.stocked(
+                tile,
+                Mixture.of(Species.Water to 8L * Capacity.PACKET_MASS, energy = 0).atAmbient(),
+            )
+        }
     }
 
     /** What is left in one motor's propellant tank. */

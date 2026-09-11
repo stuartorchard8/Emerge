@@ -198,12 +198,45 @@ class Motor(
  * afterwards if it is on. Refusing to fire would be a ship that cannot move, which is a worse answer
  * than a ship that wallows.
  *
- * ### 2. Rotation, added on top
+ * ### 2. Rotation, then **balanced the other way round**
  *
- * The turn the pilot (or [Sas]) asked for is then added — unbalanced, deliberately. A rotation
- * request *is* a request for net torque, so there is nothing to cancel; what a motor contributes is
- * its alignment through [Sas]-independent [rotationTerm], and the sum is clamped last so a motor
- * asked for both at once cannot exceed itself.
+ * The turn the pilot (or [Sas]) asked for is worked out next — what a motor contributes is its
+ * alignment through [Sas]-independent [rotationTerm] — and then balanced by the mirror image of the
+ * pass above. A translation request is a request for net *force*, so the pass cancels the torque; a
+ * rotation request is a request for net *torque*, so this one cancels the **force**. Turning the
+ * ship is not supposed to move it, and a yaw that shoves the vessel sideways is the same fault as a
+ * burn that twists it.
+ *
+ * ⚠️ **Which is not what this did until it was noticed in flight**, and the comment that used to
+ * stand here said so: "a rotation request *is* a request for net torque, so there is nothing to
+ * cancel". There is — a yaw asks for torque **and for zero force**, and leaving the second half out
+ * showed up three ways. An opposed pair at unequal arms fires at unequal throttles, so it shoves.
+ * An opposed pair burning different propellants fires at equal throttles and *still* shoves, since
+ * equal permille out of unequal engines is unequal thrust. And a ship with both a proper couple and
+ * a main engine that happens to be off the axis fired the main too, spoiling a turn that was
+ * available clean.
+ *
+ * The balance runs **per axis**, and that is exact rather than a simplification: a thruster is
+ * axis-aligned, so the motors it weighs against each other on x are disjoint from the ones on y and
+ * neither scaling can disturb the other. Within an axis it is [balanceThrust], which is pass 1's
+ * arithmetic with `push` in place of `push × cross`.
+ *
+ * ⚠️ **A motor whose push nothing aboard can cancel is shut down — unless it is the only turn the
+ * ship has.** Two engines both facing forward can only yaw by shoving, so a ship built that way goes
+ * on yawing and shoving; a ship that also carries a couple uses the couple and leaves the main cold.
+ * This is deliberately *not* pass 1's rule (there, the lonely motor always fires), and the asymmetry
+ * is the point: refusing to translate is a ship that cannot go anywhere, while refusing one dirty
+ * route to a turn is a ship that takes the clean one it already had.
+ *
+ * The sum is clamped last, so a motor asked for both at once cannot exceed itself. ⚠️ **What is left
+ * over is the throttle's own resolution and nothing else**: a permille is the finest setting there
+ * is, so a pair the balance wants at exactly half of one engine gets 499 rather than 499.5, and a
+ * residue under one part in a thousand of the burn escapes. It is short of the balance and never
+ * over it, because the scaling only ever throttles the stronger side down.
+ *
+ * ⚠️ And the clamp can take a bite out of a turn the balance had just squared — a motor already flat
+ * out on the translation has no room for its share of the rotation — so the guarantee is exact for a
+ * pure turn and best-effort for a stick held over in both hands at once.
  */
 fun flightActivations(intent: FlightIntent, motors: List<Motor>): IntArray {
     val out = IntArray(motors.size)
@@ -238,13 +271,99 @@ fun flightActivations(intent: FlightIntent, motors: List<Motor>): IntArray {
     }
 
     // ── 2. Rotation ──────────────────────────────────────────────────────────
+    // Worked out into its own array rather than added straight onto `out`, because the balance is
+    // struck over the *turn* and not over the total. What pass 1 put there is the net force the
+    // pilot asked for, and cancelling that would be cancelling the burn.
+    val turn = IntArray(motors.size)
     for (i in motors.indices) {
         val m = motors[i]
-        out[i] = (out[i] + rotationTerm(intent.spin, m.thrust, m.leverX, m.leverY))
+        // ⚠️ **Clamped here and not only at the end**, because the balance weighs one motor's thrust
+        // against another's and a throttle that reads 2000 will still only open to 1000. Balancing
+        // the raw terms and clamping afterwards squares a pair that the clamp then pulls apart
+        // again — which is exactly how an opposed pair at four tiles came out at 666 against 1000.
+        //
+        // It also makes [translationTerm]'s standing claim true, which it was not before: a motor
+        // pushing the wrong way scores −1000, and only an unclamped rotation term could ever have
+        // dragged it back open.
+        turn[i] = rotationTerm(intent.spin, m.thrust, m.leverX, m.leverY)
             .coerceIn(-FlightIntent.FULL, FlightIntent.FULL)
+    }
+    balanceThrust(turn, motors)
+    for (i in motors.indices) {
+        out[i] = (out[i] + turn[i]).coerceIn(-FlightIntent.FULL, FlightIntent.FULL)
     }
     return out
 }
+
+/**
+ * Take the net force out of a turn: opposed motors throttled onto each other, and a motor with
+ * nothing to oppose it shut down — in place, over the rotation terms alone.
+ *
+ * Pass 1's arithmetic with `push` where it has `push × cross`, run once for each axis. A negative
+ * term is a motor the turn does not want and is left alone: it is off already as far as the throttle
+ * is concerned, and it may be carrying a translation suppression that is none of this function's
+ * business.
+ *
+ * ⚠️ **`push` is used raw here, where pass 1 reduces it by a gram.** That reduction is there to keep
+ * `term × cross × push` inside a Long, and there is no lever arm in a force — so the division is not
+ * needed, and leaving it out is what lets a motor throwing less than a gram a tick still be weighed
+ * against its opposite number instead of vanishing out of the balance. The headroom is checked
+ * rather than assumed: the hardest-throwing engine in the game is a rocket on hydrogen at about
+ * 2e11, a throttle is 1e3, and a hull the size of the grid holds under three thousand two-tile
+ * motors — 6e17 against a Long's 9.2e18.
+ */
+private fun balanceThrust(turn: IntArray, motors: List<Motor>) {
+    // Whether each axis had a push and a shove to set against each other. Recorded per axis and read
+    // afterwards, because "is there a clean turn available" is a question about the whole ship —
+    // and because it has to be asked of the throttles as they were *before* the scaling, which can
+    // truncate a wildly overmatched motor to nothing and make a balanced axis look empty.
+    var clean = false
+    var loose = false
+    val opposed = BooleanArray(2)
+    for (axis in 0..1) {
+        var positive = 0L
+        var negative = 0L
+        for (i in motors.indices) {
+            if (turn[i] <= 0) continue
+            val d = motors[i].thrust.along(axis)
+            if (d == 0) continue
+            val force = turn[i].toLong() * motors[i].push
+            if (d > 0) positive += force else negative += force
+        }
+        if (positive > 0L && negative > 0L) {
+            opposed[axis] = true
+            clean = true
+            if (positive == negative) continue
+            // Scale the stronger side down onto the weaker one, down and never up, for the reason
+            // pass 1 gives: the weaker side is already flat out and a throttle cannot exceed itself.
+            val heavy = if (positive > negative) 1 else -1
+            val numerator = if (positive > negative) negative else positive
+            val denominator = if (positive > negative) positive else negative
+            for (i in motors.indices) {
+                if (turn[i] <= 0) continue
+                val d = motors[i].thrust.along(axis)
+                if (d == 0 || (d > 0) != (heavy > 0)) continue
+                turn[i] = (turn[i].toLong() * numerator / denominator).toInt()
+            }
+        } else if (positive > 0L || negative > 0L) {
+            // Everything firing on this axis pushes the same way, so nothing aboard can cancel it.
+            // ⚠️ Recorded rather than shut down here: whether it is allowed to fire anyway depends
+            // on what the *other* axis turned out to have, which is not known yet.
+            loose = true
+        }
+    }
+    if (!loose || !clean) return
+    // The ship has a clean turn available, so it takes it: everything that could only have turned it
+    // by shoving it stands down. A motor that throws nothing shoves nothing and is left where it is.
+    for (i in motors.indices) {
+        if (turn[i] <= 0 || motors[i].push <= 0L) continue
+        val axis = if (motors[i].thrust.dx != 0) 0 else 1
+        if (!opposed[axis]) turn[i] = 0
+    }
+}
+
+/** This direction's component on [axis]: 0 for x, 1 for y. The two axes balance separately. */
+private fun Direction.along(axis: Int): Int = if (axis == 0) dx else dy
 
 /**
  * How much this motor's push is the push that was asked for: `thrust · intent`, in permille.
