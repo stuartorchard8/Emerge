@@ -407,6 +407,12 @@ class Demand(
  * ever make a tile look *less* hungry than it is. That is the safe direction: the failure is a
  * source that waits a tick, not a network that over-draws and jams.
  */
+/** One walk's answers, per tile — see [Whitelist.of], which runs more than one on a looped network. */
+internal class Reach(
+    val routes: Array<MutableList<Demand>?>,
+    val unlimited: BooleanArray,
+)
+
 class Whitelist private constructor(
     /** Per tile: the routes out of it that are worth anything. Null where there are none. */
     private val routes: Array<MutableList<Demand>?>,
@@ -415,7 +421,38 @@ class Whitelist private constructor(
      * the way — the fast path, and the answer on any vessel with no construction going on.
      */
     private val unlimited: BooleanArray,
+    /** Every span, near end to far end — [permitsPast] needs the pairing. */
+    private val hops: Map<TileIndex, TileIndex>,
+    /**
+     * For a span that can reach round to its own mouth, the network **with that mouth deleted**.
+     *
+     * Empty on anything without a ring on it. See [Whitelist.of] and [permitsPast].
+     */
+    private val past: Map<TileIndex, Reach>,
 ) {
+    /**
+     * Whether a span at [mouth] could usefully carry [mixture] across — **the road past it**, which
+     * is the only question a span's door has.
+     *
+     * ⛔ **And "past" has to mean past.** Read off the far end's own routes it includes the road
+     * *behind* the mouth: on a loop every consumer the mouth feeds is reachable from the far end by
+     * going round and back in through the mouth, so the span reads them as somewhere it can deliver
+     * and swallows material bound for them — on every lap, for ever. Stu's `cycle` save. Where the
+     * far end can reach round like that, this reads a walk made with the mouth deleted instead; see
+     * [Whitelist.of].
+     *
+     * ⚠️ **Kind, never quantity.** A lump standing at a mouth is already committed, and refusing it
+     * for being surplus strands it a tile earlier rather than saving it — the same `rationed = false`
+     * the door asks everywhere else.
+     */
+    fun permitsPast(mouth: TileIndex, mixture: Mixture): Boolean {
+        val far = hops[mouth] ?: return true
+        val reach = past[mouth] ?: return permits(far, mixture, rationed = false)
+        if (reach.unlimited.getOrElse(far.index) { false }) return true
+        val here = reach.routes.getOrNull(far.index) ?: return false
+        for (d in here) if (d.wants(mixture)) return true
+        return false
+    }
     /**
      * What sources have already let go of **during the life of this whitelist**, per sink.
      *
@@ -649,7 +686,7 @@ class Whitelist private constructor(
 
     companion object {
         /** Permits nothing anywhere: a world whose flow has not been worked out yet. */
-        fun empty(): Whitelist = Whitelist(arrayOfNulls(0), BooleanArray(0))
+        fun empty(): Whitelist = Whitelist(arrayOfNulls(0), BooleanArray(0), emptyMap(), emptyMap())
 
         private fun saturated(a: Long, b: Long): Long {
             val sum = a + b
@@ -673,188 +710,239 @@ class Whitelist private constructor(
             loadOn: (TileIndex, Mixture?) -> Long,
             usableBy: (TileIndex, Acceptance) -> Long = { t, a -> loadOn(t, a.bill) },
         ): Whitelist {
-            val routes = arrayOfNulls<MutableList<Demand>>(tileCount)
-            val unlimited = BooleanArray(tileCount)
+            // ⛔ **[excluded] is a tile deleted from the network for the length of one walk**, which
+            // is how "what could this span reach if it were not in the way of itself" is asked — see
+            // [reflectingSpans]. Null for the walk everything else reads.
+            fun walk(excluded: TileIndex?): Reach {
+                val routes = arrayOfNulls<MutableList<Demand>>(tileCount)
+                val unlimited = BooleanArray(tileCount)
 
-            // One tile's answer, worked out from its successors' — and nothing else. Everything it
-            // reads is either tile-local or already in [routes]/[unlimited], and everything it
-            // writes is its own slot, so asking it twice gives the same answer twice. That is what
-            // lets a cycle be iterated below.
-            //
-            // [charge] is the one part that is **not** idempotent across a lap: what stands on the
-            // track is divided among the sinks that can eat it, and going round a loop twice would
-            // charge the same lump twice. So the fixed point is reached without it and it is applied
-            // on one final lap. Returns whether anything about this tile moved.
-            fun visit(tile: TileIndex, charge: Boolean): Boolean {
-                val i = tile.index
-                var any = false
-                var here: MutableList<Demand>? = null
-
-                val own = acceptanceAt(tile)
-                // A construction site standing here is in the way of everything beyond it. The
-                // **hungriest** speaks for the tile: where a ghost machine stands on ghost track
-                // there are two, and what is owed has to cover the larger.
+                // One tile's answer, worked out from its successors' — and nothing else. Everything it
+                // reads is either tile-local or already in [routes]/[unlimited], and everything it
+                // writes is its own slot, so asking it twice gives the same answer twice. That is what
+                // lets a cycle be iterated below.
                 //
-                // ⛔ **Found before anything is added, because a plug is in the way of its
-                // neighbours on its OWN tile.** A ghost machine stands at the tile it is fed at, and
-                // that tile may be unpaid track — Stu's save, 2026-08-22: a Concentrator site at
-                // (16,28) over a ghost rail, with a Concentrator deconstructing at (19,28) three tiles
-                // to the right. The site's titanium appetite propagated up the corridor with a clear
-                // road, because "a site is never in its own way" was read as a fact about the
-                // *tile*; the door then refused the titanium at the ghost rail (which admits iron
-                // and nothing else) and 300kg of casing came apart into a corridor it could never
-                // leave. Being on the same tile as the plug is being **behind** it: the material has
-                // still got to cross that door.
-                var plug: Acceptance? = null
-                if (own != null) {
-                    for (a in own) {
-                        if (a.isSatisfied || !a.stopsTraffic) continue
-                        if (plug == null || a.wanted > plug.wanted) plug = a
-                    }
-                }
-                // What the plug is owed, once, for every appetite here that is not the plug itself.
-                val plugged = if (plug == null) null else carried(null, plug, tile, loadOn)
+                // [charge] is the one part that is **not** idempotent across a lap: what stands on the
+                // track is divided among the sinks that can eat it, and going round a loop twice would
+                // charge the same lump twice. So the fixed point is reached without it and it is applied
+                // on one final lap. Returns whether anything about this tile moved.
+                fun visit(tile: TileIndex, charge: Boolean): Boolean {
+                    val i = tile.index
+                    var any = false
+                    var here: MutableList<Demand>? = null
 
-                // ⛔ **Unless it is the near end of a span.** "A sink that says nothing is a
-                // machine, and a machine takes anything for ever" is the right reading of every
-                // other input port and the wrong one of a bridge: a bridge is not where material
-                // ends up, it is a place material passes through, and what it should ask for is
-                // whatever lies on the other side. Read as a machine it told every corridor
-                // leading to it that its load was wanted whatever stood beyond — so a span was the
-                // one place on the network a source would pour into for no reason, and the
-                // corridor past it filled with lumps nothing could eat. See [FlowGraph.hopTo].
-                val hop = flow.hopTo(tile)
-                if (own == null && hop == null && tile in flow.sinks) any = true
-                if (own != null) {
-                    for (a in own) {
-                        // A site is never in its own way — no blocks for the plug's *own* demand,
-                        // which is what keeps material flowing to the site that dissolves the
-                        // obstruction. What *stands* here is charged below, along with every other
-                        // appetite this tile can see: a lump on a ghost feeds that ghost first, but
-                        // it is the same lump the ghosts beyond are waiting for and it cannot be
-                        // promised to them all.
-                        val blocks = if (a === plug) null else plugged
-                        // ⛔ **[Acceptance.takesAnything], not [Acceptance.isUnlimited]** — the flag
-                        // means "everything beyond here is welcome anywhere", which is a statement
-                        // about fussiness and not about quantity. Reading the endless one instead
-                        // let a locked warehouse set it, and the tile then answered `permitsAnything`
-                        // to the very lumps the lock exists to keep out.
-                        if (a.takesAnything && a.isUnlimited) {
-                            // … and "welcome anywhere" is exactly what a plug on this tile denies.
-                            if (blocks == null) any = true
-                            else here = (here ?: mutableListOf()).also { it.add(Demand(a, 0L, blocks)) }
-                            continue
+                    val own = acceptanceAt(tile)
+                    // A construction site standing here is in the way of everything beyond it. The
+                    // **hungriest** speaks for the tile: where a ghost machine stands on ghost track
+                    // there are two, and what is owed has to cover the larger.
+                    //
+                    // ⛔ **Found before anything is added, because a plug is in the way of its
+                    // neighbours on its OWN tile.** A ghost machine stands at the tile it is fed at, and
+                    // that tile may be unpaid track — Stu's save, 2026-08-22: a Concentrator site at
+                    // (16,28) over a ghost rail, with a Concentrator deconstructing at (19,28) three tiles
+                    // to the right. The site's titanium appetite propagated up the corridor with a clear
+                    // road, because "a site is never in its own way" was read as a fact about the
+                    // *tile*; the door then refused the titanium at the ghost rail (which admits iron
+                    // and nothing else) and 300kg of casing came apart into a corridor it could never
+                    // leave. Being on the same tile as the plug is being **behind** it: the material has
+                    // still got to cross that door.
+                    var plug: Acceptance? = null
+                    if (own != null) {
+                        for (a in own) {
+                            if (a.isSatisfied || !a.stopsTraffic) continue
+                            if (plug == null || a.wanted > plug.wanted) plug = a
                         }
-                        // ⚠️ **Not `filter`** — the ones worth carrying upstream are the ones still
-                        // WANTING something. A satisfied acceptance answers `false` to everything,
-                        // so keeping those instead silently stops finite demand propagating at all
-                        // and no source ever feeds a construction site again. Eighteen tests say so.
-                        if (a.isSatisfied) continue
-                        here = (here ?: mutableListOf()).also { it.add(Demand(a, 0L, blocks)) }
                     }
-                }
+                    // What the plug is owed, once, for every appetite here that is not the plug itself.
+                    val plugged = if (plug == null) null else carried(null, plug, tile, loadOn)
 
-                // Everything this tile can send to: its neighbours, and — where it is the near
-                // end of a span — the far end of that span. The two are inherited from in exactly
-                // the same way, because they are the same fact: material leaving here arrives
-                // there, and what is wanted there is what is worth sending here.
-                val onward = if (hop == null) flow.successorTiles(tile) else flow.successorTiles(tile) + hop
-                for (next in onward) {
-                    val j = next.index
-                    if (unlimited[j]) {
-                        val blocks = carried(null, plug, tile, loadOn)
-                        if (blocks == null) any = true
-                        else {
+                    // ⛔ **Unless it is the near end of a span.** "A sink that says nothing is a
+                    // machine, and a machine takes anything for ever" is the right reading of every
+                    // other input port and the wrong one of a bridge: a bridge is not where material
+                    // ends up, it is a place material passes through, and what it should ask for is
+                    // whatever lies on the other side. Read as a machine it told every corridor
+                    // leading to it that its load was wanted whatever stood beyond — so a span was the
+                    // one place on the network a source would pour into for no reason, and the
+                    // corridor past it filled with lumps nothing could eat. See [FlowGraph.hopTo].
+                    val hop = flow.hopTo(tile)
+                    if (own == null && hop == null && tile in flow.sinks) any = true
+                    if (own != null) {
+                        for (a in own) {
+                            // A site is never in its own way — no blocks for the plug's *own* demand,
+                            // which is what keeps material flowing to the site that dissolves the
+                            // obstruction. What *stands* here is charged below, along with every other
+                            // appetite this tile can see: a lump on a ghost feeds that ghost first, but
+                            // it is the same lump the ghosts beyond are waiting for and it cannot be
+                            // promised to them all.
+                            val blocks = if (a === plug) null else plugged
+                            // ⛔ **[Acceptance.takesAnything], not [Acceptance.isUnlimited]** — the flag
+                            // means "everything beyond here is welcome anywhere", which is a statement
+                            // about fussiness and not about quantity. Reading the endless one instead
+                            // let a locked warehouse set it, and the tile then answered `permitsAnything`
+                            // to the very lumps the lock exists to keep out.
+                            if (a.takesAnything && a.isUnlimited) {
+                                // … and "welcome anywhere" is exactly what a plug on this tile denies.
+                                if (blocks == null) any = true
+                                else here = (here ?: mutableListOf()).also { it.add(Demand(a, 0L, blocks)) }
+                                continue
+                            }
+                            // ⚠️ **Not `filter`** — the ones worth carrying upstream are the ones still
+                            // WANTING something. A satisfied acceptance answers `false` to everything,
+                            // so keeping those instead silently stops finite demand propagating at all
+                            // and no source ever feeds a construction site again. Eighteen tests say so.
+                            if (a.isSatisfied) continue
+                            here = (here ?: mutableListOf()).also { it.add(Demand(a, 0L, blocks)) }
+                        }
+                    }
+
+                    // Everything this tile can send to: its neighbours, and — where it is the near
+                    // end of a span — the far end of that span. The two are inherited from in exactly
+                    // the same way, because they are the same fact: material leaving here arrives
+                    // there, and what is wanted there is what is worth sending here.
+                    val onward = if (hop == null) flow.successorTiles(tile) else flow.successorTiles(tile) + hop
+                    for (next in onward) {
+                        // Deleted for this walk: nothing may be inherited through it, which is the whole
+                        // of what "with the mouth taken out" means.
+                        if (next == excluded) continue
+                        val j = next.index
+                        if (unlimited[j]) {
+                            val blocks = carried(null, plug, tile, loadOn)
+                            if (blocks == null) any = true
+                            else {
+                                val list = here ?: mutableListOf<Demand>().also { here = it }
+                                if (list.none { it.acceptance === Acceptance.ANYTHING }) {
+                                    list.add(Demand(Acceptance.ANYTHING, 0L, blocks))
+                                }
+                            }
+                        }
+                        val theirs = routes[j] ?: continue
+                        for (d in theirs) {
+                            // ⚠️ **Inherited unchanged.** What stands on *this* tile is charged once,
+                            // after every appetite reachable from here is known — see below.
+                            val covered = if (d.acceptance.isUnlimited) 0L else d.covered
+                            val route = Demand(d.acceptance, covered, carried(d.blocks, plug, tile, loadOn))
                             val list = here ?: mutableListOf<Demand>().also { here = it }
-                            if (list.none { it.acceptance === Acceptance.ANYTHING }) {
-                                list.add(Demand(Acceptance.ANYTHING, 0L, blocks))
+                            // One entry per sink, and the **most permissive** one wins: where two routes
+                            // lead to the same place, "there is a way this is still wanted" is the
+                            // answer, and taking it costs nothing — turning down the branch that is
+                            // covered or obstructed is refused at that branch's own tile a step later.
+                            // Without this a network of diamonds grows a list per route rather than per
+                            // sink, and the walk stops being linear.
+                            val at = list.indexOfFirst { it.acceptance === route.acceptance }
+                            when {
+                                at < 0 -> list.add(route)
+                                better(route, list[at]) -> list[at] = route
                             }
                         }
                     }
-                    val theirs = routes[j] ?: continue
-                    for (d in theirs) {
-                        // ⚠️ **Inherited unchanged.** What stands on *this* tile is charged once,
-                        // after every appetite reachable from here is known — see below.
-                        val covered = if (d.acceptance.isUnlimited) 0L else d.covered
-                        val route = Demand(d.acceptance, covered, carried(d.blocks, plug, tile, loadOn))
-                        val list = here ?: mutableListOf<Demand>().also { here = it }
-                        // One entry per sink, and the **most permissive** one wins: where two routes
-                        // lead to the same place, "there is a way this is still wanted" is the
-                        // answer, and taking it costs nothing — turning down the branch that is
-                        // covered or obstructed is refused at that branch's own tile a step later.
-                        // Without this a network of diamonds grows a list per route rather than per
-                        // sink, and the walk stops being linear.
-                        val at = list.indexOfFirst { it.acceptance === route.acceptance }
-                        when {
-                            at < 0 -> list.add(route)
-                            better(route, list[at]) -> list[at] = route
-                        }
+
+                    // ── What stands on this tile, divided among the sinks that could eat it ──
+                    //
+                    // ⛔ **Once, and only among the sinks it can actually reach.** A lump is eaten by
+                    // exactly one sink, so charging its whole mass to every route through this tile
+                    // over-counts and starves the network, while charging it to none of them — which is
+                    // what reading the largest tally instead of the sum amounted to — under-counts and
+                    // feeds the far sinks a gram at a time.
+                    //
+                    // Each sink's share is its share of what is still wanted here, so a corridor feeding
+                    // a site that needs 300g and one that needs 700g splits a packet 30:70. A sink the
+                    // lump cannot be used by takes none of it and is not in the division at all — that
+                    // is [loadOn] answering nought for a bill this lump does not suit.
+                    if (charge) here?.let { list -> chargeStandingLoad(list, tile, loadOn, usableBy) }
+
+                    // Nothing downstream is fussy *and* nothing downstream is boundless: the list is the
+                    // only thing left worth keeping, and only while the unlimited flag is not set.
+                    val settled = if (any) null else here
+                    val moved = unlimited[i] != any || !same(routes[i], settled)
+                    unlimited[i] = any
+                    routes[i] = settled
+                    return moved
+                }
+
+                // ── The walk ────────────────────────────────────────────────────
+                //
+                // Straight through [FlowGraph.order], which is a tile at a time — except where the graph
+                // hands back a **cycle**, which has to be solved whole. See [FlowGraph.loops].
+                val order = flow.order
+                val loops = flow.loops
+                var at = 0
+                while (at < order.size) {
+                    val tile = order[at]
+                    val loop = loops[tile]
+                    if (loop == null) {
+                        if (tile != excluded) visit(tile, charge = true)
+                        at++
+                        continue
                     }
+                    // ⛔ **A loop is a fixed point, not a pass.** Appetite only ever grows here — a
+                    // route is added or replaced by a more permissive one, never taken away — so
+                    // repeating the lap converges, and it converges in two laps on a simple ring:
+                    // Tarjan hands the members back with one seam in them, so the first lap carries
+                    // everything but the edge across the seam and the second carries that.
+                    //
+                    // ⚠️ **Bounded by the size of the loop**, which is the worst case a nest of them
+                    // can need (one hop of progress per lap), and is the guarantee that this
+                    // terminates even if some future rule makes the growth non-monotone.
+                    var laps = 0
+                    while (laps < loop.size) {
+                        var moved = false
+                        for (t in loop) if (t != excluded && visit(t, charge = false)) moved = true
+                        laps++
+                        if (!moved) break
+                    }
+                    // ⚠️ **Then exactly one lap that charges**, which is the same single accounting a
+                    // straight run gets: each lump on the loop is divided once among the sinks that can
+                    // eat it. A tile early in the lap cannot see the charges of one late in it — on a
+                    // ring there is no "early", so some seam has to wear that — and the error is one
+                    // lap's worth of standing load, never a multiple of it.
+                    for (t in loop) if (t != excluded) visit(t, charge = true)
+                    at += loop.size
                 }
-
-                // ── What stands on this tile, divided among the sinks that could eat it ──
-                //
-                // ⛔ **Once, and only among the sinks it can actually reach.** A lump is eaten by
-                // exactly one sink, so charging its whole mass to every route through this tile
-                // over-counts and starves the network, while charging it to none of them — which is
-                // what reading the largest tally instead of the sum amounted to — under-counts and
-                // feeds the far sinks a gram at a time.
-                //
-                // Each sink's share is its share of what is still wanted here, so a corridor feeding
-                // a site that needs 300g and one that needs 700g splits a packet 30:70. A sink the
-                // lump cannot be used by takes none of it and is not in the division at all — that
-                // is [loadOn] answering nought for a bill this lump does not suit.
-                if (charge) here?.let { list -> chargeStandingLoad(list, tile, loadOn, usableBy) }
-
-                // Nothing downstream is fussy *and* nothing downstream is boundless: the list is the
-                // only thing left worth keeping, and only while the unlimited flag is not set.
-                val settled = if (any) null else here
-                val moved = unlimited[i] != any || !same(routes[i], settled)
-                unlimited[i] = any
-                routes[i] = settled
-                return moved
+                return Reach(routes, unlimited)
             }
 
-            // ── The walk ────────────────────────────────────────────────────
-            //
-            // Straight through [FlowGraph.order], which is a tile at a time — except where the graph
-            // hands back a **cycle**, which has to be solved whole. See [FlowGraph.loops].
-            val order = flow.order
-            val loops = flow.loops
-            var at = 0
-            while (at < order.size) {
-                val tile = order[at]
-                val loop = loops[tile]
-                if (loop == null) {
-                    visit(tile, charge = true)
-                    at++
-                    continue
-                }
-                // ⛔ **A loop is a fixed point, not a pass.** Appetite only ever grows here — a
-                // route is added or replaced by a more permissive one, never taken away — so
-                // repeating the lap converges, and it converges in two laps on a simple ring:
-                // Tarjan hands the members back with one seam in them, so the first lap carries
-                // everything but the edge across the seam and the second carries that.
-                //
-                // ⚠️ **Bounded by the size of the loop**, which is the worst case a nest of them
-                // can need (one hop of progress per lap), and is the guarantee that this
-                // terminates even if some future rule makes the growth non-monotone.
-                var laps = 0
-                while (laps < loop.size) {
-                    var moved = false
-                    for (t in loop) if (visit(t, charge = false)) moved = true
-                    laps++
-                    if (!moved) break
-                }
-                // ⚠️ **Then exactly one lap that charges**, which is the same single accounting a
-                // straight run gets: each lump on the loop is divided once among the sinks that can
-                // eat it. A tile early in the lap cannot see the charges of one late in it — on a
-                // ring there is no "early", so some seam has to wear that — and the error is one
-                // lap's worth of standing load, never a multiple of it.
-                for (t in loop) visit(t, charge = true)
-                at += loop.size
-            }
-            return Whitelist(routes, unlimited)
+            val base = walk(excluded = null)
+            // ⛔ **One more walk per span that can reach round to its own mouth**, and none at all
+            // otherwise — see [reflectingSpans], which is empty on every network with no ring on it.
+            val past = HashMap<TileIndex, Reach>()
+            for (mouth in reflectingSpans(flow)) past[mouth] = walk(excluded = mouth)
+            return Whitelist(base.routes, base.unlimited, flow.hops, past)
+        }
+
+        /**
+         * The spans that would otherwise offer their own mouth an appetite reached only by coming
+         * back through it.
+         *
+         * ⛔ **Appetite travels backwards across a span, and on a loop that sentence turns on
+         * itself.** Everything downstream of the mouth is also, eventually, downstream of the far
+         * end — by going the whole way round and in through the mouth again — so the far end reads
+         * as a place the mouth's own consumers can be reached from, as though crossing were a way of
+         * getting to them. It is the exact opposite: crossing is what lifts the packet off the tile
+         * it needed to stay on, and it happens again on every lap.
+         *
+         * ⚠️ **The door acts on this**, which is why it costs material rather than tidiness.
+         * `sinkAdmits` asks the road *past* the span — the right question — and was handed an answer
+         * that included the road *behind* it. Stu's `cycle` save, diagnosed by him: a tonne of iron
+         * bound for the silo whose input is at (10,15), on a spur hanging off (10,13), which is also
+         * the mouth of `Bridge@(9,13)`. The span took the iron every lap, for ever.
+         *
+         * ⛔ **Stated of a span and of nothing else.** The same reflection happens at an ordinary
+         * fork and costs nothing there: a packet has a *choice*, and [FlowCursors] gives the spur its
+         * turn, so a loop is latency. A span is asked first and pre-empts — there is no turn.
+         *
+         * ⚠️ **The test is exact rather than a heuristic.** Deleting the mouth can only change what
+         * the far end reaches if the far end can reach the mouth; the mouth reaches the far end by
+         * the span itself, so the two can reach each other exactly when they share a component —
+         * and every non-trivial one of those is in [FlowGraph.loops] already.
+         */
+        private fun reflectingSpans(flow: FlowGraph): List<TileIndex> {
+            if (flow.loops.isEmpty()) return emptyList()
+            val loopOf = HashMap<TileIndex, TileIndex>()
+            for ((key, members) in flow.loops) for (t in members) loopOf[t] = key
+            return flow.hops.entries
+                .filter { (mouth, far) -> loopOf[mouth] != null && loopOf[mouth] == loopOf[far] }
+                .map { it.key }
+                .sortedBy { it.index }
         }
 
         /**

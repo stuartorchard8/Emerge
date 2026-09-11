@@ -154,6 +154,12 @@ class FlowGraph internal constructor(
     fun hopTo(tile: TileIndex): TileIndex? = _hops[tile]
 
     /**
+     * Every span on the network, near end to far end — [hopTo] for a reader that has to look at all
+     * of them rather than ask about one. See [Whitelist.of], which weighs each against the loops.
+     */
+    val hops: Map<TileIndex, TileIndex> get() = _hops
+
+    /**
      * The tiles that may send material *to* [tile], ascending — a merge, where more than one.
      *
      * The mirror of [successorTiles], and needed for the same reason a fork needs its cursor: two

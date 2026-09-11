@@ -5641,8 +5641,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // ⚠️ **Kind, never quantity** (`rationed = false`), which is what a door asks
                 // everywhere else. A lump standing at a mouth is already committed: refusing it for
                 // being surplus does not save it, it only strands it one tile earlier.
-                val far = flow.hopTo(tile)
-                if (far != null && !whitelist.permits(far, cargo, rationed = false)) return false
+                // ⛔ **Past the span, which is not the same as "everything the far end can see".**
+                // On a loop the far end can see back round through this very mouth, so reading its
+                // routes made a span a place to deliver to the spur hanging off its own door — and
+                // it took that material every lap, for ever. [Whitelist.permitsPast] is the same
+                // question asked with the mouth deleted, and falls back to exactly the line this
+                // replaces wherever there is no ring to come round. Stu's `cycle` save, 2026-09-11.
+                if (flow.hopTo(tile) != null && !whitelist.permitsPast(tile, cargo)) return false
                 val own = accepts[tile] ?: return true
                 for (a in own) if (a.admits(cargo)) return true
                 return false
