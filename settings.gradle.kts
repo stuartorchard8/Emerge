@@ -70,6 +70,7 @@ include(":engine:render:torus")
 include(":engine:render:ui-gallery")
 
 include(":engine:audio:openal")
+include(":engine:audio:synth")
 
 include(":engine:net:api")
 include(":engine:net:transports:loopback")
