@@ -31,12 +31,19 @@ import org.emerge.demo.outofspace.num.scaledRatio
  * for a gas to go. A reaction that vented its own product put 18.45 kg of a live save inside six
  * hull plates; see `SealedTileGasTest`.
  *
- * ⚠️ **A product the principal's store cannot hold is not representable**, and that is deliberate
- * rather than an oversight. `MassIndex(tile, Species.Carbon)` does not compile, so a gas-phase
- * reaction yielding soot has nowhere to put it. The answer when one is wanted is to *widen the
- * fluid field* so the atmosphere can hold that species — not a third store, and not a rule against
- * the row. It is parked until a row worth having needs it (plan, decision 4), and
- * `ReactionReachabilityTest` fails any row that would need it in the meantime.
+ * ⚠️ **A product the principal's store cannot hold is not representable**, and a store that cannot
+ * hold what a row makes simply does not run it — see [airCanHoldProducts]. `MassIndex(tile,
+ * Species.Carbon)` does not compile, so a reaction yielding soot cannot happen *in the air*; it
+ * happens perfectly well in a packet or a hopper, because a cargo layer holds every species.
+ *
+ * ⛔ **This was a ban on the row until 2026-09-11, and the ban was aimed at the wrong thing.** It
+ * was written as a property of the *species* — a fluid principal may only have fluid products — so
+ * it deleted `CH₄ → C + 2 H₂` outright, when what was actually wrong was one of the three stores
+ * the row would be offered. Moving the question to the pass is what restored it: methane cracks in
+ * a packet and does nothing in a room, and every future gas→solid row is writable on the same
+ * terms. The widening of the fluid field (plan, decision 4) stays parked, and is now wanted for
+ * *airborne* soot rather than for soot at all — ⚠️ which needs a settling rule it does not have,
+ * since `Settling.kt` cannot condense a species with no critical point and carbon has none.
  *
  * ### Reagents come from wherever they are
  *
@@ -104,6 +111,20 @@ class Reaction(
 
     /** Mass of a whole stoichiometric pass — every reagent's formula units together. */
     private val passMass: Long = reagentMasses.sum()
+
+    /**
+     * Whether everything this row makes is something the **air** can hold — the one question a
+     * store has to ask before it lets a row run in it.
+     *
+     * ⛔ **Not a property of the row, a property of a row *and a store*.** A cargo layer holds every
+     * species, so this only ever refuses the fluid field, and it is precomputed here rather than
+     * asked per tile because `react` asks it once per row per store per tile and [Species.isFluid]
+     * is a table lookup behind a null check.
+     *
+     * See the class doc's "a product the principal's store cannot hold": this is that rule, moved
+     * from the table to the pass.
+     */
+    val airCanHoldProducts: Boolean = products.all { it.first.isFluid }
 
     /**
      * Permille **by mass** of a stoichiometric charge that is [species], or zero if this row does
@@ -267,7 +288,7 @@ private val WRITTEN: List<Reaction> = listOf(
      * guard against a hypothetical future it was written as: this is the first gas reaction that
      * takes energy out of a room instead of putting it in.
      *
-     * Methane pyrolysis is the same fix and is *not* here — its carbon is not something the air can
+     * Methane pyrolysis was the same fix and is now below — its carbon is not something the air can
      * hold. See the class doc, and the plan's decision 4.
      */
     Reaction(
@@ -275,6 +296,41 @@ private val WRITTEN: List<Reaction> = listOf(
         reagents = listOf(Species.Ammonia to 2),
         products = listOf(Species.Nitrogen to 1, Species.Hydrogen to 3),
         onsetKelvin = 1100,
+        baseRate = COMBUSTION_BASE_RATE,
+    ),
+
+    /**
+     * `CH₄ → C + 2 H₂` — methane pyrolysis, **the row this whole plan was written about**, back
+     * after being deleted on 2026-08-27, and the first reaction in the game that a room declines to
+     * host.
+     *
+     * Its carbon is not a [Fluid], so the air cannot hold it — and for three weeks that was read as
+     * a fact about the *row*, which is why the row was deleted. It is a fact about one of the three
+     * stores. A cargo layer holds every species, so this happens exactly where a player would
+     * actually do it: in a packet on a rail, or in a hopper held at temperature, where the soot
+     * lands next to the hydrogen and both ride on together. `AmbientChemistry.runsIn` is the whole
+     * of the difference, and `PLAN_unified_reactions.md`'s increment 2 is *not* what unblocked it.
+     *
+     * ⚠️ **It is the only useful thing in the game that a room refuses to do**, which makes it the
+     * proving case for the store-level rule in a way nothing else in this table is: run it in the
+     * air and nothing at all happens — no draw, no products, no silently dropped mass.
+     *
+     * **+75 kJ/mol**, endothermic, and cheaply so — a tenth of what calcining limestone costs. The
+     * hydrogen is the point: `Engine.propellantRole` says an engine fed hydrogen is three times the
+     * one that is not, and a comet gives up methane first. This is the route from the one to the
+     * other that does not spend the carbon on CO₂ first.
+     *
+     * ⛔ **Not a way around `FORMATION_ENTHALPY` being sparse.** It needs no new entries only
+     * because methane was already priced for the fires and both products are elements at zero.
+     *
+     * Onset as `DECOMPOSITIONS` had it, and [COMBUSTION_BASE_RATE] because the principal is a gas —
+     * the same pairing as ammonia cracking above, for the same reason.
+     */
+    Reaction(
+        principal = Species.Methane,
+        reagents = listOf(Species.Methane to 1),
+        products = listOf(Species.Carbon to 1, Species.Hydrogen to 2),
+        onsetKelvin = 1300,
         baseRate = COMBUSTION_BASE_RATE,
     ),
 

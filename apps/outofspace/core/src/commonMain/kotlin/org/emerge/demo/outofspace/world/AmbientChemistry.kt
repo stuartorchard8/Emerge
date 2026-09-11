@@ -321,6 +321,11 @@ private fun vapourHeadroom(species: Species, kelvin: Int, inAir: Long): Long {
  * cargo layer; `offGas` releases it later, where it can see whether there is anywhere for it to go.
  * That is what stopped 18.45 kg of a live save being sealed inside six hull plates — see
  * `SealedTileGasTest` — and it survives the unification untouched.
+ *
+ * ⚠️ **A store that cannot hold what a row makes does not run it** — [runsIn], which is the whole of
+ * what the table used to enforce by refusing to contain such a row. It makes a reaction's
+ * *reachability* a fact about a store rather than about a species, which is what lets methane crack
+ * to soot on a rail while doing nothing at all in a room.
  */
 fun react(
     air: MassArray,
@@ -390,6 +395,7 @@ fun react(
             var marks = 0
             for (r in REACTIONS.indices) {
                 val reaction = REACTIONS[r]
+                if (!runsIn(reaction, store)) continue
                 val present = presentIn(store, tile, reaction.principal, air, layers)
                 if (present <= 0L) continue
                 val consumed = feasible(reaction, present, hot, store, tile, air, layers)
@@ -415,6 +421,7 @@ fun react(
             // ── And now it happens ───────────────────────────────────────────
             for (r in REACTIONS.indices) {
                 val reaction = REACTIONS[r]
+                if (!runsIn(reaction, store)) continue
                 val present = presentIn(store, tile, reaction.principal, air, layers)
                 if (present <= 0L) continue
 
@@ -462,6 +469,27 @@ fun react(
     return if (released == 0L && toGasMass == 0L && toSolidMass == 0L) ChemistryStep.NOTHING
     else ChemistryStep(toGasMass, toGasEnergy, toSolidMass, toSolidEnergy, released)
 }
+
+/**
+ * Whether [store] is somewhere [reaction] can happen **at all** — which is only ever the question
+ * of whether it can hold what the row makes.
+ *
+ * ⛔ **The rule that used to be a ban on the row.** `Reaction.airCanHoldProducts` was
+ * `ReactionReachabilityTest` refusing to let a row with a fluid principal and a solid product exist,
+ * because `addTo` would look up `Species.fluid` for the product, find nothing, return, and drop the
+ * mass on the floor with both ledgers none the wiser. That is a true statement about *the air* and a
+ * false one about the row: a cargo layer holds every species, so `CH₄ → C + 2 H₂` is perfectly
+ * representable in a packet or a hopper and only ever broken in a room.
+ *
+ * So the row stays and the air declines it. ⚠️ **Declining is not the same as running it and
+ * dropping the result** — nothing is consumed, the reagents stay in the well for whoever else wants
+ * them, and a room full of methane is simply a room full of methane.
+ *
+ * A cargo layer is never refused; the branch is written the general way round so that it stays true
+ * the day a store appears that cannot hold something.
+ */
+private fun runsIn(reaction: Reaction, store: Int): Boolean =
+    store >= 0 || reaction.airCanHoldProducts
 
 /**
  * What [reaction] wants at [tile], **bounded by what could possibly be delivered**.

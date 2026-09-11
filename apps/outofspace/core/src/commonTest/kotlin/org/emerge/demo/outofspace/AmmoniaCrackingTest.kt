@@ -32,10 +32,14 @@ import kotlin.test.assertTrue
  *
  * ### Why this row and not methane
  *
- * Methane pyrolysis has exactly the same bug and is deliberately still broken. Its carbon is not
- * something the atmosphere can hold, so moving it needs the fluid field widened first — parked, see
- * the plan's decision 4. Ammonia's products are both fluids, so it proves the shape end to end
- * without dragging that decision along with it.
+ * Methane pyrolysis had exactly the same bug and one extra: its carbon is not something the
+ * atmosphere can hold. Ammonia's products are both fluids, so it proves the shape end to end without
+ * dragging that question along with it, and it went first for exactly that reason.
+ *
+ * ⚠️ **The extra question has since been answered, and not by widening the fluid field.** A store
+ * that cannot hold what a row makes declines to run it, so methane cracks in a packet and a room
+ * leaves it alone — see `MethanePyrolysisTest`. What this file proves is the half that was never in
+ * doubt: a row every store can host runs in whichever one holds its principal.
  *
  * ### And it is the first endothermic gas reaction
  *

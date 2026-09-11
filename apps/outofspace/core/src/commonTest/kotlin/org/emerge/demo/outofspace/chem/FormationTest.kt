@@ -43,6 +43,10 @@ class FormationTest {
         val expected = mapOf(
             // ── Gas-phase and cracking ──
             "2 Ammonia -> 1 Nitrogen + 3 Hydrogen" to 92L,
+            // Both products are elements, so the whole of it is methane's own −75 handed back:
+            // (0 + 2·0) − (−75) = +75. The cheapest endotherm in the table, and the reason cracking
+            // methane for its hydrogen is worth doing at all.
+            "1 Methane -> 1 Carbon + 2 Hydrogen" to 75L,
             "1 CarbonDioxide + 1 Carbon -> 2 CarbonMonoxide" to 172L,
             "100 Algae + 6 Water + 6 CarbonDioxide -> 101 Algae + 6 Oxygen" to 2545L,
             // ── The fires ──
