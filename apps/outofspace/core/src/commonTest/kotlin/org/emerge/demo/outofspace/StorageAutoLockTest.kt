@@ -19,6 +19,7 @@ import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
+import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
@@ -446,6 +447,74 @@ class StorageAutoLockTest {
             Species.Nickel,
             (run(nearAndFar(near = Species.Nickel, far = Species.Iron), 30 * RAIL_PERIOD)
                 .let { it.deck[it.grid.tile(8, 4)] as Storage }).filter?.species,
+            "the winner followed the species rather than the distance",
+        )
+    }
+
+    /**
+     * The same two sources as [nearAndFar], except the near one is a **pump holding half a packet**.
+     *
+     *      (2,1) far storage ──▼── (2,2) ──▶ ──────────────▶ (8,4) the tank
+     *                                                          ▲
+     *                                        the near pump ── (8,5), rail underneath it
+     *
+     * A [Pump] ships whole packets or nothing (`Work.holdsBack`), so half a packet is a load it will
+     * not part with — and in a vacuum fixture there is no room gas for it to top itself up from, so
+     * it never will. It is nevertheless running, non-empty, and holding exactly what the tank would
+     * take: every question [canFeed] used to ask says yes.
+     */
+    private fun nearPumpTooShortToShip(near: Species, far: Species): VesselState {
+        val grid = cfg.initialGrid
+        val deck = DeckArray(grid)
+        deck += Pump(grid.tile(8, 5), Direction.Up)
+        deck += fixtureStorage(grid.tile(2, 1), Direction.Down, SpeciesFilter(far, pure = true))
+        deck += Storage(
+            grid.tile(8, 4), Direction.Right, DeckMachineKind.Buffer,
+            filter = SpeciesFilter(species = null, pure = true),
+            autoLock = true, autoUnlock = false,
+        )
+        val rails = arrayOfNulls<Segment>(grid.size)
+        joinCol(grid, rails, 8, 4, 5)   // the pump's own tile, one hop below the door
+        joinCol(grid, rails, 2, 2, 4)   // the far source, down its own column
+        joinRow(grid, rails, 2, 8, 4)   // and along row 4 to the door
+        return VesselState(
+            grid, deck,
+            conduits = Conduits.ofRails(rails.toList()),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+        )
+            .stocked(grid.tile(8, 5), pure(near, Capacity.PACKET_MASS / 2), BufferRole.Product)
+            .stocked(grid.tile(2, 1), pure(far, 10L * Capacity.PACKET_MASS))
+    }
+
+    /**
+     * ⛔ **A source that will not ship is passed over, and "will not ship" includes holding part of a
+     * packet.** An election is *exclusive* — the whole point of it is that every other source is
+     * turned away from that tank — so electing one that cannot act does not merely make a tank wait
+     * its turn, it stops the network serving that tank at all, for as long as the state lasts.
+     *
+     * Stu's `idk.txt`: the electrolyzer at (9,10) held 33 kg of a 100 kg packet and was the nearest
+     * feed to **all six** undecided silos on the ship. It won every election and shipped nothing, and
+     * the buffer at (10,6) sat on 300 kg of ready carbon monoxide it was never allowed to let go of —
+     * its `Whitelist.room` read 674 kg with the elections ignored and **nought** with them applied.
+     * The electrolyzer was producing, so it was not even switched off; at its measured rate it would
+     * have held that exclusive option for some six thousand ticks, and then taken the silo anyway.
+     *
+     * ⚠️ **`canFeed` is [pushOut]'s preconditions asked early, and `holdsBack` is one of them.** It
+     * was the one question left out, and this is the test that says so.
+     *
+     * ⚠️ **Run twice with the cargo swapped**, so "the far one wins" cannot pass as "iron wins".
+     */
+    @Test
+    fun `a source holding less than a packet does not win an election it cannot act on`() {
+        fun lock(near: Species, far: Species): SpeciesFilter? =
+            (run(nearPumpTooShortToShip(near, far), 30 * RAIL_PERIOD)
+                .let { it.deck[it.grid.tile(8, 4)] as Storage }).filter
+
+        assertEquals(Species.Nickel, lock(near = Species.Iron, far = Species.Nickel)?.species)
+        assertEquals(
+            Species.Iron,
+            lock(near = Species.Nickel, far = Species.Iron)?.species,
             "the winner followed the species rather than the distance",
         )
     }

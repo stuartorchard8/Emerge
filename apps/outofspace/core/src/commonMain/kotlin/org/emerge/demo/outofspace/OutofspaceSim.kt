@@ -4539,8 +4539,20 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * Whether the machine behind [port] could put something [acceptance] wants onto [tile] now.
          *
          * ⚠️ **[pushOut]'s own preconditions, asked early.** Kept in step with it by being the same
-         * three questions in the same order: is it running, is anything settled in the store the port
-         * drains, and is what it holds something the sink will take.
+         * questions in the same order: is it running, is anything settled in the store the port
+         * drains, is what it holds something the sink will take — and would it let go of any of it.
+         *
+         * ⛔ **The last question is [holdsBack], and leaving it out cost Stu's `idk.txt` a whole
+         * branch.** A machine that ships whole packets and holds part of one can pass every other
+         * test here while being, in fact, unable to ship for thousands of ticks: the electrolyzer at
+         * (9,10) held 33kg of a 100kg packet, was elected as the sole feed for **all six** undecided
+         * silos on the ship, and shut a buffer holding 300kg of ready carbon monoxide out of every
+         * one of them. An election is exclusive, so a source that will not ship *now* does not merely
+         * lose a race — it stops anybody else running.
+         *
+         * ⚠️ **Asked as though demand were endless** ([Acceptance.UNLIMITED]): the question is
+         * whether this *machine* would part with a packet, not whether some other sink's appetite is
+         * short. An undecided tank's own appetite is a packet, so the two agree where it matters.
          */
         private fun canFeed(
             tile: TileIndex,
@@ -4554,8 +4566,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (m.kind.gatesOutput && !m.wiring.isOn(Action.Run, signals.at(port.owner))) return false
             val store = outputStoreTile(m, port) ?: return false
             val held = buffers.resourceAt(store) ?: return false
-            if (settled(store) <= 0L) return false
-            return acceptance.admits(held)
+            val settled = settled(store)
+            if (settled <= 0L) return false
+            if (!acceptance.admits(held)) return false
+            val room = minOf(rail.headroom(tile), settled)
+            return !holdsBack(m, port, held, room, Acceptance.UNLIMITED)
         }
 
         /**
