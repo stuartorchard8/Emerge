@@ -5896,7 +5896,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     val lump = rail.resourceAt(from)
                     if (lump == null) Long.MAX_VALUE
                     else {
-                        val room = whitelist.room(to, lump)
+                        // ⛔ **[Whitelist.roomToCross] and never [Whitelist.room].** This lump is
+                        // already on the track, and the source question weighs everything already
+                        // spoken for — this lump included — so asking it here counts the lump
+                        // against itself and slices it to nothing. See [Whitelist.routeRemaining].
+                        val room = whitelist.roomToCross(to, lump)
                         // ⛔ **Asked again of the slice, not just of the pile** — the same guard
                         // `scrapDeconstructing` needs, and for the same reason. A proportional slice
                         // is only representative while it is big enough to carry every species: take

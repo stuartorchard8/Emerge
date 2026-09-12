@@ -17,13 +17,12 @@ import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
-import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * **Sibling branches each commit a metered sink's WHOLE appetite.** ⛔ Open defect — the `@Ignore`d
- * cases below are the behaviour that is wanted, not the behaviour there is.
+ * **Sibling branches must not each commit a metered sink's whole appetite.** ✅ Fixed by
+ * `Whitelist.inFlight`; this file is the bug it was written for.
  *
  * `Demand.covered` is a fact about a **route**: each tile's figure is the standing load between that
  * tile and the sink, accumulated by walking upstream. In a line that is exactly right, and the class
@@ -31,14 +30,14 @@ import kotlin.test.assertEquals
  * numbers, and that is the point: the near one sees the loaded run in front of it and holds off, the
  * far one sees nothing and pours."*
  *
- * It has no answer at all for two sources on **sibling** branches. A lump standing on branch A is
- * not on branch B's route, so B cannot see it and commits against an appetite already spoken for.
- * [org.emerge.demo.outofspace.world.Whitelist.promise] closes the hole for exactly one step — it is
- * keyed by `Acceptance` and dies with the whitelist, on the reasoning that by the next step the lump
- * is standing on the track and `covered` counts it. It does: **on its own branch.** So the hole
- * reopens every step, and each branch pours until the load *on that branch alone* covers the lot.
+ * It had no answer at all for two sources on **sibling** branches. A lump standing on branch A is
+ * not on branch B's route, so B could not see it and committed against an appetite already spoken
+ * for. [org.emerge.demo.outofspace.world.Whitelist.promise] closed the hole for exactly one step —
+ * it is keyed by `Acceptance` and dies with the whitelist, on the reasoning that by the next step the
+ * lump is standing on the track and `covered` counts it. It does: **on its own branch.** So the hole
+ * reopened every step, and each branch poured until the load *on that branch alone* covered the lot.
  *
- * ⚠️ **Measured here, against a sink with two packets of room:**
+ * ⚠️ **Measured here before the fix, against a sink with two packets of room:**
  *
  * | feeding branches | stranded for ever |
  * |---|---|
@@ -46,15 +45,18 @@ import kotlin.test.assertEquals
  * | 2 | 200 kg — one whole appetite |
  * | 3 | 400 kg — two |
  *
- * So the overdraw is `(branches - 1) × appetite`. And it is not merely early delivery: the sink is
+ * So the overdraw was `(branches - 1) × appetite`. And it was not merely early delivery: the sink is
  * **full** when the surplus arrives, a full store is a *dead end* rather than a jam, and the network
- * has no reverse gear — it stands in the corridor for the rest of the game.
+ * has no reverse gear — it stood in the corridor for the rest of the game.
  *
  * ⛔ **Nothing here is about the furnace.** A locked warehouse is the simplest machine that states a
  * finite appetite, and every other metered sink states one through the same code: a construction
  * site's shortfall, a docking port's sell order, a recipe kiln's reagent hopper. Found from Stu's
  * `over_fill.txt`, where the kiln at (19,10) was fed from (8,16) and (13,17) and took three packets
  * of ferrosilite into a two-packet hopper.
+ *
+ * ⚠️ **Every case asserts the sink FILLS as well as that nothing strands**, because the cheap wrong
+ * fix is a timid source. Two numbers, and a fix has to get both.
  */
 class DemandBranchTest {
 
@@ -139,8 +141,7 @@ class DemandBranchTest {
         assertEquals(0L, onTrack(s), "a lone source left material standing in the corridor")
     }
 
-    /** ⛔ **Open defect**: the second branch commits the whole appetite a second time. */
-    @Ignore
+    /** ✅ Was an open defect: the second branch used to commit the whole appetite a second time. */
     @Test
     fun `two branches do not over-commit`() {
         val s = run(branched(sources = 2), 40 * RAIL_PERIOD)
@@ -149,8 +150,7 @@ class DemandBranchTest {
         assertEquals(0L, onTrack(s), "${onTrack(s)}g stranded for a sink that had ${room}g of room")
     }
 
-    /** ⛔ **Open defect**: and a third branch commits it a third time — it scales with the branches. */
-    @Ignore
+    /** ✅ Was an open defect: and a third branch committed it a third time — it scaled with them. */
     @Test
     fun `three branches do not over-commit`() {
         val s = run(branched(sources = 3), 40 * RAIL_PERIOD)

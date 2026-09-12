@@ -429,6 +429,30 @@ class Whitelist private constructor(
      * Empty on anything without a ring on it. See [Whitelist.of] and [permitsPast].
      */
     private val past: Map<TileIndex, Reach>,
+    /**
+     * Per sink: **everything standing anywhere on the network** that is apportioned to it.
+     *
+     * ⛔ **[Demand.covered] is the same material counted per ROUTE, and that is what could not see
+     * a sibling.** A route's figure is the load between one tile and the sink, which is exactly the
+     * right number for a lump deciding whether to advance — it excludes the lump itself — and the
+     * wrong one for a source deciding whether to let go. Two tanks on branches of their own that
+     * meet near a sink are each looking down a corridor the other's packet is not in, so each reads
+     * a clear road and commits the whole appetite. [promised] closed that for one step and died with
+     * the whitelist; the hole reopened on the next, and every step after. Measured: a sink with two
+     * packets of room took two branches' worth from two feeders and three branches' worth from
+     * three, and the surplus stood in the corridor for good — a full store is a dead end, and the
+     * network has no reverse gear. `DemandBranchTest`, from Stu's `over_fill.txt`.
+     *
+     * ⚠️ **Summed off exactly the apportionment [Demand.covered] already uses**, in the same walk —
+     * [chargeStandingLoad] works out each sink's share of each lump once and now writes it to both
+     * places. So the two numbers cannot form different opinions about who a lump belongs to; they
+     * differ only in *where* it is counted from.
+     *
+     * ⛔ **Never read by anything a moving lump asks.** See [roomToCross] and [permits], which stay
+     * on the route figure for the reason [Demand] gives: count a lump globally and the very lump a
+     * source has just put down is forbidden to advance toward the sink it was let go for.
+     */
+    private val inFlight: Map<Acceptance, Long>,
 ) {
     /**
      * Whether a span at [mouth] could usefully carry [mixture] across — **the road past it**, which
@@ -593,7 +617,35 @@ class Whitelist private constructor(
      *
      * So the answer is a quantity, and the source takes the smaller of it and what fits.
      */
-    fun room(tile: TileIndex, mixture: Mixture, serves: (Acceptance) -> Boolean = ALL_SINKS): Long {
+    fun room(tile: TileIndex, mixture: Mixture, serves: (Acceptance) -> Boolean = ALL_SINKS): Long =
+        roomBy(tile, mixture, serves, ::remaining)
+
+    /**
+     * The largest slice of [mixture] **already on the track** worth letting cross into [tile].
+     *
+     * ⛔ **Not [room], and the difference is which lumps are counted.** That one answers a source
+     * about to create traffic and weighs everything already spoken for; this one answers traffic
+     * that exists, and must weigh only what lies between [tile] and the sink — see [routeRemaining],
+     * where the deadlock is written down. The two were one method until sibling branches needed a
+     * global tally, and a moving lump reading that tally is counted against itself.
+     *
+     * ⚠️ **This is [permits]' rationed half as a quantity rather than a verdict**, which is what its
+     * caller has always needed them to be: the fork that sends what a route can use and turns the
+     * rest round cannot form two opinions about how much that is.
+     */
+    fun roomToCross(tile: TileIndex, mixture: Mixture): Long =
+        roomBy(tile, mixture, ALL_SINKS, ::routeRemaining)
+
+    // ⚠️ **Not `inline`**, though the identity check below invites it: an inlined function parameter
+    // cannot be compared by reference, and `serves === ALL_SINKS` is the whole of the fast path.
+    // Called once per source per step rather than per tile per direction, so the two bound
+    // references it allocates are nothing beside the walk that filled [routes].
+    private fun roomBy(
+        tile: TileIndex,
+        mixture: Mixture,
+        serves: (Acceptance) -> Boolean,
+        short: (Demand) -> Long,
+    ): Long {
         // ⚠️ **The fast path is skipped when the caller is fussy about sinks**, because
         // [permitsAnything] answers for the tile rather than for any particular appetite — and the
         // whole point of [serves] is that one of them is not this source's to answer.
@@ -604,7 +656,7 @@ class Whitelist private constructor(
             if (!d.wants(mixture)) continue
             if (!serves(d.acceptance)) continue
             if (d.acceptance.isUnlimited) return Acceptance.UNLIMITED
-            val remaining = remaining(d)
+            val remaining = short(d)
             if (remaining > 0L) owed = saturated(owed, remaining)
         }
         return owed
@@ -677,16 +729,41 @@ class Whitelist private constructor(
     private fun promisedTo(sink: Acceptance): Long = promised[sink] ?: 0L
 
     /**
-     * What [d]'s sink is still short of: what it wants, less what is already coming — both what
-     * stands on the network ([Demand.covered]) and what has been let go for it since ([promised]).
+     * What [d]'s sink is still short of **for a source about to let go**: what it wants, less
+     * everything already coming — what stands anywhere on the network ([inFlight]) and what has been
+     * let go for it since the walk ([promised]).
+     *
+     * ⛔ **[inFlight] and not [Demand.covered], which is the whole of the sibling-branch fix.** The
+     * route figure answers "what is between me and it", and a source on one branch is not on the
+     * other; the global figure answers "what is already spoken for", which is the question a source
+     * is actually asking. See [inFlight], and [routeRemaining] for the question a *moving* lump asks.
      *
      * ⛔ **Never asked of an endless sink**, whose [Acceptance.wanted] is not a quantity.
      */
-    private fun remaining(d: Demand): Long = d.acceptance.wanted - d.covered - promisedTo(d.acceptance)
+    private fun remaining(d: Demand): Long =
+        d.acceptance.wanted - inFlightTo(d.acceptance) - promisedTo(d.acceptance)
+
+    /**
+     * What [d]'s sink is still short of **as seen from one tile** — [Demand.covered]'s own reading.
+     *
+     * ⛔ **This is the number a lump already on the track must be weighed against, and it must stay
+     * per-route.** Everything on the network is apportioned to its sinks in [inFlight], the lump
+     * asking included; weigh it against that and it is counted against itself, reads as surplus, and
+     * is refused the move toward the very sink it was let go for. [Demand] warns about that deadlock
+     * from the other end and the whole suite went red proving it once already.
+     *
+     * ⚠️ **[promised] is not read here either**, for [permits]' reason: promises ration what is *let
+     * go of*, never what is already in the corridor. That makes this and the rationed half of
+     * [permits] one computation, which is what [roomToCross]'s caller has always claimed they were.
+     */
+    private fun routeRemaining(d: Demand): Long = d.acceptance.wanted - d.covered
+
+    private fun inFlightTo(sink: Acceptance): Long = inFlight[sink] ?: 0L
 
     companion object {
         /** Permits nothing anywhere: a world whose flow has not been worked out yet. */
-        fun empty(): Whitelist = Whitelist(arrayOfNulls(0), BooleanArray(0), emptyMap(), emptyMap())
+        fun empty(): Whitelist =
+            Whitelist(arrayOfNulls(0), BooleanArray(0), emptyMap(), emptyMap(), emptyMap())
 
         private fun saturated(a: Long, b: Long): Long {
             val sum = a + b
@@ -713,7 +790,13 @@ class Whitelist private constructor(
             // ⛔ **[excluded] is a tile deleted from the network for the length of one walk**, which
             // is how "what could this span reach if it were not in the way of itself" is asked — see
             // [reflectingSpans]. Null for the walk everything else reads.
-            fun walk(excluded: TileIndex?): Reach {
+            //
+            // ⛔ **[tally] is supplied for the MAIN walk and for nothing else.** A reflecting span's
+            // extra walk is this same network asked a hypothetical — "what would the far end reach
+            // if this mouth were not in its own way" — over the very same standing lumps, so a tally
+            // shared with it would count every one of them again per span. Null means "walk, but do
+            // not tot up". See [Whitelist.inFlight].
+            fun walk(excluded: TileIndex?, tally: HashMap<Acceptance, Long>?): Reach {
                 val routes = arrayOfNulls<MutableList<Demand>>(tileCount)
                 val unlimited = BooleanArray(tileCount)
 
@@ -848,7 +931,7 @@ class Whitelist private constructor(
                     // a site that needs 300g and one that needs 700g splits a packet 30:70. A sink the
                     // lump cannot be used by takes none of it and is not in the division at all — that
                     // is [loadOn] answering nought for a bill this lump does not suit.
-                    if (charge) here?.let { list -> chargeStandingLoad(list, tile, loadOn, usableBy) }
+                    if (charge) here?.let { list -> chargeStandingLoad(list, tile, loadOn, usableBy, tally) }
 
                     // Nothing downstream is fussy *and* nothing downstream is boundless: the list is the
                     // only thing left worth keeping, and only while the unlimited flag is not set.
@@ -901,12 +984,13 @@ class Whitelist private constructor(
                 return Reach(routes, unlimited)
             }
 
-            val base = walk(excluded = null)
+            val inFlight = HashMap<Acceptance, Long>()
+            val base = walk(excluded = null, tally = inFlight)
             // ⛔ **One more walk per span that can reach round to its own mouth**, and none at all
             // otherwise — see [reflectingSpans], which is empty on every network with no ring on it.
             val past = HashMap<TileIndex, Reach>()
-            for (mouth in reflectingSpans(flow)) past[mouth] = walk(excluded = mouth)
-            return Whitelist(base.routes, base.unlimited, flow.hops, past)
+            for (mouth in reflectingSpans(flow)) past[mouth] = walk(excluded = mouth, tally = null)
+            return Whitelist(base.routes, base.unlimited, flow.hops, past, inFlight)
         }
 
         /**
@@ -1000,6 +1084,14 @@ class Whitelist private constructor(
             tile: TileIndex,
             loadOn: (TileIndex, Mixture?) -> Long,
             usableBy: (TileIndex, Acceptance) -> Long,
+            /**
+             * Per sink, the same shares totted up across the whole network — [Whitelist.inFlight].
+             *
+             * ⚠️ **The same `share`, written twice on purpose.** Who a standing lump belongs to is
+             * one question with one answer; the route figure and the global one differ in where they
+             * are read from and must never differ in how the lump was divided.
+             */
+            tally: HashMap<Acceptance, Long>?,
         ) {
             var wantedHere = 0L
             var hungriest = -1
@@ -1029,12 +1121,16 @@ class Whitelist private constructor(
                 // below so that nothing is charged twice and nothing goes uncharged.
                 val share = scaledRatio(remaining, wantedHere, load)
                 here[k] = Demand(d.acceptance, d.covered + share, d.blocks)
+                if (tally != null) tally[d.acceptance] = (tally[d.acceptance] ?: 0L) + share
                 given += share
             }
             val load = usableBy(tile, here[hungriest].acceptance)
             if (given < load) {
                 val d = here[hungriest]
                 here[hungriest] = Demand(d.acceptance, d.covered + (load - given), d.blocks)
+                if (tally != null) {
+                    tally[d.acceptance] = (tally[d.acceptance] ?: 0L) + (load - given)
+                }
             }
         }
 
