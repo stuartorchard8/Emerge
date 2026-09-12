@@ -4,6 +4,7 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Acceptance
 import org.emerge.demo.outofspace.world.Conduit
+import org.emerge.demo.outofspace.world.SpeciesFilter
 import org.emerge.demo.outofspace.world.conduitBillOfMaterials
 import kotlin.test.Test
 import kotlin.test.assertFalse
@@ -134,5 +135,66 @@ class AcceptanceTest {
         assertFalse(hungry.admits(wrongStuff), "hungry, but not indiscriminate")
         assertFalse(full.admits(rightStuff), "the right stuff, but there is nowhere left to put it")
         assertFalse(full.admits(wrongStuff))
+    }
+
+    // ── An order, or an allowance ─────────────────────────────────────────────
+
+    /**
+     * ⛔ **A sink's own door still takes what it ordered less of than its tank holds.**
+     *
+     * [Acceptance.wanted] has always had two meanings a paragraph apart — *"a construction site is
+     * done for good; a store is merely full"* — and nothing acted on the difference, so `sinkAdmits`
+     * refused every satisfied sink even though its own note says a door asks *"kind, never
+     * quantity … refusing it for being surplus does not save it, it only strands it one tile
+     * earlier."* A locked kiln orders each reagent to the recipe's ratio and keeps a tank several
+     * times that, so it is the one sink where satisfied and full genuinely come apart — and its
+     * surplus was stranded on the tile outside its mouth, in front of the reagent that would have
+     * let it drain. Stu's `over_fill.txt`.
+     */
+    @Test
+    fun `a sink that ordered to a target still takes a surplus at its own door`() {
+        val ordered = Acceptance.filtered(
+            SpeciesFilter(Species.Iron, pure = true),
+            wanted = 0L,
+            doorTakesSurplus = true,
+        )
+
+        assertTrue(ordered.isSatisfied, "the order is filled")
+        assertFalse(ordered.admits(iron(1_000L)), "so nothing more should be SENT")
+        assertTrue(ordered.admitsAtDoor(iron(1_000L)), "but a lump that arrived anyway still fits")
+    }
+
+    /**
+     * ⛔ **And an allowance does not, which is why this is a flag rather than a change to the door.**
+     *
+     * A docking port whose sell permission is spent must go on letting cargo cross its mouth toward
+     * a tank beyond it. Made to swallow the surplus it would sell what the player never allowed —
+     * the `dock.txt` failure arrived at from the far side, so the default has to be the strict one.
+     */
+    @Test
+    fun `an allowance refuses a surplus at its door, and that is the default`() {
+        val permitted = Acceptance.filtered(SpeciesFilter(Species.Iron, pure = true), wanted = 0L)
+        assertFalse(permitted.doorTakesSurplus, "the strict reading has to be what a sink gets for free")
+        assertFalse(permitted.admitsAtDoor(iron(1_000L)), "a spent permission swallowed a delivery")
+
+        // A construction site is the other allowance, and it says so through its own factory.
+        assertFalse(
+            Acceptance.forBill(railBill, 0L).admitsAtDoor(iron(1_000L)),
+            "a finished site swallowed a delivery it had no claim on",
+        )
+    }
+
+    /** Kind is still kind: the flag drops the quantity question and nothing else. */
+    @Test
+    fun `taking a surplus is not taking anything`() {
+        val ordered = Acceptance.filtered(
+            SpeciesFilter(Species.Iron, pure = true),
+            wanted = 0L,
+            doorTakesSurplus = true,
+        )
+        assertFalse(
+            ordered.admitsAtDoor(Mixture.of(Species.Quartz to 1_000L, energy = 0)),
+            "the door forgot what it is for",
+        )
     }
 }

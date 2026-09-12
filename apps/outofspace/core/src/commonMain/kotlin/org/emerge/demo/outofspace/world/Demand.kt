@@ -109,6 +109,35 @@ class Acceptance private constructor(
      * from the world — see the class note.
      */
     val wanted: Long,
+    /**
+     * Whether [wanted] is how much this sink **ordered**, rather than how much it is *permitted* —
+     * and so whether its own door still takes a lump that arrived beyond it.
+     *
+     * ⛔ **The two readings of [wanted] were already written down, one paragraph apart, and nothing
+     * acted on the difference.** *"What 'stops wanting' means is the sink's business, not this
+     * field's. A construction site is done for good; a store is merely full."* A sell permission and
+     * a build bill are **allowances**: matter past them is matter the player did not agree to, so the
+     * door must refuse it, and it passes on to whatever lies beyond. A hopper's target is an
+     * **order**: the tank behind it is bigger than the number, so a lump that turns up anyway fits,
+     * and refusing it does not save it.
+     *
+     * ⭐ **Which is what `sinkAdmits` always said it did and did not.** *"Kind, never quantity … a
+     * lump standing at a mouth is already committed: refusing it for being surplus does not save it,
+     * it only strands it one tile earlier."* True of the road into the mouth and false of the mouth,
+     * because [admits] refuses a satisfied sink outright — so an ordered-to-target hopper stranded
+     * its own surplus on the tile outside.
+     *
+     * ⛔ **And it is not a rule to apply everywhere**, which is why this is a flag and not a change
+     * to [admits]. A docking port whose permission is spent must go on letting cargo cross its mouth
+     * toward a tank beyond it; made to swallow the surplus it would sell what nobody allowed — the
+     * `dock.txt` failure, arrived at from the far side. Default false, so a sink has to say.
+     *
+     * ⚠️ **A store sets it and nothing changes**, because a store's appetite is its room: satisfied
+     * and physically full are the same state for it, and `acceptInto` refuses at the brim anyway.
+     * The one sink where the two come apart is a locked kiln's reagent hopper, which orders to the
+     * recipe's ratio and keeps a tank four times that.
+     */
+    val doorTakesSurplus: Boolean,
 ) {
     /** True when this sink's appetite has no end — every working machine. */
     val isUnlimited: Boolean get() = wanted == UNLIMITED
@@ -169,6 +198,32 @@ class Acceptance private constructor(
         return buildableFrom(want, mixture)
     }
 
+    /**
+     * Whether this sink's **own door** takes [mixture] — [admits], less the quantity question where
+     * the sink has said its number is an order rather than an allowance.
+     *
+     * ⛔ **Asked by `sinkAdmits` and by `eatenBy`, and by exactly those two.** They are the pair that
+     * answer "what does this door actually do with a lump standing on it", and `doorAcceptances` is
+     * explicit that they must not form two opinions — *"a lump is eaten by whichever door admits it
+     * first, and a second opinion about what a door admits would be a second answer to 'where did
+     * that packet go'"*. Everything else asking [admits] is asking a *demand* question — what to
+     * send, what to apportion, what a ghost will let past — where a satisfied sink really is shut.
+     */
+    fun admitsAtDoor(mixture: Mixture): Boolean {
+        if (!doorTakesSurplus || !isSatisfied) return admits(mixture)
+        // Satisfied, but only against a number it ordered to. The kind question stands on its own:
+        // a filter, a species mask and a bill all answer it without reference to how much is left.
+        val allowed = only
+        if (allowed != null) {
+            if (mixture.total <= 0L) return false
+            for (s in Species.ALL) if (mixture[s] > 0L && !allowed[s.ordinal]) return false
+        }
+        filter?.let { return it.admits(mixture) }
+        if (allowed != null) return true
+        val want = bill ?: return true
+        return buildableFrom(want, mixture)
+    }
+
     override fun toString(): String =
         when {
             // ⚠️ The quantity is named whenever there is one, filter or no filter. A locked store
@@ -188,7 +243,8 @@ class Acceptance private constructor(
         const val UNLIMITED: Long = Long.MAX_VALUE
 
         /** Takes any matter, for ever: every working machine on the vessel. */
-        val ANYTHING: Acceptance = Acceptance(null, null, null, stopsTraffic = false, wanted = UNLIMITED)
+        val ANYTHING: Acceptance =
+            Acceptance(null, null, null, stopsTraffic = false, wanted = UNLIMITED, doorTakesSurplus = false)
 
         /**
          * Takes any matter, but only [wanted] more grams of it: **a store with room left in it.**
@@ -204,7 +260,7 @@ class Acceptance private constructor(
          * these between two silos would have them promise against each other's tank.
          */
         fun upTo(wanted: Long): Acceptance =
-            Acceptance(null, null, null, stopsTraffic = false, wanted = wanted)
+            Acceptance(null, null, null, stopsTraffic = false, wanted = wanted, doorTakesSurplus = false)
 
         /**
          * Takes lumps made **entirely of** [species], in any proportions — and refuses a lump with
@@ -217,7 +273,7 @@ class Acceptance private constructor(
         fun onlyOf(species: Set<Species>, wanted: Long = UNLIMITED): Acceptance {
             val mask = BooleanArray(Species.COUNT)
             for (s in species) mask[s.ordinal] = true
-            return Acceptance(null, null, mask, stopsTraffic = false, wanted = wanted)
+            return Acceptance(null, null, mask, stopsTraffic = false, wanted = wanted, doorTakesSurplus = false)
         }
 
         /**
@@ -234,8 +290,12 @@ class Acceptance private constructor(
          * would be a wall the player can build across their own network with no ghost in sight —
          * the exact exploit [stopsTraffic] exists to prevent, inverted.
          */
-        fun filtered(filter: SpeciesFilter, wanted: Long = UNLIMITED): Acceptance =
-            Acceptance(null, filter, null, stopsTraffic = false, wanted = wanted)
+        fun filtered(
+            filter: SpeciesFilter,
+            wanted: Long = UNLIMITED,
+            /** See [Acceptance.doorTakesSurplus] — a hopper ordering to a ratio says true. */
+            doorTakesSurplus: Boolean = false,
+        ): Acceptance = Acceptance(null, filter, null, stopsTraffic = false, wanted = wanted, doorTakesSurplus)
 
         /**
          * Takes any **one** of [species], at [pure], and [wanted] more grams of it: a store that has
@@ -258,7 +318,10 @@ class Acceptance private constructor(
         fun shortlisted(species: Set<Species>, pure: Boolean?, wanted: Long = UNLIMITED): Acceptance {
             val mask = BooleanArray(Species.COUNT)
             for (s in species) mask[s.ordinal] = true
-            return Acceptance(null, SpeciesFilter(null, pure), mask, stopsTraffic = false, wanted = wanted)
+            return Acceptance(
+                null, SpeciesFilter(null, pure), mask, stopsTraffic = false, wanted = wanted,
+                doorTakesSurplus = false,
+            )
         }
 
         /**
@@ -271,7 +334,7 @@ class Acceptance private constructor(
          * site, and it lives in [Whitelist].
          */
         fun forBill(bill: Mixture, shortBy: Long, stopsTraffic: Boolean = true): Acceptance =
-            Acceptance(bill, null, null, stopsTraffic, shortBy)
+            Acceptance(bill, null, null, stopsTraffic, shortBy, doorTakesSurplus = false)
     }
 }
 

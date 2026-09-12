@@ -1,6 +1,8 @@
 package org.emerge.desktop
 
 import org.emerge.demo.outofspace.world.Conduit
+import org.emerge.demo.outofspace.world.bufferRolesOf
+import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.Mode
 import org.emerge.demo.outofspace.world.machine.InputKey
@@ -1142,6 +1144,26 @@ object OutofspaceAgentHarness {
                     (if (!standing.allowsAnySpecies) "  shortlist ${standing.candidates.map { it.name }.sorted()}" else ""))
                 val held = state.buffers.resourceAt(standing.center)
                 println("[agent]             holds ${fmt(grams(held?.total ?: 0L))}g of ${fmt(grams(standing.capacity))}g  ${held?.let { composition(it) } ?: "-"}")
+            }
+            // ⚠️ **What the machine is HOLDING, role by role — the readout `store` above only ever
+            // gave a warehouse.** Every other kind kept its contents invisible here, and a machine
+            // with several stores is exactly where that hurts: a recipe kiln has three hoppers
+            // behind one door and "why is nothing moving" is very often "the wrong one is full".
+            // Diagnosing a stranded reagent meant a screenshot of the inspector.
+            //
+            // ⚠️ Roles, not tiles, and in [BufferRole] order, because that is how the machine
+            // thinks about them — see [bufferRolesOf]. A store with nothing in it still prints, so
+            // an empty hopper reads as empty rather than as absent.
+            if (standing != null && standing !is Storage) {
+                val roles = bufferRolesOf(standing)
+                if (roles.isNotEmpty()) {
+                    for (role in roles) {
+                        val at = bufferTile(state.grid, standing, standing.center, role) ?: continue
+                        val held = state.buffers.resourceAt(at)
+                        println("[agent]   ${role.name.lowercase().padEnd(13)}(${grid.xOf(at)},${grid.yOf(at)}) " +
+                            "${fmt(grams(held?.total ?: 0L))}g  ${held?.let { composition(it, top = 3) } ?: "-"}")
+                    }
+                }
             }
             // ⚠️ **Whose ports stand here, and which way they face.** A tile is a *source* to the
             // flow graph because some machine's OUTPUT port happens to sit on it, and that machine

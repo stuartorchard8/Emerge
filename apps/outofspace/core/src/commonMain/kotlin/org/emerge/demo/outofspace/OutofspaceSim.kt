@@ -4655,7 +4655,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             seen += from
             while (ring.isNotEmpty()) {
                 for (tile in ring.sortedBy { it.index }) {
-                    if (doorAcceptances[tile]?.any { it.admits(cargo) } == true) return tile
+                    // The door's own question, not the demand one — see [Acceptance.admitsAtDoor],
+                    // which `sinkAdmits` reads too. A door that will swallow a surplus lump is a
+                    // door this walk has to expect to lose the lump to.
+                    if (doorAcceptances[tile]?.any { it.admitsAtDoor(cargo) } == true) return tile
                     if (spanTakesFrom(tile)) return tile
                 }
                 val next = ArrayList<TileIndex>()
@@ -5497,10 +5500,45 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 accepts.getOrPut(tile) { mutableListOf() }.add(Acceptance.filtered(SpeciesFilter.MIXED))
             }
 
-            /** Room left in the [role] hopper of the machine at [centre]; nought if it keeps none. */
-            fun hopperRoom(m: DeckMachine, centre: TileIndex, role: BufferRole): Long {
-                val store = bufferTile(grid, m, centre, role) ?: return 0L
-                return maxOf(0L, MACHINE_BUFFER_CAP - buffers.massAt(store))
+            /**
+             * How much more [species] a locked [kiln] at [centre] can actually use: enough to match
+             * a full **principal** hopper in the recipe's own ratio, less what it already holds.
+             *
+             * ⛔ **A hopper's ROOM is the wrong number, and it deadlocked Stu's save.** Room says
+             * what will physically fit, so a kiln asked for two hundred kilos of carbon — ten
+             * charges' worth — while its ferrosilite hopper stood empty. Both reagents come down one
+             * corridor to one door, a rail is first-in-first-out and nothing overtakes, so the
+             * surplus carbon queued at the head of the column with the ferrosilite stuck behind it:
+             * the kiln could not build a charge without ferrosilite, could not drain the carbon
+             * without a charge, and could not let the ferrosilite past the carbon. Permanent. Sixty
+             * thousand ticks changed nothing. `over_fill.txt`, the kiln at (19,10).
+             *
+             * ⭐ **So the appetite is a fact about the RECIPE, not about the tank.** A kiln holding
+             * more of a reagent than its next charge can consume does not want that reagent — it
+             * wants the one it is short of. That is the same arithmetic [chargeRecipe] builds a
+             * charge with ([Reaction.reagentFor], never a hand-written fraction), asked one step
+             * earlier: of what to *order* rather than of what to load.
+             *
+             * ⚠️ **It cannot starve a charge**, which is the thing to check rather than assume. A
+             * chamberful is `MACHINE_BUFFER_CAP × massPermilleOf(principal)`, so the principal a
+             * charge takes is always *less* than the full hopper this ratio is struck against — the
+             * carbon that matches 200 kg of ferrosilite is 54.6 kg and a charge needs 42.9 kg.
+             *
+             * ⚠️ Capped at the hopper as well, for a row whose ratio asks for more of a reagent than
+             * a hopper holds. Nothing in the table does today; the cap is so that nothing has to
+             * wonder.
+             */
+            fun kilnAppetite(kiln: Furnace, centre: TileIndex, species: Species): Long {
+                val row = kiln.recipe ?: return Acceptance.UNLIMITED
+                // ⚠️ The index is for the RATIO and [Furnace.roleFor] for the hopper. Two reads of
+                // `reagents` by the same predicate, so they cannot name different reagents — the
+                // role stays that function's single statement and this only wants the arithmetic.
+                val i = row.reagents.indexOfFirst { it.first == species }
+                if (i < 0) return 0L
+                val role = kiln.roleFor(species) ?: return 0L
+                val store = bufferTile(grid, kiln, centre, role) ?: return 0L
+                val target = minOf(MACHINE_BUFFER_CAP, row.reagentFor(i, MACHINE_BUFFER_CAP))
+                return maxOf(0L, target - buffers.massAt(store))
             }
 
             // ── Books: what the player has said may be sent here ─────────────
@@ -5582,10 +5620,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // questions.
                 val locked = (book as? Furnace)?.takeIf { it.recipe != null }
                 for (species in book.whitelist) {
-                    val room = locked
-                        ?.let { kiln -> kiln.roleFor(species)?.let { hopperRoom(kiln, input.owner, it) } }
-                        ?: Acceptance.UNLIMITED
-                    list.add(Acceptance.filtered(SpeciesFilter(species, pure = true), room))
+                    val room = locked?.let { kilnAppetite(it, input.owner, species) } ?: Acceptance.UNLIMITED
+                    // ⛔ **An ORDER, not an allowance** — see [Acceptance.doorTakesSurplus]. The
+                    // hopper behind this number is several times bigger than it, so a lump that
+                    // arrives past it still fits, and a door that refused it would strand it on the
+                    // tile outside — in front of the other reagent, which is the one thing that
+                    // makes the kiln unable to drain the surplus. That is the deadlock.
+                    list.add(
+                        Acceptance.filtered(
+                            SpeciesFilter(species, pure = true),
+                            room,
+                            doorTakesSurplus = locked != null,
+                        ),
+                    )
                 }
                 // ⚠️ Never reached for a locked kiln — [Furnace.ore] is false while a recipe is set,
                 // because a blend has no single species to meter into a hopper.
@@ -5833,7 +5880,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // replaces wherever there is no ring to come round. Stu's `cycle` save, 2026-09-11.
                 if (flow.hopTo(tile) != null && !whitelist.permitsPast(tile, cargo)) return false
                 val own = accepts[tile] ?: return true
-                for (a in own) if (a.admits(cargo)) return true
+                // ⛔ **[Acceptance.admitsAtDoor], which is [Acceptance.admits] less the quantity
+                // question for a sink that ordered to a target rather than to its brim.** This line
+                // used to strand a kiln's own surplus one tile outside its mouth, in front of the
+                // reagent that would have let it drain — see that method, and `eatenBy`, which is
+                // the only other place allowed to ask it.
+                for (a in own) if (a.admitsAtDoor(cargo)) return true
                 return false
             }
 
@@ -5842,6 +5894,38 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // *slice* rather than of the pile.
             fun wouldTake(to: TileIndex, plug: List<Acceptance>?, lump: Mixture, rationed: Boolean): Boolean =
                 (plug == null || plug.any { it.admits(lump) }) && whitelist.permits(to, lump, rationed)
+
+            /**
+             * Whether [lump] leaving [from] has a way out other than [to] that could **use** it.
+             *
+             * ⛔ **This is what "a lump with a choice" actually means, and `outDegree` is not it.**
+             * [Whitelist.permits] rations only where a lump has somewhere else to go, because *"a
+             * lump already on the belt in a corridor with one way out is committed: refusing it does
+             * not save the material, it only stops it arriving."* The count of ways out was standing
+             * in for that, and it counts turnings this lump cannot take: Stu's `over_fill.txt`, the
+             * carbon at (20,13), where the other way out is a docking port that does not buy carbon.
+             * Two ways out, one of them fictional, so the lump was rationed at a fork it did not
+             * have — and stranded in front of the ferrosilite that was the only thing able to drain
+             * the hopper it was waiting on. A deadlock made out of arithmetic about a road nothing
+             * could travel.
+             *
+             * ⚠️ **Kind and order, never quantity** (`rationed = false`). The question is whether the
+             * other branch is a *road for this lump at all*; whether it currently wants more is the
+             * very thing being decided, and asking it here would make two forks each read the other
+             * as the real one.
+             *
+             * ⚠️ **Only a fork pays for this**, and then only until the first other road answers yes.
+             * A corridor tile answers from [FlowGraph.outDegree] alone, as it always did.
+             */
+            fun hasAnotherRoad(from: TileIndex, to: TileIndex, lump: Mixture): Boolean {
+                for (other in flow.successorTiles(from)) {
+                    if (other == to) continue
+                    if (whitelist.permits(other, lump, rationed = false)) return true
+                }
+                // A span's far end is a way out like any other — see [FlowGraph.hopTo].
+                val hop = flow.hopTo(from)
+                return hop != null && hop != to && whitelist.permitsPast(from, lump)
+            }
 
             advanceSegments(
                 flow,
@@ -5871,7 +5955,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         // ⛔ Rationed only where the lump has somewhere else it could go — see
                         // [Whitelist.permits]. Holding back a lump with one way out saves nothing
                         // and only stops it arriving.
-                        wouldTake(to, site, lump, rationed = flow.outDegree(from) > 1)
+                        //
+                        // ⛔ **"Somewhere else" has to mean somewhere else THIS LUMP could use.** A
+                        // count of turnings includes the ones it cannot take, and a fork whose other
+                        // arm refuses this kind is not a fork at all — see [hasAnotherRoad], and the
+                        // carbon it stopped stranding.
+                        val forked = flow.outDegree(from) > 1 && hasAnotherRoad(from, to, lump)
+                        wouldTake(to, site, lump, rationed = forked)
                     } ?: false
                 },
                 // ── How much of it, once the answer is yes ───────────────────
