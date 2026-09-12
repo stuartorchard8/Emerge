@@ -178,6 +178,33 @@ class UnifiedReactionTest {
         assertTrue(unstarved(burn, 100L * Budget.KILOGRAM, CARBON_IGNITION_KELVIN)[0] > 0L)
     }
 
+    /**
+     * ⛔ **A row with a [Reaction.ceilingKelvin] stops at the top of its window as hard as it starts
+     * at the bottom**, which is the other half of [Reaction.firesAt] and the half nothing else pins.
+     *
+     * Photosynthesis is the only row that has one, and the reason it has one is that the row it would
+     * otherwise feed is the algae *decomposition* — a cooking tank breeding algae out of its own
+     * smoke. See `ProductStabilityTest`, which is the rule this makes satisfiable.
+     */
+    @Test
+    fun aRowWithACeilingStopsAtTheTopOfItsWindow() {
+        val grow = REACTIONS.first { it.principal == Species.Algae && it.reagents.size > 1 }
+        val bloom = 100L * Budget.KILOGRAM
+        assertTrue(unstarved(grow, bloom, grow.ceilingKelvin)[0] > 0L, "algae stopped growing at its own ceiling")
+        assertEquals(
+            0L,
+            unstarved(grow, bloom, grow.ceilingKelvin + 1)[0],
+            "algae kept photosynthesising above the temperature that kills it",
+        )
+        // ⛔ And the whole point of the number: the cooking row must be out of reach of this one, or
+        // the pair is back and the tank breeds algae out of its own pyrolysis gases.
+        val cook = REACTIONS.first { it.principal == Species.Algae && it.reagents.size == 1 }
+        assertTrue(
+            grow.ceilingKelvin < cook.onsetKelvin,
+            "photosynthesis still runs at the temperature that cooks the bloom",
+        )
+    }
+
     @Test
     fun aStuffyRoomSlowsTheFireRatherThanBreakingIt() {
         // ⛔ Starved of a reagent, the row must stay on the stoichiometric line — react *less*, not

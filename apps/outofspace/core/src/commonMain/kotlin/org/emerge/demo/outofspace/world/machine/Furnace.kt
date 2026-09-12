@@ -188,13 +188,13 @@ data class Furnace(
      * "the lowest valid temperature for this recipe" is the slowest one that technically qualifies.
      * One rung up is the cheapest setting that actually converts.
      *
-     * ⚠️ **Falls back to the player's number if the ladder cannot clear the onset**, which is a
-     * reaction hotter than 2400 K. Nothing in the table is today — the hottest onset is 2000 K — and
-     * `FurnaceRecipeTest` pins that, since a row added above the ladder would otherwise get a
-     * setpoint that silently cannot run it.
+     * ⚠️ **Falls back to the player's number if the ladder has no rung for the row**, which is a
+     * reaction hotter than 2400 K or one whose window no rung lands inside. Nothing in the table is
+     * either today, and `FurnaceRecipeTest` pins that, since a row added above the ladder would
+     * otherwise get a setpoint that silently cannot run it.
      */
     val heldKelvin: Int
-        get() = recipe?.let { r -> SETPOINTS.firstOrNull { it > r.onsetKelvin } } ?: setTemperature
+        get() = recipe?.let { setpointFor(it) } ?: setTemperature
 
     /**
      * How far the charge in the chamber has got, in permille — **the reagent least of which is
@@ -275,6 +275,20 @@ data class Furnace(
          * a decomposer is told to stop without unwiring it.
          */
         val SETPOINTS: List<Int> = listOf(200, 300, 900, 1100, 1250, 1400, 1600, 1900, 2200, 2400)
+
+        /**
+         * The rung this furnace would hold [reaction] at, or null if the ladder has none.
+         *
+         * ⛔ **The one statement of the rule**, because the recipe panel prints this number beside
+         * every row it offers and a second copy of the arithmetic is a second thing to forget. It
+         * was two copies until [Reaction.ceilingKelvin] arrived and needed adding to both.
+         *
+         * ⚠️ **A ceiling can make this null where an onset never could.** A row with a window has a
+         * rung only if one lands inside it; photosynthesis's 273–318 K is cleared by the 300 K rung
+         * and nothing else, which is a real furnace setting and not a coincidence worth relying on.
+         */
+        fun setpointFor(reaction: Reaction): Int? =
+            SETPOINTS.firstOrNull { it > reaction.onsetKelvin && it <= reaction.ceilingKelvin }
 
         /**
          * The residence times the panel offers, in **ticks**.

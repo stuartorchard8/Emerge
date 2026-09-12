@@ -502,20 +502,23 @@ class AmbientChemistryTest {
     }
 
     /**
-     * ⛔ **Hull salvage becomes rail iron, and what it costs is oxygen blended in with it.**
+     * ⛔ **Hull salvage burns to scale, and the iron comes back out of the scale in a second furnace.**
      *
-     * `Fe₉₉C + O₂ → 99 Fe + CO₂`, which is decarburisation and which is what a Bessemer converter
-     * does. It is the one way back out of an alloy in the game, and it is what makes a marked hull
-     * worth anything to a player who wants track: steel is not iron by any fraction, so without this
-     * row salvaged plate can only ever become more plate.
+     * `4 Fe₉₉C + 301 O₂ → 198 Fe₂O₃ + 4 CO₂`. ⚠️ **The row said `99 Fe + CO₂` until 2026-09-12 and
+     * this test asserted the iron**, softly — "some iron appeared", never a yield, because the iron
+     * was standing in hot air above [IRON_OXIDATION_KELVIN] and the rust row was racing it for the
+     * same oxygen. What was really being asserted was that the race had not finished yet.
      *
-     * ⚠️ **Asserted as "some iron appeared", not as a yield**, and deliberately. The iron this makes
-     * is standing in hot air well above [IRON_OXIDATION_KELVIN], so the rust row is competing for the
-     * same oxygen and some of the iron goes straight back to scale. Pinning a number here would be
-     * pinning the outcome of that race, which is a tuning fact and not the contract.
+     * ⭐ **So the row stopped describing the first half of the process**, and what a player gets from
+     * a hot airy chamber is scale. The iron is one row further on — `Fe₂O₃ + 3 C → 2 Fe + 3 CO` at
+     * 1200 K, which is the same row every other iron ore in the game goes through. Salvaging steel
+     * costs carbon now, which is the honest price of having put carbon into it.
+     *
+     * ⚠️ **Asserted as "no loose iron at any point", which is the part that is new.** The old
+     * behaviour would leave iron sitting on the belt for as long as the oxygen lasted.
      */
     @Test
-    fun `steel with oxygen in it gives its carbon up and leaves iron behind`() {
+    fun `steel with oxygen in it burns to scale and leaves no loose iron`() {
         val start = withLump(lumpAt(
             decarburisingKelvin,
             Species.Steel to 20L * Budget.KILOGRAM,
@@ -524,21 +527,25 @@ class AmbientChemistryTest {
         val after = run(start, TICKS)
 
         val steelLost = railMass(start, Species.Steel) - railMass(after, Species.Steel)
-        assertTrue(steelLost > 0L, "the steel did not decarburise")
-
-        val ironMade = railMass(after, Species.Iron) - railMass(start, Species.Iron)
-        assertTrue(ironMade > 0L, "steel was consumed and no iron came out of it")
+        assertTrue(steelLost > 0L, "the steel did not burn")
 
         val oxygenUsed = railMass(start, Species.Oxygen) - railMass(after, Species.Oxygen)
-        assertTrue(oxygenUsed > 0L, "carbon left the steel without any oxygen being consumed")
+        assertTrue(oxygenUsed > 0L, "steel was consumed without any oxygen being consumed")
 
-        // ⚠️ Iron plus its scale, because the rust row takes a share of the iron the moment it
-        // exists. The two together are what the steel actually turned into.
+        assertEquals(
+            0L,
+            railMass(after, Species.Iron),
+            "loose iron came out of a steel fire — the row is describing half a process again",
+        )
+
+        // ⚠️ **Scale outweighs the steel it came from**, by the oxygen it picked up on the way:
+        // 198 Fe₂O₃ at 160 g against 4 Fe₉₉C at 5556, which is 1.4255. Asserted as a band because
+        // that ratio is a fact about the row rather than about how far the run got — the carbon is
+        // one part in 463 by mass and leaves as CO₂, and everything else becomes rust.
         val hematiteMade = railMass(after, Species.Hematite) - railMass(start, Species.Hematite)
         assertTrue(
-            ironMade + hematiteMade > steelLost * 90L / 100L,
-            "the iron went somewhere that is neither iron nor scale: " +
-                "lost $steelLost, made $ironMade iron and $hematiteMade scale",
+            hematiteMade in (steelLost * 140L / 100L)..(steelLost * 145L / 100L),
+            "scale is not 1.4255 times the steel that made it: lost $steelLost, made $hematiteMade",
         )
     }
 

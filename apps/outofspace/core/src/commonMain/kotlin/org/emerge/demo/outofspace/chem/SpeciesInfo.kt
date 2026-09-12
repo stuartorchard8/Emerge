@@ -62,9 +62,20 @@ class ReactionInfo(
     val onsetKelvin: Int,
     /** Positive is **endothermic**, the sign convention of all four tables. */
     val enthalpyPerKg: Long,
+    /** [Reaction.ceilingKelvin] — [Int.MAX_VALUE] for every row that has no upper bound. */
+    val ceilingKelvin: Int = Int.MAX_VALUE,
 ) {
     /** Whether this reaction takes energy out of the matter to happen, rather than giving it back. */
     val isEndothermic: Boolean get() = enthalpyPerKg > 0L
+
+    /**
+     * The temperatures this reaction runs at, for a panel to print — `1200K` or `273-318K`.
+     *
+     * ⚠️ **The dash is a hyphen and not an em dash.** The bitmap font draws an em dash as `?`; see
+     * the inspector's own note on the same trap.
+     */
+    val window: String =
+        if (ceilingKelvin == Int.MAX_VALUE) "${onsetKelvin}K" else "$onsetKelvin-${ceilingKelvin}K"
 
     fun consumes(species: Species): Boolean = inputs.any { it.first == species }
 
@@ -89,6 +100,7 @@ val ALL_REACTIONS: List<ReactionInfo> = REACTIONS.map {
         products = it.products,
         onsetKelvin = it.onsetKelvin,
         enthalpyPerKg = it.enthalpyPerKg,
+        ceilingKelvin = it.ceilingKelvin,
     )
 }
 

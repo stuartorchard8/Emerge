@@ -72,7 +72,28 @@ class Reaction(
     val products: List<Pair<Species, Int>>,
     val onsetKelvin: Int,
     val baseRate: Long,
+    /**
+     * The temperature above which this row **stops**, and the second half of a window that was open
+     * at the top until 2026-09-12.
+     *
+     * ⛔ **Almost nothing has one, and a row that does is saying something specific: the *mechanism*
+     * is destroyed by heat.** An onset is a barrier a charge climbs; a ceiling is a machine that
+     * breaks. Photosynthesis is the case — it is run by an organism, and an organism cooks. There is
+     * no thermodynamic ceiling and this must never be used as one: a row that would rather not fire
+     * at some temperature is a row whose *products* are wrong, which is `ProductStabilityTest`'s
+     * business and not this field's.
+     *
+     * ⚠️ **It is what makes the algae pair legal.** `Algae → CH₄ + CO₂ + 4 H₂O + 4 C` fires at 353 K
+     * and hands back water and CO₂, which are two thirds of photosynthesis's reagent list — so a
+     * cooking tank grew algae out of its own smoke. The old exclusion called that "really a missing
+     * *alive* condition, not stoichiometry", and this is that condition, written as the only thing
+     * about being alive this model can see.
+     */
+    val ceilingKelvin: Int = Int.MAX_VALUE,
 ) {
+    /** Whether [kelvin] is inside this row's window — at or above the onset, not past the ceiling. */
+    fun firesAt(kelvin: Int): Boolean = kelvin >= onsetKelvin && kelvin <= ceilingKelvin
+
     /** Formula units of [principal], for the mass arithmetic and for what the reference prints. */
     val principalUnits: Int = reagents.first { it.first == principal }.second
 
@@ -237,14 +258,14 @@ class Reaction(
     }
 
     /**
-     * How much of [mass] reacts in one pass at [kelvin], and nothing below the onset.
+     * How much of [mass] reacts in one pass at [kelvin], and nothing outside [firesAt]'s window.
      *
      * `Decomposition.decomposed`'s arithmetic, against the same shared Arrhenius climb in reduced
      * temperature — the rate law was already one implementation across all four tables and this
      * does not make it a fifth.
      */
     fun consumed(mass: Long, kelvin: Int): Long {
-        if (mass <= 0L || kelvin < onsetKelvin) return 0L
+        if (mass <= 0L || !firesAt(kelvin)) return 0L
         return scaledRatio(reactionFraction(kelvin, onsetKelvin, baseRate), SCALE, mass)
     }
 
@@ -379,6 +400,19 @@ private val WRITTEN: List<Reaction> = listOf(
      * water as a gas, because that is where the cohesion ledger's zero sits and the condensation is
      * `settleCohesion`'s to credit. Six waters at the 44 kJ/mol between the two is the whole of the
      * gap. Charging it here as well would be paying for the same phase change twice.
+     *
+     * ⭐ **The only row in the game with a [Reaction.ceilingKelvin], and the reason is that this one
+     * is run by something alive.** Algal photosynthesis falls off above about 35 °C and the cells are
+     * dead by 45 °C; 318 K is that, and it is a fact about the organism rather than about the
+     * equation. Every other row here runs at any temperature its onset clears, because nothing else
+     * here is alive.
+     *
+     * ⛔ **It is load-bearing rather than flavour.** The decomposition row below fires at 353 K and
+     * gives back four waters and a CO₂ — two thirds of this row's reagent list — so without the
+     * ceiling a tank held at cooking temperature bred algae out of the gases of the algae it was
+     * cooking, forever. That pair is the last of the four `ProductStabilityTest` used to exclude, and
+     * the ceiling is what retires the exclusion: 318 K is below 353 K, so at the temperature that
+     * cooks a bloom this row is simply not running.
      */
     Reaction(
         principal = Species.Algae,
@@ -386,6 +420,7 @@ private val WRITTEN: List<Reaction> = listOf(
         products = listOf(Species.Algae to 2, Species.Oxygen to 6),
         onsetKelvin = 273, // ~0°C.
         baseRate = BASE_RATE,
+        ceilingKelvin = 318, // ~45°C -- the cells are dead above this, and dead algae do not grow.
     ),
 
     // ══ THE FIRES ═════════════════════════════════════════════════════════════════════════════
@@ -538,50 +573,55 @@ private val WRITTEN: List<Reaction> = listOf(
     ),
 
     /**
-     * `Fe₉₉C + O₂ → 99 Fe + CO₂` — **decarburisation, and the way back out of an alloy.**
+     * `4 Fe₉₉C + 301 O₂ → 198 Fe₂O₃ + 4 CO₂` — **steel burning all the way down, and the way back out
+     * of an alloy in two steps instead of one.**
      *
-     * ⛔ **The only reaction in the game that runs a recipe backwards**, and it is not a special case
-     * for doing so: it is what taking carbon out of steel actually is. Bessemer and basic-oxygen
-     * steelmaking are precisely this — blow oxygen through the metal and the carbon leaves as gas —
-     * and the reason a converter needs no fuel once it is lit is the sign of this row. So hull plate
-     * marked for salvage becomes rail iron, and the thing it costs is *oxygen*, which is the first
-     * job the atmosphere has ever had that a player has a reason to care about.
+     * ⛔ **It was written `Fe₉₉C + O₂ → 99 Fe + CO₂` until 2026-09-12, and the iron did not stay
+     * iron.** [IRON_OXIDATION_KELVIN] is far below this onset, so the ninety-nine irons this row made
+     * were standing in the same hot oxygen that had just taken the carbon off them, and
+     * `4 Fe + 3 O₂ → 2 Fe₂O₃` was waiting for them. The row described the first half of a process and
+     * stopped writing — the same fault as the old forsterite row, with the second step being a *fire*
+     * rather than a smelt. `ProductStabilityTest` reads that shape now.
      *
-     * ⚠️ **It balances exactly on the alloy formula and needed nothing changed to do so**, which is
-     * the strongest evidence that `Fe₉₉C` was the right integer pair: one formula unit of steel holds
-     * exactly one mole of carbon, so one mole of CO₂ carries it off and 99 iron atoms are left.
-     * 5588 g on both sides.
+     * ⚠️ **What the old row leaned on was oxygen starvation, and nothing in the game meters
+     * oxygen.** Carbon does outbid iron at these temperatures ([BASE_RATE] against
+     * [IRON_BASE_RATE]), which is exactly why a Bessemer converter works — but a converter also
+     * *stops*, because a human is metering the blow and watching the flame. Held in open air at 1400 K
+     * the old row measured 90% of its iron recovered and at 1800 K only 66%, and both of those
+     * numbers were really "how long the test ran": with air enough and time enough the answer is zero
+     * either way. A trade whose position depends on when you stop looking is not a trade the player
+     * can be shown, and it read to them as a random tax on salvage.
      *
-     * ⚠️ **You will not get all of your iron back, and that is the model working rather than
-     * leaking.** Iron scales at [IRON_OXIDATION_KELVIN], far below this onset, so the iron this makes
-     * is standing in hot air next to the rust row competing for the same oxygen. Carbon wins most of
-     * it — [BASE_RATE] against [IRON_BASE_RATE] is the same "carbon outbids iron" mechanism the game
-     * already runs on, and it is *why* steelmaking works in reality: at these temperatures carbon has
-     * the greater affinity for oxygen. What is left over is scale, which is what a real converter
-     * makes too.
+     * ⭐ **So what comes out is scale, and the iron comes back out of the scale.** Burn the plate at
+     * 1000 K for rust and CO₂, then charge the rust with carbon at 1200 K —
+     * `Fe₂O₃ + 3 C → 2 Fe + 3 CO`, already in this table, and the row that makes every other iron ore
+     * worth digging. Two furnace settings and two unambiguous outputs, against one setting whose
+     * output was a ratio nobody could predict. **Salvaging steel now costs carbon**, which is the
+     * honest price of having put carbon into it.
      *
-     * **Measured, 20 kg of steel in ambient air, share of the consumed steel recovered as iron:**
+     * ⚠️ **Metering the blow is still the machine it always was**, and it is now a machine with
+     * something to do: a converter that stopped at the right moment would keep the iron and skip the
+     * reduction step entirely. This row is the un-metered case and it is deliberately the unrewarding
+     * one.
      *
-     * | held at | converted in ~400 passes | iron kept | as scale |
-     * |---|---|---|---|
-     * | 1100 K | ~nothing | — | — |
-     * | 1400 K | 6% | **90%** | 13% Fe₂O₃ |
-     * | 1800 K | 54% | **66%** | 46% Fe₂O₃ |
+     * ⚠️ **It balances on the alloy formula, as the old one did** — 4 × 5556 g of steel and 301 × 32 g
+     * of oxygen in, 198 × 160 g of hematite and 4 × 44 g of CO₂ out, 31856 g on both sides. The four
+     * is what it costs to put `Fe₉₉C` and `Fe₂O₃` in one equation: 396 iron atoms is the first common
+     * multiple of 99 and 2.
      *
-     * ⛔ **So temperature is already the dial, and it is a real trade rather than a tax**: hotter
-     * converts faster and loses more of what it converts, because the rust row's rate climbs with the
-     * same Arrhenius curve this one does. Metering the blow is how a real converter keeps the loss
-     * down and would be a *machine*; it is deliberately not this row, and this table is the evidence
-     * that one is not yet needed.
+     * ⚠️ **Strongly exothermic, and it was mildly so.** The old row was worth −394 kJ, which is one
+     * carbon burning; this is −164728 kJ, which is that plus ninety-nine irons rusting. Per kilogram
+     * of steel it is −7434 kJ, essentially the rusting figure, because by mass that is what this now
+     * is. A hot room full of burning salvage is a genuine heat source.
      *
-     * The onset is solid-state decarburisation in air, which is a real and well-known nuisance from
-     * about 700 °C — the soft skin on a forging that was left too long in the furnace. It does **not**
+     * The onset is unchanged: solid-state decarburisation in air is a real and well-known nuisance
+     * from about 700 °C — the soft skin on a forging left too long in the furnace. It does **not**
      * need the metal molten, so a hot airy room is enough and no melting model is implied.
      */
     Reaction(
         principal = Species.Steel,
-        reagents = listOf(Species.Steel to 1, Species.Oxygen to 1),
-        products = listOf(Species.Iron to 99, Species.CarbonDioxide to 1),
+        reagents = listOf(Species.Steel to 4, Species.Oxygen to 301),
+        products = listOf(Species.Hematite to 198, Species.CarbonDioxide to 4),
         onsetKelvin = 1000,
         baseRate = BASE_RATE,
     ),
@@ -782,14 +822,18 @@ private val WRITTEN: List<Reaction> = listOf(
         onsetKelvin = 2050,
         baseRate = BASE_RATE,
     ),
-    // 2 MgO + Si → 2 Mg + SiO₂. The Pidgeon process. Note what it gives back: the quartz returns, so
-    // the silicon is the only thing spent.
+    // 4 MgO + Si → 2 Mg + Mg₂SiO₄. The Pidgeon process, written the way a retort actually runs it:
+    // the silica the silicon gives up does not come back as quartz, it is taken straight back by the
+    // magnesia standing next to it, so what leaves the pan is magnesium metal and a forsterite slag.
     //
     // ⛔ **It fired at 1500 K until 2026-09-11, and 1500 K was a VACUUM number used at one
     // atmosphere.** Real silicothermic reduction runs at 10⁻⁴–10⁻⁵ atm precisely because the magnesium
     // has to leave as vapour for the entropy term to carry it; the retort pressure is not a detail of
     // the process, it *is* the process. At one atmosphere ΔH° = +587 kJ against ΔS° = +266 J/K, so
-    // ΔG reaches zero at **2206 K**, and 1500 K was seven hundred kelvin early.
+    // ΔG reaches zero at **2206 K**, and 1500 K was seven hundred kelvin early. ⚠️ That 2206 K is the
+    // figure for *free* silica and is superseded below, where binding it as forsterite brings the
+    // crossing down to 1986 K — but the pressure argument is the same one and it is why either
+    // number is over two thousand.
     //
     // ⚠️ **That error had a visible consequence and this is what it was.** The two silicate
     // reduction rows below used to make periclase and silicon — exactly this row's reagents — at
@@ -802,11 +846,34 @@ private val WRITTEN: List<Reaction> = listOf(
     // coherent is that forsterite and enstatite no longer stop at periclase-and-silicon on the way
     // past — see the two rows below, which go to the metal in one step because the arithmetic says
     // there is no temperature at which they do anything else.
+    //
+    // ⛔ **It made free quartz until 2026-09-12, and the quartz did not stay free.** `2 MgO + Si →
+    // 2 Mg + SiO₂` handed its silica straight back to the leftover periclase beside it, where
+    // `2 MgO + SiO₂ → Mg₂SiO₄` fires at 1500 K — seven hundred kelvin below this row. So a
+    // silicothermic charge said magnesium and quartz and produced magnesium and forsterite, which is
+    // the same shape as the forsterite bug above with a *reagent* standing in for one of the
+    // products. `ProductStabilityTest` now reads that shape too.
+    //
+    // ⭐ **The fix is the textbook stoichiometry.** Silica is not a resting place next to excess
+    // magnesia at any temperature, which is why the real process is written `4 MgO + Si → 2 Mg +
+    // Mg₂SiO₄` and why a real Pidgeon retort is charged with calcined *dolomite*: the lime ties the
+    // silica up as dicalcium silicate, more tightly still, and that is what buys the low
+    // temperature. Here the magnesia does its own tying.
+    //
+    // ⚠️ **So the row got two hundred kelvin cheaper, and that is the slag paying for it.** The
+    // Ellingham crossing was `587 kJ / 266.1 J/K = 2206 K` with the silica free; binding it as
+    // forsterite hands back the 59 kJ that firing row is worth and costs almost no entropy —
+    // `528 kJ / 265.9 J/K = 1986 K`. Both figures charge magnesium's heat of sublimation twice, which
+    // [FORMATION_ENTHALPY] does not (see the forsterite reduction row below for the same gap).
+    //
+    // ⚠️ **It is now the cheapest route to magnesium**, under carbothermic magnesia at 2050 K, and
+    // that is the correct ordering rather than a buff — tying up the silica is precisely the trick
+    // that makes silicothermic reduction industry's choice.
     Reaction(
         principal = Species.Periclase,
-        reagents = listOf(Species.Periclase to 2, Species.Silicon to 1),
-        products = listOf(Species.Magnesium to 2, Species.Quartz to 1),
-        onsetKelvin = 2200,
+        reagents = listOf(Species.Periclase to 4, Species.Silicon to 1),
+        products = listOf(Species.Magnesium to 2, Species.Forsterite to 1),
+        onsetKelvin = 2000,
         baseRate = BASE_RATE,
     ),
     // Mg₂SiO₄ + 4 C → 2 Mg + Si + 4 CO. Carbothermic reduction of olivine, taken all the way to the
@@ -1027,13 +1094,31 @@ private val WRITTEN: List<Reaction> = listOf(
     // to say "alloy" except as a species — see steel — and inventing a ferrochrome species to hold a
     // ratio nobody has chosen would be worse than handing over both metals and letting a belt carry
     // them.
+    //
+    // ⛔ **It handed over loose iron until 2026-09-12, and loose iron does not survive this
+    // chamber.** The row fires at 1900 K, `99 Fe + C → Fe₉₉C` fires at 1811 K, and a carbothermic
+    // charge is by construction standing in surplus carbon — so every gram of iron this made was
+    // carburised on the spot by the reductant that made it. The player was told iron and chromium and
+    // got steel and chromium.
+    //
+    // ⭐ **So the row is written to the steel, which is also what a real furnace makes.** High-carbon
+    // ferrochrome is a carbon-bearing alloy and always was; the comment below used to apologise for
+    // not being able to say "alloy", and the game does have exactly one alloy species. Writing it in
+    // costs the 99 that `Fe₉₉C` has always cost — one formula unit of steel needs ninety-nine irons,
+    // so ninety-nine chromites, so the whole row multiplies up. ⚠️ The **ratio a player mixes to is
+    // unchanged to four figures** (397 carbons against 396, one extra for the alloy); what changed is
+    // what comes out.
+    //
+    // ⚠️ **The energy is untouched and that is checkable**: steel's formation enthalpy is zero from
+    // its elements, so 99 of the old row at 1001 kJ is this row's 99099 kJ exactly. Carburising iron
+    // is free; getting the charge to 1900 K is what it costs.
     Reaction(
         principal = Species.Chromite,
-        reagents = listOf(Species.Chromite to 1, Species.Carbon to 4),
+        reagents = listOf(Species.Chromite to 99, Species.Carbon to 397),
         products = listOf(
-            Species.Iron to 1,
-            Species.Chromium to 2,
-            Species.CarbonMonoxide to 4,
+            Species.Steel to 1,
+            Species.Chromium to 198,
+            Species.CarbonMonoxide to 396,
         ),
         onsetKelvin = 1900,
         baseRate = BASE_RATE,

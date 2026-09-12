@@ -1498,7 +1498,7 @@ class OutofspaceHud {
             // The temperature this row would be held at, which is the cost of running it and the
             // one number a player compares rows by. See [Furnace.heldKelvin].
             text(
-                EJECT_MASS_W.cell("${Furnace.SETPOINTS.firstOrNull { it > r.onsetKelvin } ?: r.onsetKelvin} K"),
+                EJECT_MASS_W.cell("${Furnace.setpointFor(r) ?: r.onsetKelvin} K"),
                 0x9AC0E0FFL,
             )
             button("RUN", if (on) 0x2E7B4BFFL else EJECT_OFF, widthEm = EJECT_SWITCH_EM) {
@@ -2724,7 +2724,7 @@ class OutofspaceHud {
                 // that decide whether this reaction is a plan or a curiosity.
                 keyValue(
                     reaction.kind.label,
-                    "${reaction.onsetKelvin}K · " + if (reaction.isEndothermic) "TAKES HEAT" else "GIVES HEAT",
+                    reaction.window + " · " + if (reaction.isEndothermic) "TAKES HEAT" else "GIVES HEAT",
                     0x9A9A9AFFL,
                     0xE0864AFFL,
                 )

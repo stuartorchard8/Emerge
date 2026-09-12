@@ -65,7 +65,11 @@ class FormationTest {
             // ── Burning in the room's air ──
             "1 Carbon + 1 Oxygen -> 1 CarbonDioxide" to -394L,
             "4 Iron + 3 Oxygen -> 2 Hematite" to -1648L,
-            "1 Steel + 1 Oxygen -> 99 Iron + 1 CarbonDioxide" to -394L,
+            // ⚠️ **Rewritten on 2026-09-12 and it is four hundred times the row it was.** It used
+            // to stop at 99 loose irons in hot oxygen, which is one carbon burning at -394; the
+            // irons rust, so the row is that plus 99 of the rust row above:
+            // 198(-824) + 4(-394) = -164728.
+            "4 Steel + 301 Oxygen -> 198 Hematite + 4 CarbonDioxide" to -164728L,
             // ── Making what the vessel is built of ──
             "99 Iron + 1 Carbon -> 1 Steel" to 0L,
             // ⭐ Not a defined zero any more but a derived −59, and it lands on the measured
@@ -81,7 +85,10 @@ class FormationTest {
             "1 Algae -> 1 Methane + 1 CarbonDioxide + 4 Water + 4 Carbon" to -166L,
             // ── Reduction ──
             "1 Quartz + 2 Carbon -> 1 Silicon + 2 CarbonMonoxide" to 689L,
-            "2 Periclase + 1 Silicon -> 2 Magnesium + 1 Quartz" to 293L,
+            // ⚠️ **The silica leaves as forsterite, not loose**, since 2026-09-12 — so this is the
+            // old 293 with the firing row's -59 already spent inside it:
+            // (-2174) - 4(-602) = 234.
+            "4 Periclase + 1 Silicon -> 2 Magnesium + 1 Forsterite" to 234L,
             "1 Periclase + 1 Carbon -> 1 Magnesium + 1 CarbonMonoxide" to 491L,
             // ⚠️ **Both silicates changed shape on 2026-09-11 and got much dearer**, 748 → 1730 and
             // 723 → 1214. They used to stop at periclase and silicon, which is not a resting place
@@ -108,7 +115,11 @@ class FormationTest {
             "1 Argentite + 1 Oxygen -> 2 Silver + 1 SulfurDioxide" to -265L,
             "1 Cassiterite + 2 Carbon -> 1 Tin + 2 CarbonMonoxide" to 359L,
             "1 Pyrolusite + 2 Carbon -> 1 Manganese + 2 CarbonMonoxide" to 298L,
-            "1 Chromite + 4 Carbon -> 1 Iron + 2 Chromium + 4 CarbonMonoxide" to 1001L,
+            // ⚠️ **Ninety-nine of the row it was, to the kilojoule.** The iron it makes is
+            // carburised on the spot above 1811 K, and steel is zero from its elements, so
+            // scaling up to one formula unit of `Fe99C` changes the shape and not the price:
+            // 396(-111) - 99(-1445) = 99099, and 99 x 1001 = 99099.
+            "99 Chromite + 397 Carbon -> 1 Steel + 198 Chromium + 396 CarbonMonoxide" to 99099L,
             "1 Galena + 1 Oxygen -> 1 Lead + 1 SulfurDioxide" to -197L,
             "1 Stibnite + 3 Iron -> 2 Antimony + 3 Troilite" to -125L,
             "1 Bismuthinite + 3 Iron -> 2 Bismuth + 3 Troilite" to -157L,

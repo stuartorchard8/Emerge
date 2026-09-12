@@ -32,18 +32,27 @@ import kotlin.test.assertEquals
  * onset was a **vacuum** number used at one atmosphere, and the silicate rows were stopping at an
  * intermediate that no temperature actually produces.
  *
- * ### What it does not check
+ * ### Leftover reagents count, since 2026-09-12
  *
- * ⚠️ **Leftover *reagents* are not products, and this test does not treat them as such.** A real
- * charge is mixed to a ratio and converts a fraction of itself, so unreacted carbon does sit beside
- * the products, and three pairs in the table do react that way: carbothermic chromite carburising
- * its own iron into steel above 1811 K, burning steel's iron rusting in the oxygen that burnt it,
- * and cooked algae photosynthesising in the water and CO₂ it gave off. **All three are physically
- * correct** — that is what those charges do — so they are not failures and the rule is deliberately
- * narrower than "nothing may react with anything".
+ * ⛔ **The check used to look only at the products, and three pairs slipped through the gap.** A real
+ * charge converts a fraction of itself, so unreacted reagents sit in the chamber beside the products
+ * — and a row is just as badly described when its follow-on eats one of each. The exclusion was
+ * argued from the chemistry being *correct*, which it was in all three cases, and that was the wrong
+ * test: the player is not told what is correct, they are told what the row says, and in all three
+ * cases the row said something that did not happen.
+ *
+ * ⚠️ **The fourth was found by playing, which is why the rule moved.** Silicothermic magnesia
+ * (`2 MgO + Si → 2 Mg + SiO₂`, 2200 K) yielded forsterite, because its quartz met the periclase it
+ * had not consumed and fired at 1500 K. Stu, 2026-09-12: *"Maybe this is valid; but it's really hard
+ * to reason about as a player."* All four rows were rewritten rather than exempted — see [REACTIONS]
+ * for each — and photosynthesis, which is genuinely not a stoichiometry problem, got the one thing
+ * that was actually missing: a [Reaction.ceilingKelvin], because algae cook.
+ *
+ * ⚠️ **A follow-on must be able to fire at the temperature that made the charge**, which with a
+ * ceiling in the table is a window test rather than a compare. See [Reaction.firesAt].
  *
  * ⚠️ **It is a stoichiometric check and knows nothing about rates.** Two rows at the same onset are
- * treated as contemporaneous, which is why [violations] compares with `<=`.
+ * treated as contemporaneous, which is why a row firing exactly at another's onset counts.
  */
 class ProductStabilityTest {
 
@@ -52,19 +61,30 @@ class ProductStabilityTest {
             products.joinToString(" + ") { "${it.second} ${it.first}" }
 
     /**
-     * Every pair where one row's product list contains another row's entire reagent list, and the
-     * second row is no hotter than the first.
+     * Every pair where one row leaves a chamber holding another row's entire reagent list, and that
+     * second row can fire at the temperature the first one needed.
+     *
+     * ⛔ **The chamber holds the products *and* whatever reagent did not convert**, which is the
+     * whole of what widened on 2026-09-12. A follow-on has to touch at least one product to be this
+     * row's fault — one that eats only reagents was already able to fire before this row ran, and
+     * saying so here would blame the wrong row.
      */
     private fun violations(): List<String> = buildList {
         for (maker in REACTIONS) {
             val made = maker.products.mapTo(mutableSetOf()) { it.first }
+            val chamber = made + maker.reagents.map { it.first }
             for (eater in REACTIONS) {
                 if (eater === maker) continue
-                if (eater.onsetKelvin > maker.onsetKelvin) continue
-                if (!eater.reagents.all { it.first in made }) continue
+                if (!eater.firesAt(maker.onsetKelvin)) continue
+                if (!eater.reagents.all { it.first in chamber }) continue
+                if (eater.reagents.none { it.first in made }) continue
+                val leftovers = eater.reagents.filterNot { it.first in made }
+                val how =
+                    if (leftovers.isEmpty()) "is eaten whole by"
+                    else "feeds, beside its own leftover ${leftovers.joinToString(" and ") { "${it.first}" }},"
                 add(
                     "${maker.formula()} @${maker.onsetKelvin} K\n" +
-                        "    is eaten whole by  ${eater.formula()} @${eater.onsetKelvin} K",
+                        "    $how  ${eater.formula()} @${eater.onsetKelvin} K",
                 )
             }
         }
@@ -80,8 +100,8 @@ class ProductStabilityTest {
         assertEquals(
             emptyList(),
             violations(),
-            "a row's products are another row's reagents, at or below the temperature that made " +
-                "them — so those products are not what comes out",
+            "a row leaves a chamber holding another row's whole reagent list, at a temperature " +
+                "that row fires at — so what the first row says comes out is not what comes out",
         )
     }
 
@@ -93,21 +113,28 @@ class ProductStabilityTest {
      * 2047 K, **lower**, because four CO and two magnesium vapours carry the entropy. There is no
      * window in which the partial products are the stable ones, which is why this is not a choice.
      *
+     * ⭐ **And the silicothermic row moved on 2026-09-12 for the same kind of reason.** Writing its
+     * silica as forsterite rather than free quartz takes it from `587 kJ / 266.1 J/K = 2206 K` to
+     * `528 kJ / 265.9 J/K = 1986 K` — the entropy is the two magnesium vapours either way, and the
+     * enthalpy is 59 kJ cheaper because the slag is a compound rather than an oxide sitting loose.
+     *
      * Pinned here because the onsets are the load-bearing half of the rule above: if somebody cools
-     * these rows back under the silicothermic one, the check passes on stoichiometry and the bug
-     * comes back.
+     * these rows back under one another, the check passes on stoichiometry and the bug comes back.
      */
     @Test
     fun `the magnesium routes are ordered as their Ellingham crossings say`() {
         fun onsetOf(formula: String): Int =
             REACTIONS.first { it.formula() == formula }.onsetKelvin
 
-        // Silicothermic reduction needs 2206 K at one atmosphere; it is the hottest row in the game
-        // and it must not sit under the rows that would otherwise feed it.
-        assertEquals(2200, onsetOf("2 Periclase + 1 Silicon -> 2 Magnesium + 1 Quartz"))
-        // Carbothermic magnesia crosses at 2034 K, so it is the cheaper of the two routes to the
-        // metal — the opposite of industry's preference, which turns on reversion this game has no
-        // model of. See [REACTIONS].
+        // ⭐ **Silicothermic reduction, with its silica bound up as forsterite: 1986 K.** It was
+        // 2206 K while the row made free quartz, and the 220 K between them is the slag — the 59 kJ
+        // the firing row is worth, handed back at almost no entropy cost. That is the whole reason
+        // the real process runs on a silica binder, and it is why this row is now the *cheapest*
+        // route to magnesium rather than the dearest.
+        assertEquals(2000, onsetOf("4 Periclase + 1 Silicon -> 2 Magnesium + 1 Forsterite"))
+        // Carbothermic magnesia crosses at 2034 K, so it is now the dearer of the two routes to the
+        // metal — which is industry's ordering, and the table used to have it backwards for the one
+        // reason industry has it this way: what silicothermic reduction buys is a silica binder.
         assertEquals(2050, onsetOf("1 Periclase + 1 Carbon -> 1 Magnesium + 1 CarbonMonoxide"))
         assertEquals(2050, onsetOf("1 Forsterite + 4 Carbon -> 2 Magnesium + 1 Silicon + 4 CarbonMonoxide"))
         assertEquals(2000, onsetOf("1 Enstatite + 3 Carbon -> 1 Magnesium + 1 Silicon + 3 CarbonMonoxide"))

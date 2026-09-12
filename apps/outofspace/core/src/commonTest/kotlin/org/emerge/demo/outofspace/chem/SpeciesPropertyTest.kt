@@ -110,26 +110,37 @@ class SpeciesPropertyTest {
      * ⛔ **A furnace lining must outlast the furnace it lines**, or the one machine that makes heat is
      * the one machine heat destroys.
      *
-     * ⚠️ **And it does not, and the gap got wider rather than narrower on 2026-09-11.** This used to
-     * name `Firebrick`, which softened at 1890 K against a hottest row of 2000 K — a shortfall of
-     * 110 K. That species is deleted and a furnace is lined with [Species.Forsterite], which melts at
-     * a genuinely higher 2163 K; but the hottest row moved further still, because the silicothermic
-     * magnesium reduction was corrected from a vacuum onset of 1500 K to the 2200 K it needs at one
-     * atmosphere. So the shortfall is now 37 K.
+     * ⭐ **It now outlasts every row, and it did not on 2026-09-11.** The history is worth keeping,
+     * because the gap closed from both ends and neither move was aimed at it. This used to name
+     * `Firebrick`, which softened at 1890 K against a hottest row of 2000 K — 110 K short. That
+     * species was deleted for being a fiction and a furnace is lined with [Species.Forsterite], which
+     * melts at a genuinely higher 2163 K; but the same day the silicothermic magnesium row was
+     * corrected from a vacuum onset of 1500 K to the 2200 K it needs at one atmosphere, and the
+     * shortfall became 37 K. On 2026-09-12 that row was rewritten again — its silica leaves as
+     * forsterite rather than as free quartz, which is 220 K cheaper — and the hottest row in the game
+     * is now the 2050 K carbothermic pair. The lining clears it by 113 K.
      *
-     * ⚠️ **It is asserted in the direction it actually holds**, with the collision named, so that
-     * whoever wires melting in meets it here rather than in a save. ⛔ **Do not "fix" this by cooling
-     * a reaction.** Every onset in the reduction section is an Ellingham crossing derived from
-     * [FORMATION_ENTHALPY] and standard entropies; the lining is what has to improve, or melting has
-     * to become a thing a machine can survive for a while.
+     * ⚠️ **The dial still goes past the lining, and that is the part that is still open.** The top of
+     * `Furnace.SETPOINTS` is 2400 K, which a broad furnace will hold on request and no row needs. So
+     * what melts a furnace is no longer a recipe, it is a *setting* — a much smaller problem, and a
+     * fair one, since the player chose it.
+     *
+     * ⛔ **Do not close the remaining gap by cooling a reaction.** Every onset in the reduction
+     * section is an Ellingham crossing derived from [FORMATION_ENTHALPY] and standard entropies.
      */
     @Test
-    fun `a furnace lining softens below the hottest reaction the game asks a furnace for`() {
+    fun `a furnace lining outlasts every reaction but not the top of the dial`() {
         val hottest = REACTIONS.maxOf { it.onsetKelvin }
+        assertEquals(2050, hottest, "the hottest row in the game moved")
         assertTrue(
-            Species.Forsterite.meltingKelvin < hottest,
-            "forsterite now outlasts the hottest row (${Species.Forsterite.meltingKelvin} vs $hottest) — " +
-                "if that is deliberate this test is the thing to delete, but it was not true when written",
+            Species.Forsterite.meltingKelvin > hottest,
+            "forsterite (${Species.Forsterite.meltingKelvin} K) no longer outlasts the hottest row " +
+                "($hottest K) — a lining that cannot survive a recipe is a furnace that eats itself",
+        )
+        assertTrue(
+            Species.Forsterite.meltingKelvin < 2400,
+            "forsterite now outlasts the top setpoint too, so the open problem named here is closed " +
+                "and this half of the test is the thing to delete",
         )
     }
 
