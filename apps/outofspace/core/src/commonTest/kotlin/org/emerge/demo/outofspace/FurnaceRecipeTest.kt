@@ -178,6 +178,22 @@ class FurnaceRecipeTest {
     }
 
     @Test
+    fun `a trace of one reagent does not drag the principal into the chamber`() {
+        // ⛔ **`trickle.txt`.** A hopper holding a *microgram* of the second reagent is short in
+        // exactly the way the test above covers — but it is not EMPTY, so `principalMass` comes out
+        // positive and the loading loop starts. The reagent's own share of that principal then
+        // floors to nothing, the loop bails on `want <= 0`, and the principal it has already moved
+        // is left standing in the chamber: a microgram charge that can never react, that blocks
+        // every real charge behind it, and that goes out of the product mouth as a 1 ug lump owning
+        // a whole rail tile. Thirty of them on Stu's ship.
+        val speck = carbon(1L)
+        val after = run(kiln(reductant = speck), 5)
+        assertNull(store(after, BufferRole.Inside), "a trace of reductant dragged a charge in anyway")
+        assertEquals(200 * kg, store(after, BufferRole.Input)?.total ?: 0L, "the ore hopper was raided")
+        assertEquals(1L, store(after, BufferRole.SecondReagent)?.total ?: 0L, "the speck was consumed")
+    }
+
+    @Test
     fun `what is left over stays in its own hopper`() {
         // A hopper holding more than its share of a charge keeps the remainder, rather than the
         // charge being scaled up to use it. The next charge draws it.

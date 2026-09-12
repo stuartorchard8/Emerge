@@ -1752,13 +1752,37 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
         if (principalMass <= 0L) return m
 
-        val loaded = MutableList(row.reagents.size) { 0L }
+        // ⛔ **The whole charge is priced before any of it moves, and `trickle.txt` is why.** This
+        // was one loop that drew and bailed, so a hopper holding a *speck* — not empty, so the
+        // guard above passes — took the machine apart: [Reaction.principalFor] on a microgram of
+        // the second reagent rounds UP to a few micrograms of principal, whose own share of that
+        // reagent then floors back to nothing, and the loop returned on `want <= 0` having already
+        // moved the principal. What it left was a microgram charge no chemistry can touch, sitting
+        // in a chamber that will not take another until it is handed on, going out of the product
+        // mouth as a 1 ug lump that owns a whole rail tile for the length of its journey. Thirty of
+        // them standing on Stu's ship, the kiln stalled behind its own leavings.
+        //
+        // ⚠️ **[Reaction.react] has always had this guard above its own draw**, in the same words:
+        // a reagent that floors to nothing is a pass that would take the others and give nothing
+        // back for them. An all-or-nothing charge has to answer it the same way, and could not
+        // while the question was asked with a hand already in the hopper.
+        val roles = arrayOfNulls<BufferRole>(row.reagents.size)
+        val hoppers = arrayOfNulls<Mixture>(row.reagents.size)
+        val wants = LongArray(row.reagents.size)
         for ((i, reagent) in row.reagents.withIndex()) {
             val role = m.roleFor(reagent.first) ?: return m
             val want = row.reagentFor(i, principalMass)
             if (want <= 0L) return m
-            val hopper = store(m, tile, role) ?: return m
-            val drawn = hopper.take(minOf(want, hopper.total))
+            roles[i] = role
+            hoppers[i] = store(m, tile, role) ?: return m
+            wants[i] = want
+        }
+
+        val loaded = MutableList(row.reagents.size) { 0L }
+        for ((i, reagent) in row.reagents.withIndex()) {
+            val role = roles[i]!!
+            val hopper = hoppers[i]!!
+            val drawn = hopper.take(minOf(wants[i], hopper.total))
             putStore(m, tile, role, (hopper - drawn).orNull())
             buffers.put(chamber, buffers.resourceAt(chamber)?.plus(drawn) ?: drawn)
             loaded[i] = drawn[reagent.first]
