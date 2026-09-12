@@ -5497,6 +5497,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 accepts.getOrPut(tile) { mutableListOf() }.add(Acceptance.filtered(SpeciesFilter.MIXED))
             }
 
+            /** Room left in the [role] hopper of the machine at [centre]; nought if it keeps none. */
+            fun hopperRoom(m: DeckMachine, centre: TileIndex, role: BufferRole): Long {
+                val store = bufferTile(grid, m, centre, role) ?: return 0L
+                return maxOf(0L, MACHINE_BUFFER_CAP - buffers.massAt(store))
+            }
+
             // ── Books: what the player has said may be sent here ─────────────
             //
             // ⛔ **The docking port's sell side, and it is the same code because it is the same
@@ -5523,6 +5529,43 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // demand network *is sent* everything, so the only way to cook one species was a tank in
             // front of its mouth locked to that species and re-locked by hand. Ten worth cooking
             // meant ten tanks. Now the kiln asks for what it is for.
+            //
+            // ── And HOW MUCH, which only a LOCKED kiln can say ───────────────
+            //
+            // ⛔ **A locked kiln is the one machine that will not eat its own input, and that is
+            // what earns it a quantity.** [Acceptance]'s standing rule is that a working machine's
+            // fullness is a state it *passes through* — drain it and it takes more — so rationing a
+            // network by it is rationing by nothing, and every machine but a store is endless. A
+            // recipe furnace breaks the premise rather than bending the rule: [chargeRecipe] loads
+            // **nothing at all** until every reagent is present in proportion, so a hopper waiting
+            // on a partner that never arrives is full **for good**, in exactly the way a warehouse
+            // is. No other kind does this. A concentrator works whatever it is handed, a thruster
+            // burns it, a rocket runs lean on a short feed, and a broad kiln cooks whatever turns
+            // up; each of those drains itself and so is honestly momentary.
+            //
+            // Stu's save `over_fill.txt`, the kiln at (19,10) reducing ferrosilite with carbon: it
+            // asked endlessly for both, so every gram of ferrosilite on the vessel set off down the
+            // one corridor leading to its one door — and the carbon that was the only thing able to
+            // empty that hopper could not get past what had already arrived for it. There was never
+            // enough carbon to cook the seam; what the endless appetite bought was the whole network
+            // being loaded up to discover that.
+            //
+            // ⚠️ **Broad mode is deliberately untouched**, and `fixtureStalledSink` is why it is
+            // worth saying out loud: a switched-off broad furnace is the only "momentarily full"
+            // sink the transport tests have left to build a jam out of, the warehouse having stopped
+            // being one. Metering it would not be a furnace change, it would be the end of that
+            // exemption for every kind — a bigger argument than this one, and not one a reagent
+            // hopper needs settled.
+            //
+            // ⚠️ **Room now, not room for ever** — the store block's reading of [Acceptance.wanted]
+            // and for its reason: this whole picture is rebuilt from the world every rail step, so a
+            // hopper that drains is hungry again next step.
+            //
+            // ⛔ **One appetite per reagent, because one HOPPER per reagent.** Three tanks behind one
+            // door — see [BufferRole.SecondReagent] — so these really are independent appetites, and
+            // the per-species spelling [Acceptance.shortlisted] warns against is the right one here.
+            // Sharing a quota between them would be the actual bug, one rung down: a full ferrosilite
+            // hopper would shut the door on the carbon that is the only thing able to empty it.
             for ((tile, at) in ports) {
                 if (rails[tile.index] == null) continue
                 val input = at.firstOrNull { it.kind == PortKind.Input } ?: continue
@@ -5532,9 +5575,20 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // site's own bill is the only appetite it has while it is one.
                 if (deck.isGhost(input.owner)) continue
                 val list = accepts.getOrPut(tile) { mutableListOf() }
+                // ⛔ **A hole in the hull never fills, and a broad kiln drains itself**, so for both
+                // of those the book is the whole statement and the quantity stays [Acceptance.UNLIMITED].
+                // The book says *what* for every machine here and only a locked kiln has a *how
+                // much*, which is [Acceptance]'s own division: fussy and endless are two independent
+                // questions.
+                val locked = (book as? Furnace)?.takeIf { it.recipe != null }
                 for (species in book.whitelist) {
-                    list.add(Acceptance.filtered(SpeciesFilter(species, pure = true)))
+                    val room = locked
+                        ?.let { kiln -> kiln.roleFor(species)?.let { hopperRoom(kiln, input.owner, it) } }
+                        ?: Acceptance.UNLIMITED
+                    list.add(Acceptance.filtered(SpeciesFilter(species, pure = true), room))
                 }
+                // ⚠️ Never reached for a locked kiln — [Furnace.ore] is false while a recipe is set,
+                // because a blend has no single species to meter into a hopper.
                 if (book.ore) list.add(Acceptance.filtered(SpeciesFilter.MIXED))
             }
 

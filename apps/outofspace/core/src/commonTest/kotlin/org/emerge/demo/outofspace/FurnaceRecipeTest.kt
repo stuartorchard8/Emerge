@@ -18,6 +18,7 @@ import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Furnace
+import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -312,6 +313,48 @@ class FurnaceRecipeTest {
         // down the same belt through the same door.
         assertEquals(0L, ore[Species.Carbon], "carbon landed in the ore hopper")
         assertEquals(0L, reductant[Species.Ferrosilite], "mineral landed in the reductant hopper")
+    }
+
+    /**
+     * ⛔ **A starved hopper asks for what it can HOLD, never for the whole seam.**
+     *
+     * The demand pass's standing rule is that a working machine's fullness is momentary — drain it
+     * and it takes more — so a machine is [org.emerge.demo.outofspace.world.Acceptance.ANYTHING] and
+     * the network is not rationed by it. A locked kiln breaks that rule, which is why it is the
+     * second machine after the warehouse to state a number: it loads nothing until every reagent is
+     * there in proportion, so a hopper whose partner reagent never arrives is full **for good**.
+     *
+     * Stu's save `over_fill.txt`, the kiln at (19,10) on this exact recipe. Asking endlessly for
+     * ferrosilite drew every gram of it on the vessel into the one corridor leading to the one door
+     * — and the carbon that was the only thing able to empty the hopper could not get past what had
+     * already set off for it. There was never enough carbon to cook it all; what the endless
+     * appetite bought was the whole network being loaded up to find that out.
+     *
+     * ⚠️ **`hopper + onTrack`, because either alone would pass for the wrong reason.** The hopper
+     * was already capped at its own door — `acceptInto` has always refused a lump that would take it
+     * past [MACHINE_BUFFER_CAP] — so the overdraw never showed up *in* the machine. It showed up in
+     * the corridor, which is why the sum is the assertion.
+     */
+    @Test
+    fun `a starved hopper asks for no more than it can hold`() {
+        // Same plumbing, with the reductant tank empty: nothing will ever be cooked here.
+        val after = run(plumbed().stocked(carbonTank, null), 600)
+
+        assertNull(store(after, BufferRole.Inside), "a kiln with no reductant built a charge anyway")
+
+        val hopper = store(after, BufferRole.Input)?.total ?: 0L
+        var onTrack = 0L
+        for (i in 0 until grid.size) onTrack += after.rail.massAt(TileIndex(i))
+
+        assertTrue(
+            hopper + onTrack <= MACHINE_BUFFER_CAP,
+            "the kiln drew ${hopper + onTrack}g for a hopper that holds ${MACHINE_BUFFER_CAP}g",
+        )
+        // And the other half: the seam is still in the tank, where the player can re-plumb it.
+        assertTrue(
+            (after.inStore(oreTank, BufferRole.Inside)?.total ?: 0L) >= 400 * kg - MACHINE_BUFFER_CAP,
+            "the tank emptied into a machine that cannot use what it was sent",
+        )
     }
 
     // ── Re-plumbing ──────────────────────────────────────────────────────────

@@ -16,6 +16,8 @@ import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Furnace
+import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
+import org.emerge.demo.outofspace.world.massIn
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -167,6 +169,38 @@ class FurnaceFeedTest {
         assertEquals(0L, inChamber(other), "quartz was not on the list and reached the kiln anyway")
         assertEquals(0L, onTrack(other), "and it should never have set off")
     }
+
+    /**
+     * ⛔ **A BROAD kiln is still endless, and that is not an oversight.**
+     *
+     * A locked one is not — see `FurnaceRecipeTest`, where a hopper waiting on a reagent that never
+     * comes states the room it has and no more. The difference is not the size of the hopper, it is
+     * whether the machine will eat what is in it: a recipe loads nothing until every reagent is
+     * there in proportion, so one hopper can be full for good; a broad kiln cooks whatever turns up,
+     * which is the "momentary fullness" every machine but a store is exempted by.
+     *
+     * ⚠️ **Pinned rather than merely left alone**, because `fixtureStalledSink` is a switched-off
+     * broad furnace and four transport tests build their jam out of one. The day this kiln meters
+     * itself is the day those tests have no jam to test with, so it should be a decision and not a
+     * side effect.
+     */
+    @Test
+    fun `a broad kiln does not meter itself`() {
+        val seam = 20L * Capacity.PACKET_MASS
+        // Nothing carries the product away, so every one of its three stores fills and stays full.
+        val s = run(line(setOf(Species.Serpentine), pure(Species.Serpentine, seam)), 60 * RAIL_PERIOD)
+
+        assertTrue(inKiln(s) > 0L, "the kiln was never fed at all")
+        assertTrue(
+            onTrack(s) > MACHINE_BUFFER_CAP,
+            "a full broad kiln stopped asking, so the transport tests have lost their jam fixture",
+        )
+        assertEquals(seam, onTrack(s) + stillInTank(s) + inKiln(s), "the seam does not add up")
+    }
+
+    /** Everything the kiln is holding, in all three of its stores. */
+    private fun inKiln(s: VesselState): Long =
+        massIn(s.deck[s.grid.tile(kiln.first, kiln.second)], s.grid.tile(kiln.first, kiln.second), s.grid, s.buffers)
 
     // ── The file ──────────────────────────────────────────────────────────────
 
