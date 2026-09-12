@@ -49,7 +49,12 @@ class ReactionOrderTest {
         // Cracking, not the fire — and the fire has been unreachable from a save since it was written.
         Species.Ammonia to "2 Ammonia -> 1 Nitrogen + 3 Hydrogen",
         // Photosynthesis, not the cooking of a dead bloom.
-        Species.Algae to "100 Algae + 6 Water + 6 CarbonDioxide -> 101 Algae + 6 Oxygen",
+        //
+        // ⚠️ **Rescaled by `c24def70` on 2026-09-12, and the meaning did NOT move** — which is the
+        // only thing this record guards. It was `100 Algae -> 101`; the bloom doubles per pass now.
+        // Still the first row with this principal, so an old file locked to ALGAE still loads as
+        // photosynthesis rather than as the pyrolysis that cooks a dead bloom.
+        Species.Algae to "1 Algae + 6 Water + 6 CarbonDioxide -> 2 Algae + 6 Oxygen",
         // Rusting, not the making of steel.
         Species.Iron to "4 Iron + 3 Oxygen -> 2 Hematite",
         // ⚠️ **Three rows now, not two, and this is still the first of them.** Refractory firing,

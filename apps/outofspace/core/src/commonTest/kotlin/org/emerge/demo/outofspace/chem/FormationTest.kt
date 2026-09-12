@@ -48,7 +48,13 @@ class FormationTest {
             // methane for its hydrogen is worth doing at all.
             "1 Methane -> 1 Carbon + 2 Hydrogen" to 75L,
             "1 CarbonDioxide + 1 Carbon -> 2 CarbonMonoxide" to 172L,
-            "100 Algae + 6 Water + 6 CarbonDioxide -> 101 Algae + 6 Oxygen" to 2545L,
+            // ⚠️ **The row was rescaled on 2026-09-12 (`c24def70`, "buff algae growth") and is worth
+            // exactly what it was.** It ran 100 Algae -> 101 and now runs 1 -> 2, so the bloom
+            // doubles per pass instead of growing a percent; the *energy* is untouched because the
+            // algae that survives cancels either way and what is left is one formula unit of it
+            // against six waters and six CO2. Derived, not carried over:
+            // 2(-1271) - [(-1271) + 6(-242) + 6(-394)] = -2542 + 5087 = 2545.
+            "1 Algae + 6 Water + 6 CarbonDioxide -> 2 Algae + 6 Oxygen" to 2545L,
             // ── The fires ──
             "1 Methane + 2 Oxygen -> 1 CarbonDioxide + 2 Water" to -803L,
             "2 Hydrogen + 1 Oxygen -> 2 Water" to -484L,
@@ -157,6 +163,12 @@ class FormationTest {
      * the ones named here, so keeping them would be recording a drift that has been overtaken by a
      * correction.
      *
+     * ⚠️ **Photosynthesis was dropped on 2026-09-12 for the same reason**, when `c24def70` rescaled
+     * it from `100 Algae -> 101` to `1 Algae -> 2`. It was 2803 → 2545 in the move this list is
+     * about — a rounding, like most of them — and ⭐ **2545 is still exactly what the row is worth**,
+     * because rescaling the catalyst cancels out of the arithmetic. So there is no drift left to
+     * record here, only a formula that is no longer in the table.
+     *
      * ⛔ **Most of these are roundings and two are genuine unknowns.** Methane, hydrogen sulfide,
      * ammonia-burning, magnesite, quartz, ilmenite and rutile all moved by 1–2 kJ, which
      * is the difference between a textbook's rounded figure and this table's — noise. Serpentine
@@ -167,7 +179,6 @@ class FormationTest {
     @Test
     fun theShiftsAwayFromTheHandWrittenTableAreTheOnesWeMeantToLand() {
         val wasWorth = mapOf(
-            "100 Algae + 6 Water + 6 CarbonDioxide -> 101 Algae + 6 Oxygen" to 2803L,
             "1 Methane + 2 Oxygen -> 1 CarbonDioxide + 2 Water" to -802L,
             "2 HydrogenSulfide + 3 Oxygen -> 2 SulfurDioxide + 2 Water" to -1036L,
             "4 Ammonia + 3 Oxygen -> 2 Nitrogen + 6 Water" to -1267L,

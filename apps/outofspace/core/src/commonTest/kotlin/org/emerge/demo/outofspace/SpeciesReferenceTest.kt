@@ -89,15 +89,23 @@ class SpeciesReferenceTest {
 
     @Test
     fun `a catalyst is a reactant on both sides, and reads as one`() {
-        // `100 ALGAE + 6 WATER + 6 CO2 -> 101 ALGAE + 6 OXYGEN`. The hundred is the bloom that has
-        // to already be there and the hundred and one is it plus the one it made, which is the
+        // `1 ALGAE + 6 WATER + 6 CO2 -> 2 ALGAE + 6 OXYGEN`. The algae on the left is the bloom that
+        // has to already be there and the algae on the right is it plus what it made, which is the
         // whole of what a catalyst is — no third kind of ingredient, and nothing for the panel to
         // learn. The row's own documentation writes the formula exactly this way.
+        //
+        // ⛔ **The COEFFICIENTS are not the claim, and pinning them was a tripwire on a balance
+        // dial.** This read `100` and `101` until `c24def70` ("buff algae growth") made it 1 and 2,
+        // and the test failed for a change that was entirely deliberate and that the reference panel
+        // does not care about. What the panel needs is that the species appears on both sides and
+        // comes out ahead; how far ahead is a growth rate for Stu to tune.
         val photosynthesis = reactionsProducing(Species.Algae).single()
-        assertEquals(100, photosynthesis.inputs.single { it.first == Species.Algae }.second)
-        assertEquals(101, photosynthesis.products.single { it.first == Species.Algae }.second)
+        val goesIn = photosynthesis.inputs.single { it.first == Species.Algae }.second
+        val comesOut = photosynthesis.products.single { it.first == Species.Algae }.second
+        assertTrue(goesIn > 0, "the bloom is not a reactant, so it is not a catalyst")
+        assertTrue(comesOut > goesIn, "the bloom does not grow — $goesIn in, $comesOut out")
         // ⚠️ Added to the product entry the row already had, not appended beside it — two chips
-        // reading `1 ALGAE` and `100 ALGAE` on one side would read as two different substances.
+        // reading `1 ALGAE` and `2 ALGAE` on one side would read as two different substances.
         assertEquals(1, photosynthesis.products.count { it.first == Species.Algae })
         assertTrue(photosynthesis.consumes(Species.Water))
     }
