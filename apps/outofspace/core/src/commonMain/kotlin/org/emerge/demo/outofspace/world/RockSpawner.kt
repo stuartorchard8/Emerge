@@ -232,7 +232,7 @@ object RockSpawner {
         for (row in 0 until WINDOW_SIZE) {
             for (col in 0 until WINDOW_SIZE) {
                 val idx = row * WINDOW_SIZE + col
-                if (state[idx] != UNPOPULATED) continue
+                if (state[idx] == POPULATED) continue
                 val distSq = (row - WINDOW_RADIUS)*(row - WINDOW_RADIUS) + (col - WINDOW_RADIUS)*(col - WINDOW_RADIUS)
                 if (distSq < nearestDist || (distSq == nearestDist && (row < nearestRow || (row == nearestRow && col < nearestCol)))) {
                     nearestDist = distSq
@@ -248,11 +248,15 @@ object RockSpawner {
             val density = densityForChunk(worldChunkX, worldChunkY)
             val mixture = mixtureForChunk(worldChunkX, worldChunkY)
 
-            val newBodies = spawnBodiesForChunk(worldChunkX, worldChunkY, density, mixture)
+            val idx = nearestCol * WINDOW_SIZE + nearestRow
+            if (state[idx] != NEAR) {
+                // Only spawn real bodies for distant chunks
+                val newBodies = spawnBodiesForChunk(worldChunkX, worldChunkY, density, mixture)
 
-            for (body in newBodies) {
-                if (!wouldOverlap(body.comX / Flight.PER_TILE, body.comY / Flight.PER_TILE, (body.width / 2), result)) {
-                    result.add(body)
+                for (body in newBodies) {
+                    if (!wouldOverlap(body.comX / Flight.PER_TILE, body.comY / Flight.PER_TILE, (body.width / 2), result)) {
+                        result.add(body)
+                    }
                 }
             }
 
