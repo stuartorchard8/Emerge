@@ -109,6 +109,29 @@ class Reaction(
     /** Which entry of [reagents] is the principal, so the react path can skip its own ratio. */
     val principalIndex: Int = reagents.indexOfFirst { it.first == principal }
 
+    /**
+     * **What names this exact row** — the whole equation, written without spaces:
+     * `2Periclase+1Quartz>1Forsterite`.
+     *
+     * ⛔ **[principal] is NOT a key and never was.** Six species are the principal of more than one
+     * row and periclase is the principal of three, so a furnace keyed by its principal could only
+     * ever run whichever of them [REACTIONS] happens to list first — the picker offered the other
+     * two, pressing them set the first, and a save could not spell them at all. See
+     * `ReactionOrderTest`, which recorded that as a known defect before this field existed.
+     *
+     * ⛔ **The equation and not an index.** [REACTIONS] is edited; an index would re-plumb every
+     * furnace in every save the day a row moved. Both sides are needed: a carbothermic pair
+     * differing only in whether it makes CO or CO₂ shares its reagents exactly.
+     *
+     * ⚠️ **Space-free on purpose** — a save writes it as a `key=value` field on a
+     * space-separated line, so a space here would split the record. It is otherwise the same
+     * signature `FormationTest` and `ReactionOrderTest` key on, which spell it with spaces because
+     * they are read by people rather than parsed.
+     */
+    val id: String =
+        reagents.joinToString("+") { "${it.second}${it.first.name}" } + ">" +
+            products.joinToString("+") { "${it.second}${it.first.name}" }
+
     /** Mass of a whole stoichiometric pass — every reagent's formula units together. */
     private val passMass: Long = reagentMasses.sum()
 
@@ -1309,3 +1332,12 @@ val LOWEST_REACTION_ONSET: Int = REACTIONS.minOf { it.onsetKelvin }
 
 /** The width of [REACTIONS], for the scratch arrays a sweep hoists once. */
 val REACTION_COUNT: Int = REACTIONS.size
+
+/**
+ * Every row by its [Reaction.id], for a save and for anything else that has to name one.
+ *
+ * ⚠️ **Built with [associateBy] and checked by `ReactionIdTest`**, which fails if two rows ever
+ * collide: a duplicate would silently drop a row out of this map and out of every save that named
+ * it, which is the exact failure [Reaction.id] exists to end.
+ */
+val REACTION_BY_ID: Map<String, Reaction> = REACTIONS.associateBy { it.id }

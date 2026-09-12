@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.REACTIONS
+import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.BufferLayer
@@ -210,6 +211,66 @@ class FurnaceUiTest {
 
         c.select(grid.tile(2, 2))
         assertEquals(TileIndex.NONE, c.selected, "empty deck left the previous machine selected")
+    }
+
+    // ── The recipe picker names a ROW ────────────────────────────────────────
+
+    @Test
+    fun `every row in the table can actually be selected`() {
+        // ⛔ **The bug Stu found, 2026-09-12.** The picker offers one row per reaction, but the edit
+        // it raised carried the row's *principal*, and the reducer resolved that back with
+        // `REACTIONS.first { it.principal == p }`. Six species head more than one row and periclase
+        // heads three, so pressing any of periclase's three rows set the first of them — a control
+        // that names forty-five things and can reach thirty-nine.
+        //
+        // Asserted over the whole table rather than over periclase alone: the defect is that a
+        // principal is not a key, and which species share one is a fact about the chemistry that
+        // changes.
+        for (r in REACTIONS) {
+            val c = controller()
+            c.setFurnaceRecipe(centre, r)
+            c.settle()
+            assertEquals(
+                r.id,
+                machine(c).recipe?.id,
+                "pressing ${r.id} set ${machine(c).recipe?.id}",
+            )
+        }
+    }
+
+    @Test
+    fun `the ladder steps through every row, not every distinct principal`() {
+        // The harness' way in, and it had the same hole from the other side: a ladder built from
+        // `REACTIONS.map { it.principal }.distinct()` has no rung for periclase's other two rows,
+        // so no amount of tapping reaches them.
+        val c = controller()
+        val seen = mutableSetOf<String>()
+        repeat(REACTIONS.size + 1) {
+            c.cycleFurnaceRecipe(centre, 1)
+            c.settle()
+            machine(c).recipe?.let { seen += it.id }
+        }
+        assertEquals(REACTIONS.map { it.id }.toSet(), seen, "a lap of the ladder missed rows")
+    }
+
+    @Test
+    fun `switching between two rows of one principal is a change of recipe`() {
+        // The reducer clears the charge's baseline when the recipe changes, and it compared
+        // principals to decide — so swapping the periclase lining for the periclase reduction kept
+        // the old charge's `chargedPrincipal` and would have measured the new conversion against it.
+        val periclase = REACTIONS.filter { it.principal == Species.Periclase }
+        assertTrue(periclase.size > 1, "the fixture needs a principal with two rows")
+
+        val deck = DeckArray(grid)
+        deck += Furnace(centre, Direction.Right, recipe = periclase[0], chargedPrincipal = 5_000L)
+        val c = OutofspaceController(cfg, world().copy(deck = deck))
+
+        c.setFurnaceRecipe(centre, periclase[1])
+        c.settle()
+
+        val m = c.state.deck[centre] as Furnace
+        assertEquals(periclase[1].id, m.recipe?.id, "the second row did not take")
+        assertEquals(0L, m.chargedPrincipal, "the old charge's baseline survived a change of row")
     }
 
     @Test

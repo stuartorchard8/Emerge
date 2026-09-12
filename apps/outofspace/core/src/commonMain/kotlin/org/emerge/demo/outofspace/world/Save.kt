@@ -7,6 +7,8 @@ import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.chem.fluid
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.REACTIONS
+import org.emerge.demo.outofspace.chem.REACTION_BY_ID
+import org.emerge.demo.outofspace.chem.Reaction
 import org.emerge.demo.outofspace.chem.Species
 
 import org.emerge.demo.outofspace.logistics.FluidPacket
@@ -181,8 +183,26 @@ object Save {
      * the same `tag tile=value` form as the heat fields. A file written before it loads with an
      * empty field, which is the *true* state of a world that has never had a solar panel: charge has
      * exactly one source and it is a machine that did not exist.
+     *
+     * ⚠️ **30 spells a furnace's recipe as the whole row** — see [RECIPE_ROW_VERSION].
      */
-    const val VERSION = 29
+    const val VERSION = 30
+
+    /**
+     * The first version whose furnace `recipe=` names **the reaction** rather than its principal.
+     *
+     * ⛔ **`principal` was never a key.** Six species head more than one row and periclase heads
+     * three, so `recipe=Periclase` could only ever mean whichever of the three [REACTIONS] lists
+     * first — the sheet offered all three and the other two were unsaveable *and*, until this
+     * landed, unpressable. From this version the field is a [Reaction.id]:
+     * `recipe=1Periclase+1Carbon>1Magnesium+1CarbonMonoxide`.
+     *
+     * ⚠️ **A file below this reads exactly as it always did** — `REACTIONS.first { principal }` —
+     * because that is the row it was *running*, whatever the player meant to pick. `ReactionOrderTest`
+     * is the record of which row each of the six resolves to, and it stays the reader's oracle for
+     * old files.
+     */
+    const val RECIPE_ROW_VERSION = 30
 
     /**
      * The first version whose electrolyzer is **3×2**.
@@ -761,10 +781,12 @@ object Save {
                 // a real state: dropping `held` would silently restart every hold on every load.
                 put("dwell", m.dwellTicks.toString())
                 put("held", m.heldTicks.toString())
-                // ⛔ **The principal's name, never a row index** — [REACTIONS] is edited, and an
-                // index would re-plumb every furnace in every save the day a row moves.
+                // ⛔ **The row's whole equation, never a row index and never its principal alone** —
+                // [REACTIONS] is edited, so an index would re-plumb every furnace in every save the
+                // day a row moves, and a principal names three different rows in periclase's case.
+                // See [Reaction.id] and [RECIPE_ROW_VERSION].
                 m.recipe?.let {
-                    put("recipe", it.principal.name)
+                    put("recipe", it.id)
                     put("done", m.completionPermille.toString())
                     // Without this a reload restarts the conversion measurement against whatever is
                     // left in the chamber, and a charge 80% done would read as 0% and hold again.
@@ -2216,10 +2238,18 @@ object Save {
                 oreByHand = feedOre(f),
                 // Absent means broad mode, which is every file written before recipes existed.
                 recipe = f["recipe"]?.let { name ->
-                    val principal = speciesNamed(name)
+                    REACTION_BY_ID[name]
+                        // ⚠️ **A file below [RECIPE_ROW_VERSION] named the principal**, and the row
+                        // it gets back is the row it was running: the first with that principal. The
+                        // two periclase reductions genuinely cannot be spelled in such a file, so
+                        // this is a faithful read and not a lossy one.
+                        ?: (if (version < RECIPE_ROW_VERSION) {
+                            val principal = speciesNamed(name)
+                                ?: fail("unknown furnace recipe '$name'")
+                            REACTIONS.firstOrNull { it.principal == principal }
+                                ?: fail("no reaction has '$name' as its principal")
+                        } else null)
                         ?: fail("unknown furnace recipe '$name'")
-                    REACTIONS.firstOrNull { it.principal == principal }
-                        ?: fail("no reaction has '$name' as its principal")
                 },
                 completionPermille = num("done", Furnace.DEFAULT_COMPLETION.toLong()).toInt(),
                 chargedPrincipal = massNum("charged", 0L),

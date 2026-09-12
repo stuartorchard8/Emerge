@@ -15,14 +15,16 @@
 #   `cracking`  -- one press of MODE, which lands on the first row in the table: ammonia cracking, a
 #                  SINGLE-reagent reaction. The control surface has SWAPPED -- RUNS and UNTIL replace
 #                  the two dials, HOLDS AT is a readout rather than a button, and the FEED LIST
-#                  button is gone because a recipe IS a feed list. ⚠️ **RUNS names what it CONSUMES**
-#                  (`Reaction.principal`); what comes out is on YIELDS, and there is no TAKES row
-#                  because a one-reagent row would only repeat the button.
+#                  button is gone because a recipe IS a feed list. ⚠️ **RUNS names what it CONSUMES**;
+#                  what comes out is on YIELDS.
 #   `reduction` -- stepped on to ferrosilite reduction, which is the case the whole plan was written
-#                  against. Now TAKES appears -- FERROSILITE + CARBON, the two the network will route
-#                  here and the two the kiln will meter into a charge. ⚠️ **1250 K is the lowest rung
-#                  ABOVE the 1200 K onset**, never the onset itself: a reaction at its onset runs at
-#                  BASE_RATE and essentially nothing happens.
+#                  against. ⛔ **RUNS now reads FERROSILITE + CARBON** -- the WHOLE reagent list, the
+#                  two the network will route here and the two the kiln will meter into a charge.
+#                  It named the principal alone until 2026-09-12, with the rest on a TAKES row
+#                  underneath; that was two lines saying one thing, and `PERICLASE` alone named
+#                  three different rows. ⚠️ **1250 K is the lowest rung ABOVE the 1200 K onset**,
+#                  never the onset itself: a reaction at its onset runs at BASE_RATE and essentially
+#                  nothing happens.
 new
 creative 1
 
@@ -54,9 +56,12 @@ shot reduction
 #   `sheet` -- the picker. BROAD is the first row and is always offered: it is the other half of the
 #              machine, not an escape from the list. Every other row is a reaction this vessel could
 #              actually run right now -- ⚠️ **filtered by what is aboard PURE**, so a starter vessel
-#              holding only iron shows very little. The column beside each is the temperature it
-#              would be held at, which is the cost of running it, and the dim line under each row is
-#              the whole reaction: what goes in on the left, what comes out on the right.
+#              holding only iron shows very little. ⛔ **A row is named by everything it EATS**, not
+#              by its principal: three rows take periclase and `PERICLASE` named all of them, which
+#              is how the picker came to set the same row whichever of the three was pressed. The
+#              column beside each is the temperature it would be held at, which is the cost of
+#              running it, and the dim line under each is what the row YIELDS -- the half the label
+#              does not already say.
 #              ⛔ **The row that is already set never disappears**, even once its reagents are spent
 #              -- the whitelist sheet's rule, and for its reason: losing the row would take away the
 #              only control that could change it.

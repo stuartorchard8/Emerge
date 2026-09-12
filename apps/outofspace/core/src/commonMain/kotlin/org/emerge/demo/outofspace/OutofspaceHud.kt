@@ -1430,7 +1430,7 @@ class OutofspaceHud {
 
                 // ── Broad mode ───────────────────────────────────────────────
                 row(gapPx = 2f) {
-                    button(EJECT_NAME_W.named("BROAD"), 0x00000000L) { }
+                    button(RECIPE_TAKES_W.named("BROAD"), 0x00000000L) { }
                     text(EJECT_MASS_W.cell("any list"), 0x9A9A9AFFL)
                     button(
                         "RUN",
@@ -1445,7 +1445,7 @@ class OutofspaceHud {
 
                 gap()
                 row(gapPx = 2f) {
-                    text(EJECT_NAME_W.named("RUNS"), 0x7A7A7AFFL)
+                    text(RECIPE_TAKES_W.named("TAKES"), 0x7A7A7AFFL)
                     text(EJECT_MASS_W.cell("HOLDS AT"), 0x7A7A7AFFL)
                 }
                 for (r in recipeRows) recipeRow(controller, machine, r)
@@ -1457,7 +1457,7 @@ class OutofspaceHud {
         }
         val dismiss = { openSheet = Sheet.None }
         if (screenW > NARROW_MAX_DP * density) {
-            val w = minOf(EJECT_WIDTH_DP * density, screenW * 0.92f)
+            val w = minOf(RECIPE_WIDTH_DP * density, screenW * 0.92f)
             val h = screenH * 0.85f
             sheet(
                 "oos-recipe", "RECIPE", onDismiss = dismiss,
@@ -1472,9 +1472,16 @@ class OutofspaceHud {
     /**
      * One reaction: what it consumes, the temperature it will be held at, and a press to run it.
      *
-     * ⚠️ **Named by its principal and described underneath**, because the principal alone is not
-     * enough to choose by — a player is picking by what comes *out*, and `Reaction.principal` is
-     * what goes in. The arrow line is the whole reaction in the order a chemist writes it.
+     * ⛔ **Named by its WHOLE REAGENT LIST, which is the only thing that tells the rows apart.**
+     * It was named by its principal until 2026-09-12 and three rows then read `PERICLASE` —
+     * a lining, a carbothermic reduction and the Pidgeon process — distinguishable only by the
+     * `TAKES` line printed under each. Promoting that line into the label is what deletes it:
+     * one statement of what a row eats, in the cell a player is choosing from.
+     *
+     * ⚠️ **The reagents and not the products**, though a player is arguably picking by what comes
+     * out. The reagents are what the *belts* have to deliver and what the kiln will refuse
+     * everything else in favour of, and they are what makes two rows different — the two magnesium
+     * routes yield the same metal. YIELDS stays underneath and answers the other question.
      */
     private fun PanelBuilder.recipeRow(
         controller: OutofspaceController,
@@ -1483,7 +1490,9 @@ class OutofspaceHud {
     ) {
         val on = machine.recipe === r
         row(gapPx = 2f) {
-            button(EJECT_NAME_W.named(r.principal.name.uppercase()), 0x00000000L) {
+            // ⚠️ **The wiki opens on the PRINCIPAL**, which is still the one species the row is
+            // *about* — the label lists three of them at most and the press has to pick one.
+            button(RECIPE_TAKES_W.named(takenBy(r)), 0x00000000L) {
                 controller.openWiki(r.principal)
             }
             // The temperature this row would be held at, which is the cost of running it and the
@@ -1493,19 +1502,20 @@ class OutofspaceHud {
                 0x9AC0E0FFL,
             )
             button("RUN", if (on) 0x2E7B4BFFL else EJECT_OFF, widthEm = EJECT_SWITCH_EM) {
-                controller.setFurnaceRecipe(recipeTile, r.principal)
+                controller.setFurnaceRecipe(recipeTile, r)
                 openSheet = Sheet.None
             }
         }
-        // ⛔ **Two lines, because the sheet CLIPS rather than wrapping.** Both halves on one row ran
-        // off the edge mid-word — "IRON + SILICON + CARBONMO" — which is the failure mode the feed
-        // sheet's REFRESH caption note also records. A screenshot caught it; no test could have.
+        // ⛔ **ONE line under the row, not two.** Both halves of the equation on the row itself ran
+        // off the edge mid-word — "IRON + SILICON + CARBONMO" — because the sheet CLIPS rather than
+        // wrapping, and that is still true: the reagents are in the label above, so this line has
+        // the whole width to itself.
         //
-        // ⚠️ **The panel's own words**, so a player reading a row here and the machine afterwards is
+        // ⚠️ **The panel's own word**, so a player reading a row here and the machine afterwards is
         // reading one vocabulary.
-        text("  TAKES   " + r.reagents.joinToString(" + ") { it.first.name.uppercase() }, 0x5A5A5AFFL)
         text("  YIELDS  " + r.products.joinToString(" + ") { it.first.name.uppercase() }, 0x5A5A5AFFL)
     }
+
 
     /**
      * One species: its article, how much of it the ship holds **pure**, and the two-position switch.
@@ -2920,12 +2930,16 @@ class OutofspaceHud {
                 0x2E5A6BFFL,
             ) { controller.cycleDecomposerDwell(tile, 1) }
         } else {
-            // ⛔ **"RUNS", never "MAKES".** A reaction is named here by its PRINCIPAL, which is what
-            // it consumes — `Reaction.principal` is *"what the rate is a fraction of"* — so a kiln
+            // ⛔ **"RUNS", never "MAKES".** A reaction is named here by what it CONSUMES, so a kiln
             // cracking ammonia would read "MAKES AMMONIA" and mean the opposite of what it says.
             // What it makes is on the YIELDS row below.
+            //
+            // ⛔ **The whole reagent list, which is the sheet's label for the same row.** It was
+            // the principal alone until 2026-09-12, with the rest on a TAKES row underneath — two
+            // lines saying one thing, and the first of them naming three different rows in
+            // periclase's case. See [takenBy].
             button(
-                listOf("RUNS  " to 0x9A9A9AFFL, machine.recipe.principal.name.uppercase() to 0xFFFFFFFFL),
+                listOf("RUNS  " to 0x9A9A9AFFL, takenBy(machine.recipe) to 0xFFFFFFFFL),
                 0x2E5A6BFFL,
             ) { openRecipeSheet(tile, machine.recipe, controller.state.stockpile) }
             button(
@@ -2951,20 +2965,9 @@ class OutofspaceHud {
         // "cooks nothing" is the sentence that explains why the belt behind the machine is solid —
         // and a decomposer loaded out of a file written before it had a list is *exactly* that.
         if (machine.recipe != null) {
-            // ⛔ **Derived, so it is shown and not offered.** The book IS the reagent list — one
-            // statement of what may be sent — and a FEED LIST button here would be a second way to
-            // say a thing the recipe already said. See [Furnace.whitelist].
-            // ⚠️ **Only when it says something the button did not.** A single-reagent row's feed
-            // list is its principal, and "RUNS AMMONIA / TAKES AMMONIA" is a line that teaches the
-            // player nothing and makes them read it twice to find that out.
-            if (machine.recipe.reagents.size > 1) {
-                keyValue(
-                    "TAKES",
-                    machine.recipe.reagents.joinToString(" + ") { it.first.name.uppercase() },
-                    0x9A9A9AFFL,
-                    0xE0864AFFL,
-                )
-            }
+            // ⛔ **No TAKES row: the RUNS button above IS the feed list.** The book is derived from
+            // the recipe — one statement of what may be sent — so a FEED LIST button here would be
+            // a second way to say it and a TAKES row was a third. See [Furnace.whitelist].
             keyValue(
                 "YIELDS",
                 machine.recipe.products.joinToString(" + ") { it.first.name.uppercase() },
@@ -3468,6 +3471,27 @@ class OutofspaceHud {
         internal val EJECT_NAME_W = TRADE_NAME_W
         internal val EJECT_MASS_W = TRADE_MASS_W
 
+        /** What a row eats, in the order a chemist writes it — the recipe sheet's label for it. */
+        internal fun takenBy(r: Reaction): String =
+            r.reagents.joinToString(" + ") { it.first.name.uppercase() }
+
+        /**
+         * The recipe sheet's first column: a whole reagent list, because that is what names a row.
+         *
+         * ⛔ **DERIVED from the table, where [TRADE_NAME_W] is a number with a test behind it.** The
+         * longest label is a three-reagent row — `ALGAE + WATER + CARBONDIOXIDE` — and a fourth
+         * reagent or a longer mineral would silently shove the temperature and RUN columns sideways,
+         * which is the failure `TradeSheetTest` exists to catch for the counter. Here the column
+         * simply follows the chemistry, so there is nothing to keep in step. ⚠️ What a number cannot
+         * check is that the row still fits [RECIPE_WIDTH_DP]; that was read off a screenshot, and a
+         * fourth reagent needs another one. `FurnaceSheetTest` pins the half that is checkable —
+         * that no two rows write the same label.
+         *
+         * ⚠️ **Plus one, for [TRADE_MASS_W]'s reason**: padding is the only separator, so a label
+         * that filled its cell exactly would touch the temperature beside it.
+         */
+        internal val RECIPE_TAKES_W: Int = REACTIONS.maxOf { takenBy(it).length } + 1
+
         /**
          * How wide the two switch halves are pinned, in `em`.
          *
@@ -3480,6 +3504,16 @@ class OutofspaceHud {
 
         /** How wide the whitelist wants to be: four columns, two of them controls. */
         private val EJECT_WIDTH_DP = 560f
+
+        /**
+         * How wide the recipe picker wants to be: the same three columns, with a reagent list in
+         * the first instead of one species name — thirty characters where the whitelist has sixteen.
+         *
+         * ⚠️ **Read off a screenshot, not calculated.** Every row is padded to [RECIPE_TAKES_W], so
+         * they are all exactly as wide as the widest and this one number either fits them all or
+         * none: at 600 the RUN column lands about fifty pixels clear of the edge.
+         */
+        internal val RECIPE_WIDTH_DP = 600f
 
         /**
          * ⛔ **Red, where every other lit control in this HUD is green.** Green is this game's colour

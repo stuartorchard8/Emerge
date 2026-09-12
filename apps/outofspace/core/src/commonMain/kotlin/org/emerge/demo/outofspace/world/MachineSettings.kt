@@ -1,7 +1,6 @@
 package org.emerge.demo.outofspace.world
 
-import org.emerge.demo.outofspace.chem.REACTIONS
-import org.emerge.demo.outofspace.chem.REACTIONS
+import org.emerge.demo.outofspace.chem.Reaction
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.machine.*
 
@@ -57,13 +56,16 @@ data class MachineSettings(
      */
     val propellant: Setting<Species?>,
     /**
-     * A furnace's recipe mode, by the row's principal — see [Furnace.recipe].
+     * A furnace's recipe mode, as the row itself — see [Furnace.recipe].
      *
-     * ⚠️ **`Setting<Species?>` for [propellant]'s reason**: broad mode is a mode, so a stamp has to
+     * ⚠️ **`Setting<Reaction?>` for [propellant]'s reason**: broad mode is a mode, so a stamp has to
      * be able to carry it. Copying a general furnace onto a locked one puts it back to general, with
      * the feed list the stamp brought.
+     *
+     * ⛔ **The row and not its principal**, or a stamp taken off a periclase kiln would paste
+     * whichever periclase row the table lists first — see [Reaction.id].
      */
-    val recipe: Setting<Species?>,
+    val recipe: Setting<Reaction?>,
     val completionPermille: Setting<Int>,
     /**
      * An ejector's whitelist — see [Ejector.whitelist].
@@ -89,7 +91,7 @@ data class MachineSettings(
         append(',').append("control=").append(if (control is Setting.Present) control.value else control)
         append(',').append("mix=").append(if (fuelPermille is Setting.Present) fuelPermille.value else fuelPermille)
         append(',').append("fuel=").append(if (propellant is Setting.Present) propellant.value?.name ?: "none" else propellant)
-        append(',').append("recipe=").append(if (recipe is Setting.Present) recipe.value?.name ?: "broad" else recipe)
+        append(',').append("recipe=").append(if (recipe is Setting.Present) recipe.value?.id ?: "broad" else recipe)
         append(',').append("done=").append(if (completionPermille is Setting.Present) completionPermille.value else completionPermille)
         append(',').append("eject=").append(
             if (whitelist is Setting.Present) "${whitelist.value.species.size}${if (whitelist.value.ore) "+ore" else ""}"
@@ -197,7 +199,7 @@ fun DeckMachine.toMachineSettings(): MachineSettings = MachineSettings(
         else -> Setting.Absent
     },
     recipe = when (this) {
-        is Furnace -> Setting.Present(recipe?.principal)
+        is Furnace -> Setting.Present(recipe)
         else -> Setting.Absent
     },
     completionPermille = when (this) {
@@ -292,11 +294,7 @@ fun DeckMachine.withSettings(settings: MachineSettings): DeckMachine {
             // ⛔ **The mode first, because it decides which of the dials above mean anything.** A
             // stamp carries both modes' settings and the recipe picks which half is live, so a
             // general kiln pasted onto a locked one genuinely becomes general again.
-            if (settings.recipe is Setting.Present) {
-                result = result.withRecipe(
-                    settings.recipe.value?.let { p -> REACTIONS.firstOrNull { it.principal == p } },
-                )
-            }
+            if (settings.recipe is Setting.Present) result = result.withRecipe(settings.recipe.value)
             if (settings.completionPermille is Setting.Present) {
                 result = result.withCompletion(settings.completionPermille.value)
             }

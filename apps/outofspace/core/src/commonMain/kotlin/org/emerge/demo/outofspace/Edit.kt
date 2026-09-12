@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.Reaction
 import org.emerge.demo.outofspace.chem.massAtReducedDensity
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.reducedTemperature
@@ -162,10 +163,15 @@ sealed interface Edit {
      * ⚠️ **[recipe] is nullable because broad mode is a mode and not the absence of one.** Stepping
      * off the end of the ladder is asking for the general machine back, with the feed list the
      * player built still on it.
+     *
+     * ⛔ **The row itself, never its principal.** It carried a [Species] until 2026-09-12 and that
+     * made three of periclase's rows one control: the sheet offered each of them, and every press
+     * resolved back to whichever row [org.emerge.demo.outofspace.chem.REACTIONS] listed first. A
+     * reaction is what the player pressed, so a reaction is what the edit says.
      */
     data class TuneFurnaceRecipe(
         val tile: TileIndex,
-        val recipe: Species?,
+        val recipe: Reaction?,
         val completionPermille: Int,
     ) : Edit
     data class TuneSensor(val tile: TileIndex, val threshold: Int, val delay: Int, val release: Int) : Edit

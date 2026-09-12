@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.REACTIONS
+import org.emerge.demo.outofspace.chem.Reaction
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.BufferRole
@@ -1190,25 +1191,32 @@ class OutofspaceController(
      * see [cycleRocketPropellant]. A player who locks a kiln has to be able to get the general
      * machine back, and their feed list is still on it when they do.
      *
-     * ⚠️ **Keyed by the principal**, because that is what a player is choosing: they want silicon
-     * out of quartz, and the row is how. Two rows sharing a principal would make this ambiguous and
-     * none do.
+     * ⛔ **Keyed by the ROW, not by its principal.** A player choosing PERICLASE has chosen one of
+     * three things — a lining, a carbothermic reduction, or a silicothermic one — and only the row
+     * they pressed says which. Naming the principal made the other two unpressable.
      */
     /**
-     * Sets a furnace's recipe outright, by the row's principal — what the sheet presses.
+     * Sets a furnace's recipe outright, to the row the sheet pressed.
      *
      * ⚠️ **Absolute rather than a step**, for [Edit.TuneDecomposer]'s reason: the sheet names the row
      * it wants, and a relative edit would land somewhere else if anything moved in between.
      */
-    fun setFurnaceRecipe(tile: TileIndex, principal: Species?) {
+    fun setFurnaceRecipe(tile: TileIndex, recipe: Reaction?) {
         val m = state.machineCovering(tile) as? Furnace ?: return
-        pending.add(Edit.TuneFurnaceRecipe(tile, principal, m.completionPermille))
+        pending.add(Edit.TuneFurnaceRecipe(tile, recipe, m.completionPermille))
     }
 
+    /**
+     * Steps through every row in the table, broad mode first.
+     *
+     * ⚠️ **Every row, not every distinct principal.** The ladder is the harness' way in and it has
+     * to be able to reach what the sheet can reach; `distinct()` here hid the same three rows the
+     * edit's principal did.
+     */
     fun cycleFurnaceRecipe(tile: TileIndex, delta: Int) {
         val m = state.machineCovering(tile) as? Furnace ?: return
-        val all: List<Species?> = listOf(null) + REACTIONS.map { it.principal }.distinct()
-        val at = all.indexOf(m.recipe?.principal).coerceAtLeast(0)
+        val all: List<Reaction?> = listOf(null) + REACTIONS
+        val at = all.indexOf(m.recipe).coerceAtLeast(0)
         pending.add(Edit.TuneFurnaceRecipe(tile, all[wrap(at + delta, all.size)], m.completionPermille))
     }
 
@@ -1219,7 +1227,7 @@ class OutofspaceController(
         val at = all.indexOf(m.completionPermille).let {
             if (it >= 0) it else all.indexOfLast { rung -> rung <= m.completionPermille }.coerceAtLeast(0)
         }
-        pending.add(Edit.TuneFurnaceRecipe(tile, m.recipe?.principal, all[wrap(at + delta, all.size)]))
+        pending.add(Edit.TuneFurnaceRecipe(tile, m.recipe, all[wrap(at + delta, all.size)]))
     }
 
     /** Steps a decomposer's residence time through [Furnace.DWELLS], wrapping. */

@@ -451,6 +451,37 @@ class FurnaceRecipeTest {
             "the charge came back a different size",
         )
     }
+
+    @Test
+    fun `each row of a shared principal comes back as itself`() {
+        // ⛔ **A save wrote `recipe=<principal>` until version 30**, so periclase's three rows were
+        // one word on disk and a reload could only ever hand back the first of them. The field is
+        // the row's whole equation now — see `Reaction.id`.
+        for (r in REACTIONS.filter { it.principal == Species.Periclase }) {
+            val before = kiln(recipe = r)
+            val back = kiln(Save.read(Save.write(before)))
+            assertEquals(r.id, back.recipe?.id, "a saved ${r.id} came back as ${back.recipe?.id}")
+        }
+    }
+
+    @Test
+    fun `a save written before version 30 still reads its principal`() {
+        // The other half: an existing file says `recipe=Periclase` and means the row it was
+        // running, which is the first with that principal. `ReactionOrderTest` is the record of
+        // which one that is for each of the six shared principals.
+        val text = Save.write(kiln(recipe = REACTIONS.first { it.principal == Species.Periclase }))
+        val old = text
+            .replaceFirst("outofspace ${Save.VERSION} ", "outofspace ${Save.RECIPE_ROW_VERSION - 1} ")
+            .replaceFirst(Regex("""recipe=\S+"""), "recipe=Periclase")
+        assertTrue("recipe=Periclase" in old, "the fixture did not rewrite the field")
+
+        val back = kiln(Save.read(old))
+        assertEquals(
+            REACTIONS.first { it.principal == Species.Periclase }.id,
+            back.recipe?.id,
+            "an older file's recipe changed meaning",
+        )
+    }
 }
 
 /** A furnace built for a settings question rather than a world — no deck, no buffers. */

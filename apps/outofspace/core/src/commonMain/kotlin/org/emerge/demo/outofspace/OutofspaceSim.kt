@@ -2945,8 +2945,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         // running, and carrying `chargedPrincipal` across would have the next
                         // release compare a new charge to an old baseline. Whatever is in the
                         // chamber stays there and is handed on by whichever rule now applies.
-                        val recipe = edit.recipe?.let { p -> REACTIONS.firstOrNull { it.principal == p } }
-                        val changed = recipe?.principal != m.recipe?.principal
+                        val recipe = edit.recipe
+                        // ⚠️ **The row, not its principal.** Switching between two rows that share
+                        // one — periclase has three — is a real change of recipe, and comparing
+                        // principals called it no change and kept the old charge's baseline.
+                        val changed = recipe !== m.recipe
                         deck[tile] = m
                             .withRecipe(recipe)
                             .withCompletion(edit.completionPermille)

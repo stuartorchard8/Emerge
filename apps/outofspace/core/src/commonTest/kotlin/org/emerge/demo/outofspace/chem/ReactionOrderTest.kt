@@ -5,19 +5,19 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * **Which row a save gets back when two rows share a principal** — the one place [REACTIONS]' order
- * is not merely "for reproducibility".
+ * **Which row an OLD save gets back when two rows share a principal** — the one place [REACTIONS]'
+ * order is not merely "for reproducibility".
  *
- * `Save.kt` writes a furnace's locked recipe as its principal's *name* and reads it back with
- * `REACTIONS.firstOrNull { it.principal == principal }`. ⛔ **`principal` is not a key**, and six
- * species are the principal of two rows, so that lookup silently resolves to whichever of the two is
- * written first — and the other row is not expressible across a save/load, however cheerfully the
- * recipe sheet offers it.
+ * ✅ **Fixed for new files on 2026-09-12** — `Save.kt` writes a [Reaction.id], the whole equation,
+ * behind `Save.RECIPE_ROW_VERSION`. ⛔ **`principal` is not a key**, and six species are the
+ * principal of more than one row; keying by it made three of periclase's rows one control, which is
+ * how Stu found it: every row in the picker set the first row with that principal.
  *
- * That is a bug in the save format rather than in the table, and fixing it properly means writing
- * something that identifies a reaction — a principal *and* a reagent, or a name — behind a version
- * bump. Until then the table's order is what decides, and this file is what stops the decision being
- * made by accident.
+ * What survives is the **reader for files below that version**, which have only the principal's
+ * name on disk and are read with `REACTIONS.firstOrNull { it.principal == principal }`. Which row
+ * each of those words means is decided by the table's order, and this file is what stops that
+ * decision being made by accident. It is a record of what old files already ran, not a judgement
+ * about which row deserves the word.
  *
  * ⚠️ **It caught a real one.** Methane pyrolysis came back on 2026-09-11 written directly after
  * ammonia cracking, which put it *above* the methane gas fire. Every existing save with a furnace
@@ -37,11 +37,11 @@ class ReactionOrderTest {
      * that is both stable and unambiguous, and it is the same one `FormationTest` keys on.
      *
      * ⛔ **None of these six is a judgement about which row *deserves* to win.** They are a record of
-     * which one does, so that changing it has to be deliberate. Two of them are arguably backwards —
-     * a player picking PERICLASE almost certainly means one of the two magnesium reductions, not the
-     * refractory firing — and that is an argument for fixing the format, not for reordering the table
-     * underneath saved games. ⚠️ Periclase is the principal of **three** rows as of 2026-09-11, so
-     * two of its three meanings are now unreachable from a save rather than one.
+     * which one does *in a file written before `Save.RECIPE_ROW_VERSION`*, so that changing it has to
+     * be deliberate. Two of them are arguably backwards — a player picking PERICLASE almost certainly
+     * meant one of the two magnesium reductions, not the refractory firing — and that was an
+     * argument for fixing the format, which is what [Reaction.id] did. Reordering the table
+     * underneath saved games is still not the fix, because these files still exist.
      */
     private val resolvesTo: Map<Species, String> = mapOf(
         // The fire, not the cracking. ⛔ The one that had already been silently reversed once.
@@ -84,8 +84,8 @@ class ReactionOrderTest {
     @Test
     fun `a save resolves each shared principal to the row it always has`() {
         for ((principal, expected) in resolvesTo) {
-            // `Save.kt`'s lookup, character for character. If this stops matching it, this test is
-            // measuring nothing.
+            // `Save.kt`'s legacy lookup, character for character — the branch taken below
+            // `RECIPE_ROW_VERSION`. If this stops matching it, this test is measuring nothing.
             val resolved = REACTIONS.firstOrNull { it.principal == principal }
             assertTrue(resolved != null, "${principal.name} resolves to no row at all")
             assertEquals(
