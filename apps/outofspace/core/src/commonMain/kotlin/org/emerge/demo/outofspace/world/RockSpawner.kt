@@ -248,7 +248,7 @@ object RockSpawner {
             val density = densityForChunk(worldChunkX, worldChunkY)
             val mixture = mixtureForChunk(worldChunkX, worldChunkY)
 
-            val idx = nearestCol * WINDOW_SIZE + nearestRow
+            val idx = nearestRow * WINDOW_SIZE + nearestCol
             if (state[idx] != NEAR) {
                 // Only spawn real bodies for distant chunks
                 val newBodies = spawnBodiesForChunk(worldChunkX, worldChunkY, density, mixture)
