@@ -257,12 +257,12 @@ class FurnaceUiTest {
     fun `switching between two rows of one principal is a change of recipe`() {
         // The reducer clears the charge's baseline when the recipe changes, and it compared
         // principals to decide — so swapping the periclase lining for the periclase reduction kept
-        // the old charge's `chargedPrincipal` and would have measured the new conversion against it.
+        // the old charge's `chargedReagents` and would have measured the new conversion against it.
         val periclase = REACTIONS.filter { it.principal == Species.Periclase }
         assertTrue(periclase.size > 1, "the fixture needs a principal with two rows")
 
         val deck = DeckArray(grid)
-        deck += Furnace(centre, Direction.Right, recipe = periclase[0], chargedPrincipal = 5_000L)
+        deck += Furnace(centre, Direction.Right, recipe = periclase[0], chargedReagents = listOf(5_000L, 5_000L))
         val c = OutofspaceController(cfg, world().copy(deck = deck))
 
         c.setFurnaceRecipe(centre, periclase[1])
@@ -270,7 +270,7 @@ class FurnaceUiTest {
 
         val m = c.state.deck[centre] as Furnace
         assertEquals(periclase[1].id, m.recipe?.id, "the second row did not take")
-        assertEquals(0L, m.chargedPrincipal, "the old charge's baseline survived a change of row")
+        assertEquals(emptyList(), m.chargedReagents, "the old charge's baseline survived a change of row")
     }
 
     @Test

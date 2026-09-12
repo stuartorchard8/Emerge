@@ -185,8 +185,26 @@ object Save {
      * exactly one source and it is a machine that did not exist.
      *
      * ⚠️ **30 spells a furnace's recipe as the whole row** — see [RECIPE_ROW_VERSION].
+     *
+     * ⚠️ **31 writes a furnace's charge baseline for every reagent** — see [CHARGED_REAGENTS_VERSION].
      */
-    const val VERSION = 30
+    const val VERSION = 31
+
+    /**
+     * The first version whose furnace `charged=` is **one figure per reagent**, in the row's own
+     * order, rather than the principal's alone.
+     *
+     * ⛔ **A principal can be its own product.** Photosynthesis makes two algae out of one, so a
+     * conversion read off the principal counts *down* — a finished charge in a real save read −99%
+     * and was held to the timeout. [Furnace.convertedPermille] reads the reagent least of which is
+     * left instead, and that needs every reagent's baseline on disk.
+     *
+     * ⚠️ **A file below this is migrated rather than half-read.** Its one figure is the principal's,
+     * and a charge is built exactly stoichiometric, so the rest of the row follows from it — see
+     * `chargedReagents`, which does the arithmetic. A kiln mid-charge in an existing save therefore
+     * measures right immediately rather than on its next charge.
+     */
+    const val CHARGED_REAGENTS_VERSION = 31
 
     /**
      * The first version whose furnace `recipe=` names **the reaction** rather than its principal.
@@ -790,7 +808,11 @@ object Save {
                     put("done", m.completionPermille.toString())
                     // Without this a reload restarts the conversion measurement against whatever is
                     // left in the chamber, and a charge 80% done would read as 0% and hold again.
-                    put("charged", m.chargedPrincipal.toString())
+                    // ⛔ **One figure per reagent, in the row's order** — see
+                    // [CHARGED_REAGENTS_VERSION] for the row that made the principal's alone a lie.
+                    if (m.chargedReagents.isNotEmpty()) {
+                        put("charged", m.chargedReagents.joinToString(","))
+                    }
                 }
             }
             // An extractor is its facing and its one store, both written by the common code around
@@ -2086,6 +2108,33 @@ object Save {
         else -> name
     }
 
+    /**
+     * A recipe charge's baseline off the file: one mass per reagent, in the row's own order.
+     *
+     * ⛔ **A single figure is the PRINCIPAL's, not the first reagent's**, which is what a file below
+     * [CHARGED_REAGENTS_VERSION] wrote and what it meant. The two coincide on most rows and do not
+     * on the ones where the principal is not stated first, so reading it positionally would quietly
+     * measure the conversion against the wrong species.
+     *
+     * ⚠️ **The rest of an old file's row is DERIVED, not zeroed.** A charge is built exactly
+     * stoichiometric — [Reaction.reagentFor] against the principal is what `chargeRecipe` drew with
+     * — so the one figure on disk determines every other reagent's baseline to the microgram. Zeroing
+     * them instead would leave an existing charge measured on the principal alone, which on the row
+     * that prompted all this is the whole defect surviving the fix.
+     */
+    private fun chargedReagents(
+        raw: String?,
+        recipe: Reaction?,
+        scale: Rescale,
+        fail: (String) -> Nothing,
+    ): List<Long> {
+        if (raw == null || recipe == null) return emptyList()
+        val read = raw.split(',').map { scale.of(it.toLongOrNull() ?: fail("bad charge baseline '$it'")) }
+        if (read.size == recipe.reagents.size) return read
+        if (read.size == 1) return List(recipe.reagents.size) { recipe.reagentFor(it, read[0]) }
+        fail("a ${recipe.reagents.size}-reagent recipe was charged with ${read.size} figures")
+    }
+
     private fun readDeckMachine(
         tokens: List<String>,
         version: Int,
@@ -2252,8 +2301,7 @@ object Save {
                         ?: fail("unknown furnace recipe '$name'")
                 },
                 completionPermille = num("done", Furnace.DEFAULT_COMPLETION.toLong()).toInt(),
-                chargedPrincipal = massNum("charged", 0L),
-            )
+            ).let { it.copy(chargedReagents = chargedReagents(f["charged"], it.recipe, scale, fail)) }
             // ⚠️ An older file's `carry`, `rate` and `in` (the cell in its jaws) are simply not read.
             // The first two no longer exist, and the third is a hopper's worth of ore that a loaded
             // save quietly drops — accepted rather than migrated, Stu's call.

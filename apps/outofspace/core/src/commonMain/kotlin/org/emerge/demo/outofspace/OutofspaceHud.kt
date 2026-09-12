@@ -3006,11 +3006,13 @@ class OutofspaceHud {
             )
             // ⭐ **How far along it is, which is the only progress reading a recipe charge has.**
             // ⚠️ Measured against what was LOADED — the chamber's mass never changes, so there is
-            // nothing else it could be measured against. See [Furnace.chargedPrincipal].
-            val loaded = machine.chargedPrincipal
-            if (machine.recipe != null && loaded > 0L) {
-                val left = controller.state.buffers.resourceAt(chamber)?.get(machine.recipe.principal) ?: 0L
-                val done = ((loaded - left) * 100L / loaded).toInt()
+            // nothing else it could be measured against — and off the reagent least of which is
+            // left. ⛔ **One statement, shared with the release rule**: the panel saying 99% while
+            // the machine holds on is the same defect as the machine reading −99% on a finished
+            // charge. See [Furnace.convertedPermille].
+            if (machine.recipe != null && machine.chargedReagents.any { it > 0L }) {
+                val charge = controller.state.buffers.resourceAt(chamber)
+                val done = machine.convertedPermille { charge?.get(it) ?: 0L } / 10
                 keyValue(
                     "CONVERTED",
                     "$done%  of ${machine.completionPermille / 10}%",

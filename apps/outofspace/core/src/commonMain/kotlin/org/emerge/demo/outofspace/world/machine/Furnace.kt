@@ -64,7 +64,7 @@ import org.emerge.demo.outofspace.world.Wiring
  * is opt-in and a machine's buffer never vents — `AmbientChemistry`: *"a machine's buffer never vents,
  * so a tonne of liquid oxygen keeps"* — so a charge keeps whatever it turns into and hands the lot on
  * down the belt. ⚠️ Which is also why a chamber's **total mass is invariant while it reacts**, and why
- * [chargedPrincipal] exists: mass cannot measure conversion when mass never changes.
+ * [chargedReagents] exists: mass cannot measure conversion when mass never changes.
  */
 data class Furnace(
     override val center: TileIndex,
@@ -132,15 +132,22 @@ data class Furnace(
      */
     val completionPermille: Int = DEFAULT_COMPLETION,
     /**
-     * How much principal the current recipe charge started with, so completion can be measured.
+     * How much of **each** reagent the current recipe charge started with, in [Reaction.reagents]
+     * order, so completion can be measured. Empty between charges.
      *
      * ⛔ **Recorded at load, because the charge's MASS cannot answer.** Nothing vents out of a
      * machine buffer — `AmbientChemistry` says so in as many words, *"a machine's buffer never vents,
      * so a tonne of liquid oxygen keeps"* — so a chamber's total is invariant while it reacts and
-     * tells you nothing at all about how far it has got. What moves is the principal, and only
+     * tells you nothing at all about how far it has got. What moves is the reagents, and only
      * against what was loaded.
+     *
+     * ⛔ **Every reagent and not just the principal, because a principal can be its own product.**
+     * Photosynthesis is `1 Algae + 6 Water + 6 CO₂ → 2 Algae + 6 O₂`: the principal *doubles* as the
+     * row runs, so a conversion measured on it alone counts down to −100% and a finished charge is
+     * held until [RECIPE_TIMEOUT_TICKS] gives up on it. Found in a save, Stu, 2026-09-12. See
+     * [convertedPermille], which is the rule that replaced it.
      */
-    val chargedPrincipal: Long = 0L,
+    val chargedReagents: List<Long> = emptyList(),
     override val wiring: Wiring = Wiring.RUNNING,
 ) : DirectedDeckMachine, FeedBook {
     override val kind: DeckMachineKind get() = DeckMachineKind.Furnace
@@ -188,6 +195,46 @@ data class Furnace(
      */
     val heldKelvin: Int
         get() = recipe?.let { r -> SETPOINTS.firstOrNull { it > r.onsetKelvin } } ?: setTemperature
+
+    /**
+     * How far the charge in the chamber has got, in permille — **the reagent least of which is
+     * left**, given what the chamber still holds.
+     *
+     * ⛔ **The INPUTS, never the principal alone, and never a product.** A row may make more of its
+     * own principal — photosynthesis makes two algae out of one — so the principal's mass is not a
+     * measure of anything on such a row and goes the wrong way entirely. See [chargedReagents],
+     * where the save that found it is written down.
+     *
+     * ⛔ **The SMALLEST remaining sets it, which is to say the LARGEST conversion.** A charge is
+     * built exactly stoichiometric, so on an ordinary row every reagent runs down together and the
+     * choice between them is arithmetic noise. What it decides is the row that regenerates one of
+     * its reagents: the algae stays put — grows, even — while the water and the CO₂ go to nothing,
+     * and it is the water and the CO₂ that say the charge is spent. Stu's rule, 2026-09-12.
+     *
+     * ⚠️ **No baseline means done**, which is what hands on a charge the reducer cleared the
+     * measurement for — a row swapped underneath a running kiln — rather than holding it to the
+     * timeout with nothing left that could ever release it.
+     *
+     * ⚠️ Clamped to 0..1000. Every term is a fraction of what was loaded, so only a chamber that has
+     * *gained* every reagent at once could fall outside, and a negative percentage on the panel was
+     * the bug this rule fixes rather than a reading worth preserving.
+     */
+    fun convertedPermille(left: (Species) -> Long): Int {
+        val row = recipe ?: return 0
+        // ⛔ **A baseline of the wrong length belongs to a different row**, and reading it
+        // positionally against this one measures one species against another's mass. Answered the
+        // same way an absent baseline is: unmeasurable, so hand the charge on rather than hold it to
+        // the timeout — which is what the reducer's own clear on a recipe change already does.
+        if (chargedReagents.size != row.reagents.size) return 1000
+        var most: Int? = null
+        for ((i, reagent) in row.reagents.withIndex()) {
+            val loaded = chargedReagents[i]
+            if (loaded <= 0L) continue
+            val converted = ((loaded - left(reagent.first)) * 1000L / loaded).toInt()
+            if (most == null || converted > most) most = converted
+        }
+        return (most ?: 1000).coerceIn(0, 1000)
+    }
 
     /** Which reagent of the locked recipe a store holds, or null for a store that is not a feed. */
     fun speciesFor(role: BufferRole): Species? {

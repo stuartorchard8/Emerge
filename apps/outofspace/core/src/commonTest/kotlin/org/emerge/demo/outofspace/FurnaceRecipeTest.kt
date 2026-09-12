@@ -222,7 +222,7 @@ class FurnaceRecipeTest {
         // the chamber weighs the same the whole way through and a rule watching its total would
         // never release anything at all.
         val started = run(kiln(), 2)
-        val loaded = kiln(started).chargedPrincipal
+        val loaded = kiln(started).chargedReagents[row.principalIndex]
         assertTrue(loaded > 0L, "the kiln did not record what it charged")
         assertEquals(
             loaded, store(started, BufferRole.Inside)?.get(Species.Ferrosilite),
@@ -238,6 +238,85 @@ class FurnaceRecipeTest {
         assertTrue(
             (store(later, BufferRole.Inside)?.get(Species.Ferrosilite) ?: 0L) < loaded,
             "the principal did not move, so nothing converted",
+        )
+    }
+
+    // ── A principal that is its own product ──────────────────────────────────
+
+    /**
+     * ⭐ **The row that broke measuring on the principal**: `1 Algae + 6 Water + 6 CO₂ →
+     * 2 Algae + 6 O₂`. The principal *doubles*, so `(loaded - left) / loaded` walks from 0 to −1000‰
+     * as the charge converts, and a finished charge reads −99% on the panel and is held until
+     * [Furnace.RECIPE_TIMEOUT_TICKS] hands it on twenty thousand ticks late. Found in `farm.txt`,
+     * Stu, 2026-09-12.
+     */
+    private val photosynthesis = REACTIONS.first {
+        it.principal == Species.Algae && it.reagents.size == 3
+    }
+
+    /** The algae kiln, all three hoppers stocked by hand. */
+    private fun grower(completion: Int = Furnace.DEFAULT_COMPLETION): VesselState {
+        val deck = DeckArray(grid)
+        deck += Furnace(kilnAt, Direction.Right, recipe = photosynthesis, completionPermille = completion)
+        return VesselState(
+            grid, deck,
+            air = Stuff.gas(MassArray(grid.size)),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+        )
+            .stocked(kilnAt, pure(Species.Algae, 20 * kg), BufferRole.Input)
+            .stocked(kilnAt, pure(Species.Water, 200 * kg), BufferRole.SecondReagent)
+            .stocked(kilnAt, pure(Species.CarbonDioxide, 200 * kg), BufferRole.ThirdReagent)
+    }
+
+    private fun pure(species: Species, grams: Long): Mixture =
+        Mixture.of(species to grams, energy = 0L).atAmbient()
+
+    @Test
+    fun `a row that remakes its own principal still measures a conversion`() {
+        // ⛔ **The inputs, and the one least of which is left.** The algae grows while the water and
+        // the CO2 go to nothing, so the water and the CO2 are what say the charge is spent.
+        val started = run(grower(), 4)
+        val m = kiln(started)
+        assertEquals(
+            photosynthesis.reagents.size, m.chargedReagents.size,
+            "the kiln recorded a baseline for less than the whole row",
+        )
+        assertTrue(m.chargedReagents.all { it > 0L }, "a reagent went in without being counted")
+        assertTrue(
+            m.convertedPermille { started.inStore(kilnAt, BufferRole.Inside)?.get(it) ?: 0L } < 100,
+            "a charge four ticks old was already most of the way converted",
+        )
+
+        // Drive it: the reagents run down, the principal runs UP, and the reading still climbs.
+        val later = run(started, 3_000)
+        val charge = later.inStore(kilnAt, BufferRole.Inside) ?: later.inStore(kilnAt, BufferRole.Product)
+        val converted = kiln(later).convertedPermille { charge?.get(it) ?: 0L }
+        assertTrue(converted > 0, "the conversion never moved off zero, so nothing measured it")
+    }
+
+    @Test
+    fun `a grower hands its charge on rather than holding to the timeout`() {
+        // ⭐ **The defect end to end.** Measured on the principal this charge is never released by
+        // the target — it is released by `RECIPE_TIMEOUT_TICKS`, which is far past this run.
+        val started = run(grower(completion = 900), 4)
+        val loadedWater = kiln(started).chargedReagents[photosynthesis.reagents.indexOfFirst { it.first == Species.Water }]
+        assertTrue(loadedWater > 0L, "no water was ever loaded")
+
+        val after = run(started, 6_000)
+        assertTrue(
+            kiln(after).heldTicks < Furnace.RECIPE_TIMEOUT_TICKS,
+            "the charge only left because the timeout gave up on it",
+        )
+        val out = store(after, BufferRole.Product)
+        assertTrue(out != null, "the finished charge was never handed on")
+        assertTrue(out!![Species.Algae] > 0L, "the algae did not come out")
+        assertTrue(out[Species.Oxygen] > 0L, "the row never ran")
+        // What makes it finished: the reagents that are NOT remade are spent. At a 900‰ target at
+        // most a tenth of the water that went in can still be there.
+        assertTrue(
+            out[Species.Water] * 10L <= loadedWater,
+            "the water was not spent, so this was released early",
         )
     }
 
@@ -261,7 +340,7 @@ class FurnaceRecipeTest {
 
         val after = run(s, 400)
         assertEquals(1250, kiln(after).heldKelvin, "an unlocked kiln stopped using its own dial")
-        assertEquals(0L, kiln(after).chargedPrincipal, "an unlocked kiln measured a conversion")
+        assertEquals(emptyList(), kiln(after).chargedReagents, "an unlocked kiln measured a conversion")
         assertTrue(store(after, BufferRole.Product) != null, "a zero dwell did not hand the charge on")
     }
 
@@ -388,9 +467,14 @@ class FurnaceRecipeTest {
         // that row means the carbon belongs in the FIRST hopper rather than the second.
         val started = run(kiln(ore = mineral(20 * kg), reductant = carbon(20 * kg)), 2)
         val carbonRow = REACTIONS.first { it.principal == Species.Carbon }
-        val switched = started.copy(
-            deck = started.deck.also { it[kilnAt] = kiln(started).withRecipe(carbonRow) },
-        )
+        // ⚠️ **The chamber is emptied first, and that is the question this test is NOT asking.** A
+        // charge built for the old row has no conversion the new one can read, so it is handed on —
+        // the reducer clears the baseline on a recipe change for exactly that reason. Leaving it
+        // there would put the chamber's own carbon in the mouth and nothing here could tell that
+        // apart from a stranded reagent being thrown out.
+        val switched = started
+            .copy(deck = started.deck.also { it[kilnAt] = kiln(started).withRecipe(carbonRow) })
+            .stocked(kilnAt, null, BufferRole.Inside)
         val after = run(switched, 20)
 
         assertEquals(BufferRole.Input, kiln(after).roleFor(Species.Carbon), "carbon is not the principal here")
@@ -443,13 +527,32 @@ class FurnaceRecipeTest {
         // ⛔ **Without this the reload measures against whatever is left and reads 0% converted**,
         // and a charge nearly finished would serve a whole second hold.
         assertEquals(
-            kiln(before).chargedPrincipal, m.chargedPrincipal,
+            kiln(before).chargedReagents, m.chargedReagents,
             "the conversion baseline did not survive, so the hold restarted",
         )
         assertEquals(
             store(before, BufferRole.Inside)?.total, store(after, BufferRole.Inside)?.total,
             "the charge came back a different size",
         )
+    }
+
+    @Test
+    fun `a save written before version 31 derives the rest of its baseline`() {
+        // ⛔ **An existing file records the PRINCIPAL alone**, and on the algae row that is the one
+        // figure that cannot measure anything. A charge is built exactly stoichiometric, so the rest
+        // of the row follows from it — see `Save.CHARGED_REAGENTS_VERSION`.
+        val started = run(grower(), 4)
+        val full = kiln(started).chargedReagents
+        val old = Save.write(started).replace(
+            Regex("""charged=[0-9,]+"""),
+            "charged=${full[photosynthesis.principalIndex]}",
+        )
+        val back = kiln(Save.read(old))
+        assertEquals(full.size, back.chargedReagents.size, "the derived baseline is the wrong length")
+        for ((i, want) in full.withIndex()) {
+            // Exact: `reagentFor` is the same arithmetic the charge was drawn with.
+            assertEquals(want, back.chargedReagents[i], "reagent $i came back with the wrong baseline")
+        }
     }
 
     @Test

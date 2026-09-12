@@ -1632,13 +1632,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // warn about, and why it only means anything when there is exactly one reaction to be a
         // percentage of.
         if (m.recipe != null) {
-            val principal = m.recipe.principal
-            val left = charge[principal]
-            val loaded = m.chargedPrincipal
             // ⛔ **Against what was LOADED, never against the charge's mass.** Nothing vents out of a
             // machine buffer, so the chamber's total is invariant while it reacts and says nothing
-            // about progress at all. See [Furnace.chargedPrincipal].
-            val converted = if (loaded <= 0L) 1000L else (loaded - left) * 1000L / loaded
+            // about progress at all. ⛔ And against the REAGENTS, never the principal alone, which a
+            // row that remakes its own principal reads backwards. Both rules live in
+            // [Furnace.convertedPermille], which the panel reads too.
+            val converted = m.convertedPermille { charge[it] }
             val done = converted >= m.completionPermille
             // ⛔ **The bound, and it is what stops a stall becoming a hang.** A charge whose
             // chemistry cannot reach the target — a row edited, a temperature that cannot be held —
@@ -1660,7 +1659,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         putStore(m, tile, BufferRole.Inside, null)
         putStore(m, tile, BufferRole.Product, charge)
         // The next charge serves its own dwell, not the remainder of this one's.
-        return m.copy(heldTicks = 0, chargedPrincipal = 0L)
+        return m.copy(heldTicks = 0, chargedReagents = emptyList())
     }
 
     /**
@@ -1753,7 +1752,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
         if (principalMass <= 0L) return m
 
-        var loaded = 0L
+        val loaded = MutableList(row.reagents.size) { 0L }
         for ((i, reagent) in row.reagents.withIndex()) {
             val role = m.roleFor(reagent.first) ?: return m
             val want = row.reagentFor(i, principalMass)
@@ -1762,12 +1761,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val drawn = hopper.take(minOf(want, hopper.total))
             putStore(m, tile, role, (hopper - drawn).orNull())
             buffers.put(chamber, buffers.resourceAt(chamber)?.plus(drawn) ?: drawn)
-            if (i == row.principalIndex) loaded = drawn[row.principal]
+            loaded[i] = drawn[reagent.first]
         }
         // ⚠️ **What actually landed, not what was asked for.** The draw is exact but a hopper may
-        // hold traces of something else, so the principal that arrived is the only honest baseline
-        // for the conversion measurement.
-        return m.copy(chargedPrincipal = loaded, heldTicks = 0)
+        // hold traces of something else, so what arrived is the only honest baseline for the
+        // conversion measurement — ⛔ for every reagent, since the one the conversion is read off is
+        // whichever runs out first. See [Furnace.convertedPermille].
+        return m.copy(chargedReagents = loaded, heldTicks = 0)
     }
 
     /**
@@ -2950,7 +2950,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     if (m is Furnace) {
                         // ⛔ **Switching mode discards the charge's PROGRESS, not the charge.** The
                         // conversion so far was measured against a recipe that is no longer the one
-                        // running, and carrying `chargedPrincipal` across would have the next
+                        // running, and carrying `chargedReagents` across would have the next
                         // release compare a new charge to an old baseline. Whatever is in the
                         // chamber stays there and is handed on by whichever rule now applies.
                         val recipe = edit.recipe
@@ -2961,7 +2961,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         deck[tile] = m
                             .withRecipe(recipe)
                             .withCompletion(edit.completionPermille)
-                            .let { if (changed) it.copy(heldTicks = 0, chargedPrincipal = 0L) else it }
+                            .let { if (changed) it.copy(heldTicks = 0, chargedReagents = emptyList()) else it }
                     }
                 }
                 is Edit.TuneDecomposer -> {
