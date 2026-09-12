@@ -382,8 +382,8 @@ private val WRITTEN: List<Reaction> = listOf(
      */
     Reaction(
         principal = Species.Algae,
-        reagents = listOf(Species.Algae to 100, Species.Water to 6, Species.CarbonDioxide to 6),
-        products = listOf(Species.Algae to 101, Species.Oxygen to 6),
+        reagents = listOf(Species.Algae to 1, Species.Water to 6, Species.CarbonDioxide to 6),
+        products = listOf(Species.Algae to 2, Species.Oxygen to 6),
         onsetKelvin = 273, // ~0°C.
         baseRate = BASE_RATE,
     ),
