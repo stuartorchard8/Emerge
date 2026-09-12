@@ -556,6 +556,52 @@ class FurnaceRecipeTest {
     }
 
     @Test
+    fun `three hoppers come back as three hoppers`() {
+        // ⛔ **They shared one field name until version 32**, so a three-reagent kiln wrote two
+        // `oxid=` fields on one line and the reader kept the last: both hoppers came back holding
+        // the same thing, which destroyed one reagent and duplicated the other. See
+        // `Save.REAGENT_HOPPER_KEYS_VERSION`.
+        val before = grower()
+        val after = Save.read(Save.write(before))
+
+        for (role in listOf(BufferRole.Input, BufferRole.SecondReagent, BufferRole.ThirdReagent)) {
+            val was = before.inStore(kilnAt, role)
+            val now = after.inStore(kilnAt, role)
+            assertEquals(was?.dominant, now?.dominant, "$role came back holding something else")
+            assertEquals(was?.total, now?.total, "$role came back a different size")
+        }
+        // The whole point, stated as the thing that was wrong: the two hoppers are not each other.
+        assertEquals(Species.Water, after.inStore(kilnAt, BufferRole.SecondReagent)?.dominant)
+        assertEquals(Species.CarbonDioxide, after.inStore(kilnAt, BufferRole.ThirdReagent)?.dominant)
+    }
+
+    @Test
+    fun `a save written before version 32 gets both colliding hoppers back`() {
+        // ⭐ **Nothing was ever lost in the FILE** — both `oxid=` fields are on the line, and only
+        // the map built from them dropped one. So an old record is recovered by position rather
+        // than written off. This is Stu's `farm.txt` in miniature.
+        val current = Save.write(grower())
+        val legacy = current
+            .replace("outofspace ${Save.VERSION}", "outofspace ${Save.REAGENT_HOPPER_KEYS_VERSION - 1}")
+            .replace("reagent2=", "oxid=")
+            .replace("reagent3=", "oxid=")
+        assertEquals(2, Regex("""oxid=""").findAll(legacy).count(), "the fixture is not the old spelling")
+
+        val back = Save.read(legacy)
+        assertEquals(
+            Species.Water, back.inStore(kilnAt, BufferRole.SecondReagent)?.dominant,
+            "the water was lost, which is the bug this migration exists for",
+        )
+        assertEquals(
+            Species.CarbonDioxide, back.inStore(kilnAt, BufferRole.ThirdReagent)?.dominant,
+            "the third hopper did not come back",
+        )
+        // ⛔ **And the masses are the ones the file states**, not one of them twice.
+        assertEquals(200 * kg, back.inStore(kilnAt, BufferRole.SecondReagent)?.total)
+        assertEquals(200 * kg, back.inStore(kilnAt, BufferRole.ThirdReagent)?.total)
+    }
+
+    @Test
     fun `each row of a shared principal comes back as itself`() {
         // ⛔ **A save wrote `recipe=<principal>` until version 30**, so periclase's three rows were
         // one word on disk and a reload could only ever hand back the first of them. The field is

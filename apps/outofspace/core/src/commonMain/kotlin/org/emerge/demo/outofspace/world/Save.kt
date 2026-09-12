@@ -187,8 +187,34 @@ object Save {
      * ⚠️ **30 spells a furnace's recipe as the whole row** — see [RECIPE_ROW_VERSION].
      *
      * ⚠️ **31 writes a furnace's charge baseline for every reagent** — see [CHARGED_REAGENTS_VERSION].
+     *
+     * ⚠️ **32 gives a recipe furnace's two reagent hoppers their own field names** — see
+     * [REAGENT_HOPPER_KEYS_VERSION], which is a data-loss bug and not a tidy-up.
      */
-    const val VERSION = 31
+    const val VERSION = 32
+
+    /**
+     * The first version whose reagent hoppers are `reagent2` and `reagent3` rather than both `oxid`.
+     *
+     * ⛔ **Below this, a three-store furnace record LOST one of them.** [roleKey] carries the
+     * argument: three roles shared one field name, so a locked kiln wrote two `oxid=` fields on one
+     * line and [fields] kept the last. Both hoppers then loaded the same contents — Stu's save had
+     * `oxid=Water=120000000000` followed by `oxid=CarbonDioxide=200000000000` and came back with
+     * 200 kg of CO₂ in *both*, which destroyed the water, conjured the CO₂, and left a kiln that
+     * could not build a charge because the reagent it was waiting for no longer existed.
+     *
+     * ⭐ **Nothing is actually lost in the file, which is why this is a migration and not a write-off.**
+     * Both fields are on the line; it was only the map built from them that dropped one. So an old
+     * record's `oxid=` fields are read **in order** and handed to [LEGACY_OXID_ROLES] in order — the
+     * order the writer put them in.
+     *
+     * ⚠️ **One residual ambiguity, and it self-corrects.** An empty store writes no field, so a
+     * record whose *second* hopper was empty and third was not cannot be told from the reverse, and
+     * positional recovery puts those contents in the second hopper. Nothing is destroyed: a species
+     * in the wrong hopper is what `evictStrangers` moves across on the first tick, which is the
+     * furnace's own standing rule rather than anything invented here.
+     */
+    const val REAGENT_HOPPER_KEYS_VERSION = 32
 
     /**
      * The first version whose furnace `charged=` is **one figure per reagent**, in the row's own
@@ -678,20 +704,56 @@ object Save {
         // A bridge's middle slot has always been `span`, and it stays `span`: the three slots became
         // three role tiles without the file needing to know.
         m is Bridge && role == BufferRole.Inside -> "span"
-        role == BufferRole.Input -> "in"
-        role == BufferRole.Inside -> "inside"
-        role == BufferRole.Product -> "out"
-        role == BufferRole.Waste -> "waste"
+        else -> roleKey(role)
+    }
+
+    /**
+     * The field name a store of [role] has when the machine holding it has no older spelling.
+     *
+     * ⛔ **Exhaustive over [BufferRole], and it must stay that way — no `else` branch.** This was a
+     * `when` over predicates ending in `else -> "oxid"`, which silently gave **three** roles one
+     * field name: [BufferRole.Oxidiser] meant it, and [BufferRole.SecondReagent] and
+     * [BufferRole.ThirdReagent] fell into it when a recipe furnace grew two hoppers. A three-reagent
+     * kiln then wrote two `oxid=` fields on one line, `fields` kept the last, and **both hoppers
+     * loaded the same contents**: in a real save, 120 kg of water destroyed and 200 kg of CO₂
+     * conjured on every round trip, and a kiln that could no longer build a charge because the water
+     * it needed had become more CO₂. Stu's save, 2026-09-12.
+     *
+     * ⛔ **A catch-all is what made that possible, so the fix is the compiler rather than a key.**
+     * Adding a role to the enum is now a build failure here until it is spelled, which is the whole
+     * point: the collision was not a typo, it was a default quietly claiming a name that was already
+     * taken. See [REAGENT_HOPPER_KEYS_VERSION] for the migration.
+     *
+     * ⚠️ **Ordinal names for the reagent hoppers, matching the roles.** What is in them is whatever
+     * the locked recipe says, so a name like `reductant` would be a claim the next recipe falsifies
+     * — see [BufferRole.SecondReagent], which makes the same argument about the role itself.
+     */
+    private fun roleKey(role: BufferRole): String = when (role) {
+        BufferRole.Input -> "in"
+        BufferRole.Inside -> "inside"
+        BufferRole.Product -> "out"
+        BufferRole.Waste -> "waste"
+        // The one key that was named after its role rather than before it, because it arrived after
+        // them — see [BufferRole.Oxidiser]. ⚠️ **It keeps `oxid` and needs no migration**: a rocket
+        // is the only machine with this role and has neither reagent hopper, so nothing it ever
+        // wrote collided.
+        BufferRole.Oxidiser -> "oxid"
         // ⚠️ **Written under their own names from version 29 on.** A cell's baths were `out` and
         // `waste` while it was a 3×3, and no file that used those keys for a cell can be read any
         // more — see [ELECTROLYZER_3X2_VERSION], which drops the machine and its stores together. So
         // there is no old spelling to recognise here, only a new one to write.
-        role == BufferRole.Cathode -> "cathode"
-        role == BufferRole.Anode -> "anode"
-        // The one key that was named after its role rather than before it, because it arrived after
-        // them — see [BufferRole.Oxidiser].
-        else -> "oxid"
+        BufferRole.Cathode -> "cathode"
+        BufferRole.Anode -> "anode"
+        BufferRole.SecondReagent -> "reagent2"
+        BufferRole.ThirdReagent -> "reagent3"
     }
+
+    /**
+     * The roles that shared `oxid` before [REAGENT_HOPPER_KEYS_VERSION], **in the order a record
+     * wrote them** — which is [bufferRolesOf]'s order, which is the enum's.
+     */
+    private val LEGACY_OXID_ROLES: List<BufferRole> =
+        listOf(BufferRole.Oxidiser, BufferRole.SecondReagent, BufferRole.ThirdReagent)
 
     /**
      * The species half of a [FeedBook]'s field — see `putFeed`, which writes it.
@@ -2169,13 +2231,14 @@ object Save {
          * `F:` is refused rather than unwrapped: there was never a fluid bridge, and a file claiming
          * one is a file that means something this build cannot honour.
          */
-        fun res(key: String): Mixture? = f[key]?.let {
+        fun resOf(raw: String?): Mixture? = raw?.let {
             when {
                 it.startsWith("S:") -> readResource(it.substring(2), scale, fail)
                 it.startsWith("F:") -> fail("a $kindName store cannot hold a fluid packet: '$it'")
                 else -> readResource(it, scale, fail)
             }
         }
+        fun res(key: String): Mixture? = resOf(f[key])
         fun num(key: String, fallback: Long): Long =
             f[key]?.let { it.toLongOrNull() ?: fail("bad number '$it'") } ?: fallback
         // ⚠️ Scales the value read from the file but NOT the fallback, which is a current-unit
@@ -2363,9 +2426,16 @@ object Save {
         // Claimed and filled exactly as the machine record's are — see the twin in [readMachine]
         // for why claiming is separate from filling.
         buffers.claimRoles(grid, machine, tile)
+        // ⛔ **A record below [REAGENT_HOPPER_KEYS_VERSION] may carry the same key twice**, and [f]
+        // kept only the last of them — see that constant, where the mass this destroyed is written
+        // down. The tokens still hold both, so they are recovered by position here: the roles that
+        // shared `oxid`, in the order the writer emitted them.
+        val shared = bufferRolesOf(machine).filter { it in LEGACY_OXID_ROLES }
+        val recovered = if (version >= REAGENT_HOPPER_KEYS_VERSION || shared.size < 2) emptyMap()
+        else shared.zip(tokens.filter { it.startsWith("oxid=") }.map { it.removePrefix("oxid=") }).toMap()
         for (role in bufferRolesOf(machine)) {
             val store = bufferTile(grid, machine, tile, role) ?: continue
-            buffers.put(store, res(storeKey(machine, role)))
+            buffers.put(store, resOf(recovered[role] ?: f[storeKey(machine, role)]))
         }
         return machine.withWiring(wiring)
     }
