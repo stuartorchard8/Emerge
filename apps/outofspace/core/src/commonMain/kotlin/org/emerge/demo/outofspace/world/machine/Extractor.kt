@@ -78,8 +78,13 @@ data class Extractor(
  * conserved quantities that came off with the cell.
  *
  * All three are stated as what *left the rock*, because that is the only half either ledger can see
- * for itself: the ore lands in a buffer, the heat lands in the casing and the momentum lands on the
- * ship, and each of the three has to be booked by the caller in the same breath.
+ * for itself, and each of the three has to be booked by the caller in the same breath.
+ *
+ * ⛔ **The heat goes where the mass goes.** [energy] is the cell's own thermal energy and it belongs
+ * in the store the ore lands in, at the rock's temperature — not in the machine's casing, which is
+ * where it used to be charged. A bite off a 1500 K rock put the plate at 706 K and the ore at 0 K;
+ * the world kept every unit of it, so no ledger noticed. The casing's own claim is
+ * `heatOfWorking` — the energy the machine *spends* doing this — and that is a different number.
  */
 class Bite(val body: RigidBody?, val mass: Long, val energy: Long, val impulseX: Long, val impulseY: Long)
 

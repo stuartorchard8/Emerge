@@ -2526,18 +2526,26 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         /**
-         * Charges [energy] to the machine at [tile] **without** counting it as generated.
+         * Books [energy] that came aboard **inside matter that came aboard** — and nothing else.
          *
-         * The difference from [heat] is the whole point: this is energy that was already in the
-         * world and has changed hands — a rock's heat arriving in the extractor that ate it. Booking
-         * it as generated would break the thermal balance by exactly the amount that moved. Also
-         * increments [acquiredEnergy] to record that the grid acquired this energy from outside.
+         * A body is not part of the vessel, so its heat is outside the solid ledger until something
+         * takes a piece of the body; from that tick the energy is in [VesselState.storedEnergy],
+         * held by whatever store the matter landed in, and [acquiredEnergy] is what cancels the
+         * double-count. Booking it as [heat] instead would break the balance by exactly the amount
+         * that moved, because nothing generated it.
+         *
+         * ⛔ **It writes no heat anywhere, and that is the point of it.** This used to be
+         * `absorb(tile, energy)`, which charged the figure to the machine's own casing — so a bite
+         * off a 1500 K rock put the plate at 706 K and the ore in the hopper at **0 K**. The energy
+         * stayed in the world either way, which is why no ledger ever complained, but it took the
+         * wrong route: a hot rock cooked the extractor it was standing on — measured at 413 K of
+         * plate per bite, so four bites carry it past 1800 K and [meltStructures] marks an iron
+         * casing for deconstruction — and a cold one filled the hopper with matter at absolute zero.
+         * **Heat rides with the matter it belongs to** — the caller
+         * puts it in the mixture, exactly as [liftFrost] and [suck] already do, and all this does is
+         * record the crossing.
          */
-        fun absorb(tile: TileIndex, energy: Long) {
-            if (energy == 0L || tile.index !in heatAdded.indices) return
-            heatAdded[tile.index] += energy
-            acquiredEnergy += energy
-        }
+        fun acquired(energy: Long) { acquiredEnergy += energy }
 
         /** Books energy inserted by the player via debug features. */
         fun built(energy: Long) { insertedEnergy += energy }
@@ -3420,9 +3428,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * rock is not part of the vessel and each of them lands in something that is:
          *
          *  - mass, which becomes ore and moves [VesselState.extractedMass];
-         *  - heat, which goes into the casing and is a *transfer* rather than work, so it is
-         *    [absorb]ed and not [heat]ed — putting it through the generated-energy term would mint
-         *    energy that was already in the world;
+         *  - heat, which **travels with that mass into the store** and is a *transfer* rather than
+         *    work, so it is [acquired] and not [heat]ed — putting it through the generated-energy
+         *    term would mint energy that was already in the world. ⛔ It does **not** go into the
+         *    casing: see [acquired] for the bug that was, and note that the machine's own work heat
+         *    is a separate figure that does, via [heatOfWorking];
          *  - momentum, which the ship gains because the ore is now aboard and moving with it. The
          *    ship therefore hands the rock the negative of it, which is what [rockHandedX] is for.
          *
@@ -3718,7 +3728,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (cell < 0) return null
             val taken = biteCell(body, cell)
             extractedMass += taken.mass
-            absorb(tile, taken.energy)
+            // Booked, not placed. The heat goes where the matter goes — into the mixture returned
+            // below — so all that is needed here is the note that it crossed into the vessel.
+            acquired(taken.energy)
             // The body lost this; the ship gained it, so the ship gave the body the negative.
             bodyHandedX -= taken.impulseX
             bodyHandedY -= taken.impulseY
@@ -3729,7 +3741,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 taken.impulseX, taken.impulseY,
             )
             if (taken.body == null) bodies.removeAt(index) else bodies[index] = taken.body
-            return body.oreComposition!!.scaledTo(taken.mass)
+            // ⚠️ **At the rock's temperature.** [Mixture.scaledTo] renders a composition at a mass
+            // and answers zero energy, because proportions do not have a temperature; what comes off
+            // a rock does. The energy transfers exactly — it is the cell's own figure, moved whole —
+            // but the *temperature* reads one kelvin low, and that is not this crossing's fault: a
+            // body's capacity comes from [capacityPerTileOf], a mean specific heat against a
+            // per-tile density, and a store's from the exact `Σ mass × specificHeat`. Those differ
+            // by 1.26e-6 for the default orebody, which truncates to one kelvin at any temperature.
+            // See `BiteHeatTest`, which pins the direction.
+            return body.oreComposition!!.scaledTo(taken.mass).withEnergy(taken.energy)
         }
 
         /**

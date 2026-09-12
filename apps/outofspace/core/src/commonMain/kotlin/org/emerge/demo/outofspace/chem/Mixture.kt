@@ -141,6 +141,17 @@ class Mixture private constructor(val masses: LongArray, val energy: Long) {
         return Mixture(apportion(this.masses, mass), 0)
     }
 
+    /**
+     * This matter, stated to be holding [energy] — the missing half of [scaledTo].
+     *
+     * A composition is *proportions*, so rendering one at a mass says nothing about how hot the
+     * result is and [scaledTo] answers zero. That is right for a recipe and wrong for a pile of real
+     * matter that came from somewhere: a caller who knows the temperature of what it is building has
+     * to be able to say so, or the matter arrives at absolute zero. An extractor's bite is the case
+     * this exists for — see `OutofspaceSim.bite`.
+     */
+    fun withEnergy(energy: Long): Mixture = Mixture(masses.copyOf(), energy)
+
     /** Human-readable, dominant species first — for debug output and test failures. */
     override fun toString(): String {
         if (isEmpty) return "Mixture(empty)"
