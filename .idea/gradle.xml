@@ -56,6 +56,7 @@
             <option value="$PROJECT_DIR$/engine" />
             <option value="$PROJECT_DIR$/engine/audio" />
             <option value="$PROJECT_DIR$/engine/audio/openal" />
+            <option value="$PROJECT_DIR$/engine/audio/synth" />
             <option value="$PROJECT_DIR$/engine/net" />
             <option value="$PROJECT_DIR$/engine/net/api" />
             <option value="$PROJECT_DIR$/engine/net/transports" />
