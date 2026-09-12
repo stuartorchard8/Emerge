@@ -1830,7 +1830,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val held = store(m, tile, m.propellantRole) ?: return 0L
         val speed = Thruster.exhaustVelocity(held)
         if (speed <= 0L) return 0L
-        return m.massPerTick * Thruster.milliTilesPerTick(speed, cfg.ticksPerSecond) / 1000L
+        // ⛔ **What it will actually throw, not what it is rated at.** [Engine.ejects] and not
+        // [Engine.massPerTick], because a rocket's rate is a fact about how full its chamber is —
+        // a motor still spooling up would otherwise be weighed against a spooled-up one as an equal
+        // and the balance struck against thrust it does not have yet. Asked at full activation
+        // because this *is* the question "what is this motor worth at full", which is what the
+        // balance weighs; the throttle it ends up with is what this call is deciding.
+        val rate = m.ejects(held.total, SignalField.FULL).first
+        return rate * Thruster.milliTilesPerTick(speed, cfg.ticksPerSecond) / 1000L
     }
 
     private fun Work.flightPlan(cfg: OutofspaceConfig, intent: FlightIntent): IntArray {
@@ -1896,7 +1903,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // fire" is a different fault from "not asked", and the panel is where a player finds out
         // which of the two they have built.
         val told = m.told(activation, m.carry)
-        if (activation <= 0) return told
 
         // ── What is in the chamber ────────────────────────────────────────────────
         //
@@ -1904,16 +1910,21 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // the exhaust leaves — see [Thruster.exhaustVelocity] — so a motor's thrust is a fact about
         // what the player chose to deliver to it.
         val input = store(m, tile, m.propellantRole) ?: return told
+
+        // ⛔ **Asked before the mixture is priced, and there is no `activation <= 0` guard above it
+        // any more.** A closed throttle is not the same question as an empty nozzle now: a [Rocket]
+        // vents its chamber whatever the stick says — that is [Engine.ejects]' whole argument — so
+        // the engine is the only thing that can say whether anything leaves. A shut thruster still
+        // costs nothing but this one store lookup, because its own answer is zero.
+        val (chunkMass, carry) = m.ejects(input.total, activation)
+        if (chunkMass <= 0L) return m.told(activation, carry)
+
         val speed = Thruster.exhaustVelocity(input)
         // ⛔ Zero is "too little to price", not "slow": below about a millimole the mole table floors
         // out. A motor with a smear in it makes no thrust rather than dividing by nothing.
         if (speed <= 0L) return told
         val perTick = Thruster.milliTilesPerTick(speed, cfg.ticksPerSecond)
         if (perTick <= 0L) return told
-
-        val (allowance, carry) = throttled(m.massPerTick, activation, m.carry)
-        val chunkMass = minOf(allowance, input.total)
-        if (chunkMass <= 0L) return m.told(activation, carry)
 
         val path = exhaustPath(grid, structure, m)
         heat(tile, heatOfWorking(chunkMass, m))
@@ -2051,12 +2062,22 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val held = store(m, tile, BufferRole.Inside)
         val room = Rocket.CHAMBER_CAP - (held?.total ?: 0L)
 
-        if (room > 0L) {
-            // The dial, spent here and nowhere else. Permille of the *refill*, not of the chamber:
+        // ⛔ **This is where the throttle is spent.** The stick is a fuel valve on this machine —
+        // what *leaves* is [Engine.ejects]' business and does not consult the pilot at all. See
+        // [Rocket]'s note: a charge then dwells in the chamber for a few ticks and mixes with what is
+        // already burning, instead of being injected and thrown in the same breath.
+        //
+        // ⚠️ **Clamped to the room as well as to the rate**, and the two bind at different times: the
+        // rate is what limits a spooling engine and the room is what limits a spooled-up one, whose
+        // chamber has reached [Rocket.CHAMBER_CAP] and can only take back what the bell just let out.
+        val (allowance, carry) = throttled(m.massPerTick, throttle, m.carry)
+        val inject = minOf(allowance, room)
+        if (inject > 0L) {
+            // The dial, spent here and nowhere else. Permille of the *injection*, not of the chamber:
             // what is already in there has been burning and is no longer either reactant.
-            val wantFuel = room * m.fuelPermille / 1000L
+            val wantFuel = inject * m.fuelPermille / 1000L
             drawInto(m, tile, BufferRole.Input, chamberTile, wantFuel)
-            drawInto(m, tile, BufferRole.Oxidiser, chamberTile, room - wantFuel)
+            drawInto(m, tile, BufferRole.Oxidiser, chamberTile, inject - wantFuel)
         }
 
         // ⛔ **Nothing is lit unless the engine was told to fire.** An idle rocket used to hold its
@@ -2084,7 +2105,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 (m.setTemperature - buffers.stuff.kelvinAt(chamberTile))
             if (shortfall > 0L) heatBuffer(chamberTile, minOf(shortfall, Rocket.IGNITER_POWER))
         }
-        return m
+        // ⚠️ **The carry is the injection's now**, and [Work.fire] must not overwrite it — which it
+        // does not, because [Rocket.ejects] hands back the one it was given. See [Engine.carry].
+        return m.copy(carry = carry)
     }
 
     /** Moves up to [want] out of the machine's [from] store and into [into]. */

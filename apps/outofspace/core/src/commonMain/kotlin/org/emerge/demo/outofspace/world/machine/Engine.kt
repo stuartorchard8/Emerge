@@ -37,7 +37,15 @@ sealed interface Engine : DirectedDeckMachine {
     /** Propellant thrown per tick at full activation, out of [propellantRole]. */
     val massPerTick: Long
 
-    /** The fraction of a unit of propellant left over from last tick's throttling — see `throttled`. */
+    /**
+     * The fraction of a unit of propellant left over from last tick's throttling — see `throttled`.
+     *
+     * ⚠️ **Which side of the machine it is the remainder of depends on what the throttle meters**,
+     * and the two engines differ — see [ejects]. A [Thruster] throttles what leaves, so this is the
+     * exhaust's remainder and [ejects] advances it; a [Rocket] throttles what goes *in*, so it is the
+     * injection's and `burn` advances it. One field either way, because it is the same arithmetic
+     * against the same rate, and an engine only ever meters one of the two.
+     */
     val carry: Long
 
     /**
@@ -76,6 +84,29 @@ sealed interface Engine : DirectedDeckMachine {
      * shapes give that. See `exhaustPath`, which walks from here outwards.
      */
     fun bell(grid: Grid): TileIndex = grid.neighbour(center, facing)
+
+    /**
+     * How much of [held] leaves the nozzle this tick, and the carry to keep.
+     *
+     * ⛔ **This is where the two engines stop agreeing about what a throttle is, and it belongs here
+     * for exactly that reason.** It is not a dial only one kind has — both answer it, and they answer
+     * it differently, which is the test this interface is held to.
+     *
+     *  - A [Thruster] throttles **what leaves**: the stick meters the exhaust straight out of a store
+     *    a belt filled, so [activation] is the whole answer and the store is only a limit.
+     *  - A [Rocket] throttles **what goes in**, at the chamber — so what leaves is a fact about the
+     *    chamber alone and [activation] does not appear. A charge therefore *dwells*: it is mixed
+     *    with what is already burning rather than being injected and thrown in the same tick, and a
+     *    chamber nobody is feeding empties itself instead of sitting on its products for ever.
+     *
+     * ⚠️ **Steady state is the same engine either way**, and that is the point of the numbers rather
+     * than a coincidence: a rocket settles where injection equals ejection, so it throws
+     * `massPerTick × activation` once it has spooled up, exactly as it did when the throttle metered
+     * the other side. What changed is the transient.
+     *
+     * @return the mass to throw, and the carry to hold into next tick.
+     */
+    fun ejects(held: Long, activation: Int): Pair<Long, Long>
 
     /**
      * The same engine having been told to fire at [activation], carrying [carry] into next tick.

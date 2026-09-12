@@ -5,12 +5,14 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.TILE_LITRES
 import org.emerge.demo.outofspace.chem.adiabaticK
 import org.emerge.demo.outofspace.logistics.Capacity
+import org.emerge.demo.outofspace.logistics.Rate
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.num.isqrt
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
+import org.emerge.demo.outofspace.world.SignalField
 import org.emerge.demo.outofspace.world.SpeciesFilter
 import org.emerge.demo.outofspace.world.kelvinOf
 import org.emerge.demo.outofspace.world.millimolesOf
@@ -105,6 +107,19 @@ data class Thruster(
     override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
     override fun withControl(control: ThrusterControl): Engine = copy(control = control)
     override fun told(activation: Int, carry: Long): Engine = copy(firing = activation, carry = carry)
+
+    /**
+     * ⛔ **The throttle meters what leaves**, which is the whole of a cold gas thruster: there is
+     * nothing between the store and the hole, so the stick is a valve and [held] is only a limit.
+     *
+     * A closed throttle throws nothing *this same tick* — no spool-down, because there is no chamber
+     * to drain. See [Rocket.ejects] for the other answer and why it is not this one.
+     */
+    override fun ejects(held: Long, activation: Int): Pair<Long, Long> {
+        if (activation <= 0) return 0L to carry
+        val (allowance, next) = Rate.tick(massPerTick * activation, SignalField.FULL, carry)
+        return minOf(allowance, held) to next
+    }
 
     /**
      * ⛔ **The store its own input port fills, and there is nothing between the two.** A cold gas

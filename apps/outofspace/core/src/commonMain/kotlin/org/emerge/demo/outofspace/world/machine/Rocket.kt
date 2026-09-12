@@ -68,6 +68,38 @@ import org.emerge.demo.outofspace.world.Wiring
  * reaction is what pays for the rest. The element matters far more to a monopropellant, which is the
  * same chamber with one door.
  *
+ * ### ⛔ The throttle meters the injection, not the exhaust
+ *
+ * ⛔ **The stick is a fuel valve and the bell is a fixed orifice**, which is the other way round from
+ * a [Thruster] and the only structural difference left between the two engines. `burn` draws
+ * `massPerTick × activation` into the chamber; [ejects] throws a constant share of whatever is in
+ * there, for ever, whatever the pilot is doing. See both, which hold the argument between them.
+ *
+ * ✅ **Steady state is the engine it always was** — injection balances ejection at
+ * `chamber = massPerTick × EXHAUST_DIVISOR`, which is [CHAMBER_CAP], so a spooled-up motor at full
+ * throttle throws [MASS_PER_TICK] exactly as it did when the throttle metered the other side. The
+ * numbers were chosen so that they line up rather than arrived at.
+ *
+ * What is new is the **transient**, and it is the whole point: a charge dwells about
+ * [EXHAUST_DIVISOR] ticks, so cold reagents mix into a chamber that is already burning instead of
+ * being injected and thrown in the same breath.
+ *
+ * ⚠️ **It does NOT make the element an igniter, and that was measured rather than assumed.** The
+ * tempting claim is that a dwelling chamber carries its own heat and the thermostat goes quiet; what
+ * it actually does at the default 1200 K setpoint is oscillate between about 1200 K and 2070 K — over
+ * its setpoint on the combustion for part of the cycle, topped back up by the element for the rest,
+ * which is most ticks. ⛔ **The element's duty is set by [setTemperature] and not by the dwell**,
+ * because a thermostat costs whatever its setpoint costs: at 800 K it barely runs and the chamber
+ * barely burns (v_e 2943, near cold gas); at 2000 K it runs half again as hard. The default is worth
+ * its keep — v_e 4183, near the 4247 the table promises — but it is *paid for*, and when there is a
+ * power bill this is where it will land.
+ *
+ * ⚠️ **Spool-up and spool-down are thrust**, exponential either way with a time constant of
+ * [EXHAUST_DIVISOR] ticks. A rocket told to stop keeps pushing, weakly, until its chamber is empty —
+ * booked at the bell like any other exhaust, because that is what it is. ⛔ **Not a duty cycle**: it
+ * still vents on every single tick, which is the thing the note above forbids and which
+ * `it never stops to reach its setpoint` pins.
+ *
  * ### ⛔ The doors are agnostic, and the propellant is what sorts them
  *
  * ⛔ **Neither door is "the fuel door".** Both mouths ask the network for the same two species and a
@@ -143,6 +175,33 @@ data class Rocket(
     override fun told(activation: Int, carry: Long): Engine = copy(firing = activation, carry = carry)
     override fun withControl(control: ThrusterControl): Engine = copy(control = control)
 
+    /**
+     * ⛔ **A fact about the chamber, and [activation] does not appear in it.** The throttle meters
+     * what goes *in* — see `OutofspaceSim.burn` — so the bell is a fixed orifice: a constant share of
+     * whatever is in there leaves every tick, for ever, whatever the pilot is doing.
+     *
+     * ### What the share buys
+     *
+     * A charge stays about [EXHAUST_DIVISOR] ticks, which is the point. Cold fuel and oxidiser are
+     * injected into a chamber that is *already burning* and mix with it, rather than being injected
+     * and thrown in the same tick. ⚠️ **It does not relieve the element** — see the class note, where
+     * that tempting claim is measured and refused.
+     *
+     * ⛔ **And a chamber nobody is feeding empties itself.** That is the other half, and the reason
+     * this is not gated on firing like the element is: an idle rocket used to sit on its combustion
+     * products for ever, so the first burn after a long idle threw **water** — M̄ 18, the worst
+     * exhaust in the game — before it threw any mixture. Now it drains to nothing and the next burn
+     * starts clean. ⚠️ It also means a **spool-down that makes thrust**: a rocket told to stop keeps
+     * pushing, weakly, while the chamber empties. That is real and it is booked at the bell like any
+     * other exhaust, because a residual charge leaving a nozzle is thrust whatever the stick says.
+     *
+     * ⚠️ **[EXHAUST_FLOOR] is what makes "empties" true.** A pure fraction halves towards zero and
+     * never arrives, leaving a smear that the chamber can never be rid of and that
+     * [Thruster.exhaustVelocity] cannot even price. Below the floor the last of it goes in one go.
+     */
+    override fun ejects(held: Long, activation: Int): Pair<Long, Long> =
+        maxOf(minOf(held, EXHAUST_FLOOR), held / EXHAUST_DIVISOR) to carry
+
     /** The dial, clamped to the ladder's ends — a mixture is a fuel fraction and cannot be neither. */
     fun withFuelPermille(permille: Int): Rocket =
         copy(fuelPermille = permille.coerceIn(RATIOS.first(), RATIOS.last()))
@@ -205,16 +264,56 @@ data class Rocket(
         val MASS_PER_TICK: Long = Capacity.PACKET_MASS / 40L
 
         /**
-         * How much the chamber holds.
+         * One part in this of the chamber leaves every tick — see [ejects], which is where the
+         * argument is.
          *
-         * ⛔ **Small, and that is the machine.** Four ticks of full flow — enough that a throttled
-         * engine is not immediately empty, and little enough that what is held at three thousand
-         * kelvin is a few kilograms rather than the two hundred a feed store would be. The heat a
-         * chamber leaks into its own casing (and from there into the room) is proportional to what
-         * is in it, so this number is also the answer to "how badly does a running engine cook the
-         * ship".
+         * ⛔ **It is a dwell time wearing a fraction's clothes**: a charge stays about this many
+         * ticks, which is how long it has to mix with what is already burning. Raise it and the
+         * engine is laggier, better mixed and holds more (see [CHAMBER_CAP], which follows it);
+         * lower it and the chamber approaches a pipe with an igniter pointed at it.
+         *
+         * Four is the smallest number that reads as a dwell rather than a delay — at 60 ticks a
+         * second it is about a sixteenth of a second of spool, which a pilot feels as weight rather
+         * than as lag.
          */
-        val CHAMBER_CAP: Long = MASS_PER_TICK * 2L
+        const val EXHAUST_DIVISOR: Long = 4L
+
+        /**
+         * Below this much left, the chamber empties in one tick instead of taking a share.
+         *
+         * ⛔ **Without it "it empties itself" is false**: a share of a share never reaches zero, so a
+         * chamber would keep a smear of products for ever — and a smear is exactly what
+         * [Thruster.exhaustVelocity] cannot price, so the engine would hold something it could not
+         * even throw.
+         *
+         * Half a tick's flow — **1.25 kg** — which puts a full chamber's cool-down at about eight
+         * ticks. Stated as a fraction of [MASS_PER_TICK] rather than as a round kilogram so that it
+         * stays half a tick's flow if the engine is ever resized.
+         */
+        val EXHAUST_FLOOR: Long = MASS_PER_TICK / 2L
+
+        /**
+         * How much the chamber holds: **10 kg**, four ticks of full flow.
+         *
+         * ⛔ **This number and [EXHAUST_DIVISOR] are the same number twice, and they must agree.** A
+         * chamber that vents a `1/N` share every tick and is fed `massPerTick` settles where the two
+         * balance — `chamber = massPerTick × N` — so a cap below that clips the engine at full
+         * throttle and one above it is capacity nothing ever reaches. Stated against
+         * [EXHAUST_DIVISOR] rather than carrying a `4` of its own so the pair cannot drift apart.
+         *
+         * ✅ **At full throttle the equilibrium *is* the cap**, which is what makes the machine's
+         * rated thrust honest: `room` falls to a tick's flow, injection matches ejection, and the
+         * engine throws exactly [MASS_PER_TICK] like it says on the tin. Every notch below, the
+         * chamber settles proportionally lower and throws proportionally less.
+         *
+         * ⚠️ **It doubled when the throttle moved to the injection side** (it was `× 2`), and the
+         * cost is real: the heat a chamber leaks into its own casing — and from there into the room —
+         * is proportional to what is in it, so a running engine now cooks the ship about twice as
+         * hard. Against that, an *idle* one no longer cooks it at all, which it used to do for ever.
+         */
+        val CHAMBER_CAP: Long = MASS_PER_TICK * EXHAUST_DIVISOR
+
+
 
         /**
          * Every row a rocket can be plumbed for: **a fluid that burns in an oxidiser**.

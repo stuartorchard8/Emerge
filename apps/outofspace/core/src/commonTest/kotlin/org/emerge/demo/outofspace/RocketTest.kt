@@ -3,6 +3,7 @@ package org.emerge.demo.outofspace
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
+import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.Conduits
@@ -54,6 +55,15 @@ class RocketTest {
      * heat capacity wearing a rocket's clothes.
      */
     private val LIGHT_UP_TICKS = 20
+
+    /**
+     * How long a full chamber is given to empty itself once the stick is released.
+     *
+     * The arithmetic says five — a quarter share taken off a full chamber until
+     * [Rocket.EXHAUST_FLOOR] takes the rest in one go — and this is loose against that for
+     * [LIGHT_UP_TICKS]' reason: what is pinned is *that it drains*, not the shape of the curve.
+     */
+    private val SPOOL_DOWN_TICKS = 20
 
     /** The engine at (8,6) facing right: fuel (7,5), oxidiser (7,7), chamber (8,6), bell (9,6). */
     private val engineAt = grid.tile(8, 6)
@@ -492,7 +502,12 @@ class RocketTest {
             chamberKelvin(after) < Rocket.IGNITION_KELVIN,
             "an idle chamber lit itself: ${chamberKelvin(after)} K",
         )
+        // ⚠️ **This line means more than it did**, now that the throttle meters the injection: it is
+        // no longer "it was not told to fire" but "it never took anything in, so it had nothing to
+        // vent when it vented". The engine's doors are stocked throughout — a fuel valve stuck open
+        // would show up right here as a parked ship quietly emptying its tanks out of the bell.
         assertEquals(0L, after.exhaustMomentumX, "an idle engine threw something")
+        assertEquals(0L, chamber(after).total, "an idle engine filled its chamber anyway")
     }
 
     @Test
@@ -518,6 +533,121 @@ class RocketTest {
             if (lit < 0 && chamberKelvin(controller.state) >= Rocket.IGNITION_KELVIN) lit = it
         }
         assertTrue(lit in 0 until LIGHT_UP_TICKS, "a cold engine never lit in $LIGHT_UP_TICKS ticks")
+    }
+
+
+    // ── The throttle meters the injection ────────────────────────────────────
+
+    /**
+     * The two masses agree to within a gram.
+     *
+     * ⛔ **Exact equality is the wrong assertion about a mass flow and it is worth saying why.** A
+     * chamber is drawn from with [Mixture.take], which is exact *per draw* but splits across species
+     * at microgram resolution — so a rate measured over thirty ticks of a three-species chamber lands
+     * a few thousand micrograms off a round number. See `reference_oos_microgram_deadlock`.
+     *
+     * A gram is four parts in ten thousand of a tick's flow: loose enough to absorb that, and far too
+     * tight to hide anything these tests are actually looking for — a cap that clips the engine or a
+     * floor that binds when it should not would both be off by kilograms.
+     */
+    private fun assertNear(expected: Long, actual: Long, message: String) {
+        val slack = Budget.GRAM
+        assertTrue(
+            actual in (expected - slack)..(expected + slack),
+            "$message (expected about $expected, was $actual)",
+        )
+    }
+
+
+    @Test
+    fun `a spooled-up engine throws its rated mass`() {
+        // ⭐ **The two numbers lining up, which is the whole of the tuning.** The chamber vents a
+        // `1/EXHAUST_DIVISOR` share every tick and is fed `MASS_PER_TICK`, so it settles where the
+        // two balance — at `MASS_PER_TICK × EXHAUST_DIVISOR`, which is exactly `CHAMBER_CAP`. The
+        // consequence is the claim the machine's rating rests on: once spooled up it throws
+        // `MASS_PER_TICK` a tick, the same as it did when the throttle metered the exhaust.
+        //
+        // ⛔ **Set the cap and the divisor independently and this is the test that catches it**, in
+        // the direction that matters: a cap below the equilibrium silently clips the engine's rated
+        // thrust, and nothing else in the suite would notice.
+        assertEquals(
+            Rocket.MASS_PER_TICK * Rocket.EXHAUST_DIVISOR, Rocket.CHAMBER_CAP,
+            "the chamber cannot hold what full throttle settles at",
+        )
+
+        val cfg = OutofspaceConfig(initialGrid = grid)
+        val controller = OutofspaceController(cfg, engineOnFlightControl())
+        controller.mode = Mode.Flight
+        controller.heldKeys = InputKey.Left.bit
+        repeat(40) { controller.stepOnce() }         // spool up
+
+        val before = controller.state.ventedMass
+        repeat(30) { controller.stepOnce() }
+        val perTick = (controller.state.ventedMass - before) / 30L
+        assertNear(Rocket.MASS_PER_TICK, perTick, "a spooled-up engine did not throw its rated mass")
+    }
+
+    @Test
+    fun `the chamber empties itself when the stick is released`() {
+        // ⛔ **The whole reason the exhaust stopped consulting the throttle.** An idle rocket used to
+        // sit on its combustion products for ever — the chamber full, `room` zero, so no mixture
+        // could get in — and the first burn after a long idle threw **water**, M̄ 18, the worst
+        // exhaust in the game, before it threw anything worth throwing.
+        //
+        // ⚠️ **It keeps making thrust while it drains**, which is the price and is not a bug: a
+        // residual charge leaving a nozzle is thrust whatever the stick says. What must not happen is
+        // that it *stops* draining.
+        val cfg = OutofspaceConfig(initialGrid = grid)
+        val controller = OutofspaceController(cfg, engineOnFlightControl())
+        controller.mode = Mode.Flight
+        controller.heldKeys = InputKey.Left.bit
+        repeat(40) { controller.stepOnce() }
+        assertTrue(chamber(controller.state).total > 0L, "the engine never filled its chamber")
+
+        controller.heldKeys = 0
+        var previous = chamber(controller.state).total
+        var drained = -1
+        repeat(SPOOL_DOWN_TICKS) {
+            controller.stepOnce()
+            val held = chamber(controller.state).total
+            assertTrue(held <= previous, "the chamber refilled itself with the stick released")
+            previous = held
+            if (drained < 0 && held == 0L) drained = it
+        }
+        assertTrue(drained >= 0, "the chamber still held $previous after $SPOOL_DOWN_TICKS idle ticks")
+
+        // And having drained it stays drained, rather than trickling on a carry nobody spent.
+        val settled = controller.state.ventedMass
+        repeat(20) { controller.stepOnce() }
+        assertEquals(settled, controller.state.ventedMass, "an empty engine went on venting")
+    }
+
+    @Test
+    fun `it spools up instead of stepping`() {
+        // ⚠️ **The flight-control cost, stated as the thing it actually is.** Thrust is a fact about
+        // the chamber now, so it ramps over about [Rocket.EXHAUST_DIVISOR] ticks instead of arriving
+        // whole on the tick the stick moves. ⛔ Latency and not a duty cycle — it vents on *every*
+        // tick throughout, which is what `it never stops to reach its setpoint` pins separately.
+        val cfg = OutofspaceConfig(initialGrid = grid)
+        val controller = OutofspaceController(cfg, engineOnFlightControl())
+        controller.mode = Mode.Flight
+        controller.heldKeys = InputKey.Left.bit
+
+        controller.stepOnce()
+        val first = controller.state.ventedMass
+        assertTrue(first > 0L, "the first tick of a burn threw nothing at all")
+        assertTrue(
+            first < Rocket.MASS_PER_TICK,
+            "the first tick threw its full rate, so there is no spool-up: $first",
+        )
+
+        repeat(40) { controller.stepOnce() }
+        val before = controller.state.ventedMass
+        controller.stepOnce()
+        assertNear(
+            Rocket.MASS_PER_TICK, controller.state.ventedMass - before,
+            "it never reached its rated rate",
+        )
     }
 
     @Test
