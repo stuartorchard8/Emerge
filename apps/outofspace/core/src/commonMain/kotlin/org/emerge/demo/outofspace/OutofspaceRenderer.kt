@@ -394,6 +394,7 @@ class OutofspaceRenderer {
                 drawRailPacket(state, tile, x, y)
             }
         }
+        drawDepartures(state)
 
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
@@ -424,9 +425,6 @@ class OutofspaceRenderer {
             cross(state.grid.xOf(tile), state.grid.yOf(tile), Colors.SCRAPPING)
         }
         markedForDeconstruction.clear()
-
-        // Departures.
-        drawDepartures(state)
 
         // Bodies over built (not part of vessel).
         for (body in state.bodies) drawBody(body, state.pose)
@@ -1017,27 +1015,47 @@ class OutofspaceRenderer {
             is Gauge -> frame(x, y, Colors.GAUGE_COLLAR)
             // A filled plate. It is all face and that is the whole of what it does, so it reads as
             // a surface rather than as a housing with something going on inside it.
-            is SolarPanel -> footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.SolarPanel))
+            is SolarPanel -> {
+                val species = state.deck.stuff.mixtureAt(m.center)
+                val dominant = speciesColor(species.dominant)
+                footprintRect(state, m, Visual.MACHINE_INSET, dominant)
+                for (dx in -1..1) {
+                    for (dy in -1..1) {
+                        tileRect(x+dx, y+dy, Visual.MACHINE_INSET, kindColor(DeckMachineKind.SolarPanel))
+                    }
+                }
+            }
             // Bright core, wider than the pipe it opens, centred on the tile.
             is Valve -> footprintRect(state, m, Visual.VALVE_COLLAR, Colors.VALVE_CORE)
             // A rod seen end-on, standing on the plate that bolts it down. Deliberately small: what
             // a terminal is *for* is the runs crossing under it, and a body that covered them would
             // hide the one thing the player put it there to join.
             is Terminal -> {
+                val species = state.deck.stuff.mixtureAt(m.center)
+                val dominant = speciesColor(species.dominant)
                 tileRect(x, y, Visual.TERMINAL_PLATE, kindColor(DeckMachineKind.Terminal))
-                tileRect(x, y, Visual.TERMINAL_ROD, Colors.TERMINAL_ROD)
+                tileRect(x, y, Visual.TERMINAL_ROD, dominant)
             }
-            is Hull -> tileRect(x, y, 1f, kindColor(DeckMachineKind.Hull))
+            is Hull -> {
+                val species = state.deck.stuff.mixtureAt(m.center)
+                val dominant = speciesColor(species.dominant)
+                tileRect(x, y, 1f, dominant)
+            }
             is Extractor -> {
+                val species = state.deck.stuff.mixtureAt(m.center)
+                val dominant = speciesColor(species.dominant)
                 // A tray, not a block. The recessed floor is what says "things go on top of this",
                 // and the rock pass draws over it — see [drawRock].
-                footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Extractor))
-                footprintRect(state, m, Visual.EXTRACTOR_FLOOR_INSET, Colors.EXTRACTOR_FLOOR)
+                footprintRect(state, m, Visual.MACHINE_BORDER_INSET, dominant)
+                footprintRect(state, m, Visual.EXTRACTOR_FLOOR_INSET, kindColor(DeckMachineKind.Extractor))
                 fillBar(x, y, n, (state.buffers.resourceAt(bufferTile(state.grid, m, tile, BufferRole.Product)!!)?.total ?: 0L)
                     .toFloat() / Extractor.BUFFER_CAP)
             }
 
             is Concentrator -> {
+                val species = state.deck.stuff.mixtureAt(m.center)
+                val dominant = speciesColor(species.dominant)
+                footprintRect(state, m, Visual.MACHINE_BORDER_INSET, dominant)
                 footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Concentrator))
                 fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
             }
@@ -1045,14 +1063,23 @@ class OutofspaceRenderer {
             // berth markings are a docking-increment problem; drawn plainly here so the machine is
             // visible and selectable while the economy is what is being built.
             is DockingPort -> {
+                val species = state.deck.stuff.mixtureAt(m.center)
+                val dominant = speciesColor(species.dominant)
+                footprintRect(state, m, Visual.MACHINE_BORDER_INSET, dominant)
                 footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.DockingPort))
                 fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
             }
             is Electrolyzer -> {
+                val species = state.deck.stuff.mixtureAt(m.center)
+                val dominant = speciesColor(species.dominant)
+                footprintRect(state, m, Visual.MACHINE_BORDER_INSET, dominant)
                 footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Electrolyzer))
                 fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
             }
             is Furnace -> {
+                val species = state.deck.stuff.mixtureAt(m.center)
+                val dominant = speciesColor(species.dominant)
+                footprintRect(state, m, Visual.MACHINE_BORDER_INSET, dominant)
                 footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Furnace))
                 fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
             }
@@ -1061,10 +1088,11 @@ class OutofspaceRenderer {
             // mark sits on the *outer* face of the bell, so which way a thruster pushes is readable
             // without selecting it — the one thing about a motor you cannot afford to get wrong.
             is Thruster -> {
-                val color = kindColor(DeckMachineKind.Thruster)
-                footprintSemi(state, m, Visual.MACHINE_INSET, color)
+                val species = state.deck.stuff.mixtureAt(m.center)
+                val dominant = speciesColor(species.dominant)
+                footprintSemi(state, m, Visual.MACHINE_INSET, dominant)
                 val base = m.base(state.grid)
-                tileRect(state.grid.xOf(base), state.grid.yOf(base), 1f, color)
+                tileRect(state.grid.xOf(base), state.grid.yOf(base), 1f, dominant)
             }
 
             // The same nozzle mark on a body three times the size, plus a bar for the chamber. ⚠️
@@ -1072,8 +1100,9 @@ class OutofspaceRenderer {
             // watches: full and hot is an engine about to push, and empty while the doors are backed
             // up is a mixture the dial is refusing to make.
             is Rocket -> {
-                val color = kindColor(DeckMachineKind.Rocket)
-                footprintSemi(state, m, Visual.MACHINE_INSET, color)
+                val species = state.deck.stuff.mixtureAt(m.center)
+                val dominant = speciesColor(species.dominant)
+                footprintSemi(state, m, Visual.MACHINE_INSET, dominant)
                 val base = m.base(state.grid)
                 val lTile = state.grid.neighbour(base, m.facing.clockwise)
                 val rTile = state.grid.neighbour(base, m.facing.clockwise.opposite)
@@ -1081,7 +1110,7 @@ class OutofspaceRenderer {
                 val ly = state.grid.yOf(lTile)
                 val rx = state.grid.xOf(rTile)
                 val ry = state.grid.yOf(rTile)
-                tilesRect(min(lx, rx), max(lx, rx), min(ly, ry), max(ly, ry), color)
+                tilesRect(min(lx, rx), max(lx, rx), min(ly, ry), max(ly, ry), dominant)
                 fillBar(x, y, n, (state.buffers.resourceAt(bufferTile(state.grid, m, tile, BufferRole.Inside)!!)?.total ?: 0L)
                     .toFloat() / Rocket.CHAMBER_CAP)
             }
@@ -1089,11 +1118,17 @@ class OutofspaceRenderer {
             // A button: its face lights up while it is held, and its key is written on it by the
             // wiring panel rather than by the tile — a letter at this size would be a smudge.
             is WireButton -> {
+                val species = state.deck.stuff.mixtureAt(m.center)
+                val dominant = speciesColor(species.dominant)
+                footprintRect(state, m, Visual.MACHINE_BORDER_INSET, dominant)
                 tileRect(x, y, Visual.MACHINE_INSET, kindColor(DeckMachineKind.KeyInput))
                 val pressed = state.signals.at(tile) / SignalField.FULL.toFloat()
                 tileRect(x, y, Visual.BUTTON_FACE, lerpColor(Colors.WIRE_DARK, Colors.WIRE_LIVE, pressed))
             }
             is Sensor -> {
+                val species = state.deck.stuff.mixtureAt(m.center)
+                val dominant = speciesColor(species.dominant)
+                footprintRect(state, m, Visual.MACHINE_BORDER_INSET, dominant)
                 tileRect(x, y, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Sensor))
                 // Faces its target, and its eye glows with whatever it is putting on the wire — the
                 // same ramp the wire itself uses, so a lit sensor and a lit run read as one thing.
@@ -1117,13 +1152,16 @@ class OutofspaceRenderer {
             // from a diameter would put a 3×3 pool of ore across the corridor beside it. The level
             // is against [Storage.capacity], so a full buffer draws full.
             is Storage -> {
+                val species = state.deck.stuff.mixtureAt(m.center)
+                val dominant = speciesColor(species.dominant)
+                footprintRect(state, m, Visual.MACHINE_BORDER_INSET, dominant)
                 footprintRect(state, m, Visual.MACHINE_INSET, kindColor(m.kind))
                 val stored = state.buffers.resourceAt(bufferTile(state.grid, m, tile, BufferRole.Inside)!!)
                 val level = (stored?.total ?: 0L).toFloat() / m.capacity
                 if (level > 0f) overFootprint(state, m) { cx, cy, tilesW, tilesH ->
                     val w = tilesW - Visual.TANK_SPAN_INSET
                     val h = level.coerceIn(0f, 1f) * (tilesH - Visual.TANK_SPAN_INSET)
-                    val bottom = cy / tilePx + tilesH * 0.5f - Visual.TANK_BOTTOM_MARGIN
+                    val bottom = cy / tilePx + tilesH * 0.5f - Visual.TANK_SPAN_INSET * 0.5f
                     rect(
                         cx, (bottom - h * 0.5f) * tilePx,
                         w * tilePx, h * tilePx,
@@ -1135,7 +1173,10 @@ class OutofspaceRenderer {
             // opening is drawn in the vent's colour on purpose — both are holes onto the same space,
             // and the player should read them as the same kind of thing.
             is Airlock -> {
+                val species = state.deck.stuff.mixtureAt(m.center)
+                val dominant = speciesColor(species.dominant)
                 tileRect(x, y, 1f, kindColor(DeckMachineKind.Airlock))
+                tileRect(x, y, Visual.MACHINE_INSET, dominant)
                 val open = airlockOpenness(m, state.signals, state.grid, state.bodies, state.pose, state.structure) / ApertureField.OPEN
                 if (open > 0f) tileRect(x, y, Visual.MACHINE_INSET * open, Colors.VENT_CORE)
                 // Sealed but not signalled = primed to close. If still open, a body blocks it.
@@ -2144,9 +2185,6 @@ class OutofspaceRenderer {
         const val ROCK        = 0x6B5F55FFL
         const val ROCK_GRAIN  = 0x87796BFFL
 
-        /** The extractor's recessed floor: the plate's colour, most of the way to the deck's. */
-        const val EXTRACTOR_FLOOR = 0x3A2C1EFFL
-
         // ── Stopped machine states ──────────────────────────────────────
         /** The gauge's collar, and the two ends of the wire's value ramp. */
         const val GAUGE_COLLAR = 0xE0A93AFFL
@@ -2223,6 +2261,7 @@ class OutofspaceRenderer {
 
         // ── Species colours ─────────────────────────────────────────────
         const val IRON       = 0xB07A5AFFL
+        const val STEEL      = 0xA8ACB4FFL
         const val ALUMINUM   = 0xB8BCC4FFL
         const val COPPER     = 0xE08A3AFFL
         const val TITANIUM   = 0xC8CCD4FFL
@@ -2269,7 +2308,8 @@ class OutofspaceRenderer {
         const val ROCK_GRAIN = 0.5f
 
         // ── Machine body dimensions ─────────────────────────────────────
-        const val MACHINE_INSET = 0.94f
+        const val MACHINE_BORDER_INSET = 0.94f
+        const val MACHINE_INSET = 0.90f
         /** The extractor's floor, inside its rim. */
         const val EXTRACTOR_FLOOR_INSET = 0.82f
         const val STOP_INDICATOR_SCALE = 0.34f
@@ -2342,7 +2382,7 @@ class OutofspaceRenderer {
 
         // ── Tank dimensions ─────────────────────────────────────────────
         const val TANK_SPAN_INSET = 0.2f
-        const val TANK_BOTTOM_MARGIN = 0.03f
+        const val TANK_BOTTOM_MARGIN = 0.1f
 
         // ── Packet dimensions ───────────────────────────────────────────
         const val PACKET_FILL = 0.62f
@@ -2431,7 +2471,7 @@ fun kindColor(kind: DeckMachineKind): Long = when (kind) {
     DeckMachineKind.Furnace -> 0x5E5A3BFFL
     // Cool blue-green: the electrical machine in a room full of hot ones.
     DeckMachineKind.Electrolyzer -> 0x2F5E64FFL
-    DeckMachineKind.Extractor -> 0x6B4A2AFFL
+    DeckMachineKind.Extractor -> 0x3A2C1EFFL
 }
 
 /**
@@ -2455,6 +2495,7 @@ fun speciesColor(dominant: Species?): Long = when (dominant) {
 
     // ── The ones worth knowing on sight ──
     Species.Iron -> OutofspaceRenderer.Colors.IRON
+    Species.Steel -> OutofspaceRenderer.Colors.STEEL
     Species.Aluminum -> OutofspaceRenderer.Colors.ALUMINUM
     Species.Copper -> OutofspaceRenderer.Colors.COPPER
     Species.Titanium -> OutofspaceRenderer.Colors.TITANIUM
