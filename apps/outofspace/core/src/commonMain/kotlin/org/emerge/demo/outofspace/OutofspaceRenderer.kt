@@ -1136,8 +1136,13 @@ class OutofspaceRenderer {
             // and the player should read them as the same kind of thing.
             is Airlock -> {
                 tileRect(x, y, 1f, kindColor(DeckMachineKind.Airlock))
-                val open = airlockOpenness(m, state.signals) / ApertureField.OPEN
+                val open = airlockOpenness(m, state.signals, state.grid, state.bodies, state.pose, state.structure) / ApertureField.OPEN
                 if (open > 0f) tileRect(x, y, Visual.MACHINE_INSET * open, Colors.VENT_CORE)
+                // Sealed but not signalled = primed to close. If still open, a body blocks it.
+                if (!m.wiring.isOn(Action.Run, state.signals.at(m.center)) && open > 0f) {
+                    // Yellow rim: "primed, waiting for clearance"
+                    tileRect(x, y, 0.85f, 0xFFFFEE88)
+                }
             }
         }
         drawPorts(state, m)

@@ -153,6 +153,43 @@ fun overlapsHull(grid: Grid, structure: StructureMap, body: RigidBody, at: Pose,
     return false
 }
 
+fun tileOverlapsRock(grid: Grid, tile: TileIndex, body: RigidBody, at: Pose, shipPose: Pose): Boolean {
+    val tx = grid.xOf(tile)
+    val ty = grid.yOf(tile)
+    val half = Flight.PER_TILE / 2L
+    for (cy in 0 until body.height) {
+        for (cx in 0 until body.width) {
+            val cell = cy * body.width + cx
+            if (!body.cells[cell]) continue
+            val shape = body.shapeAt(cell)
+            val centreX = at.toWorldX(cx * Flight.PER_TILE + half, cy * Flight.PER_TILE + half)
+            val centreY = at.toWorldY(cx * Flight.PER_TILE + half, cy * Flight.PER_TILE + half)
+            // The search is in the grid and the answer is in the world — see [collectHullContacts].
+            val localX = shipPose.toLocalX(centreX, centreY)
+            val localY = shipPose.toLocalY(centreX, centreY)
+            val reach = shapeReach(shape)
+            val tx0 = floorTile(localX - reach)
+            val ty0 = floorTile(localY - reach)
+            val tx1 = floorTile(localX + reach - 1L)
+            val ty1 = floorTile(localY + reach - 1L)
+            if (ty in ty0..ty1) {
+                if (tx in tx0..tx1) {
+                    val tileX = tx * Flight.PER_TILE + half
+                    val tileY = ty * Flight.PER_TILE + half
+                    val hit = overlapBetween(
+                        shape, centreX, centreY,
+                        CellShape.TILE,
+                        shipPose.toWorldX(tileX, tileY), shipPose.toWorldY(tileX, tileY),
+                        bFrame = shipPose,
+                    )
+                    if (hit) return true
+                }
+            }
+        }
+    }
+    return false
+}
+
 /**
  * What one tick of sweeping did to **every** body at once, and what it therefore did to the ship.
  *

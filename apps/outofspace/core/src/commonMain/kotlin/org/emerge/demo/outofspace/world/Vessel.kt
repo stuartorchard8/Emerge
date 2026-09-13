@@ -730,7 +730,7 @@ data class VesselState(
     val flow: FlowField by lazy {
         // Airlocks resolved the way the sim resolves them, or a door standing open this tick would
         // be drawn as a wall the air flows through.
-        val openness = airlockOpenness(deck, signals)
+        val openness = airlockOpenness(deck, signals, grid, bodies, pose, structure)
         val edges = EdgeGrid(grid)
         val apertures = ApertureField.derive(edges, StructureMap.derive(grid, deck, openness), openness)
         diffuseFluid(edges, apertures, air.copyMass(), energies = null).flow
@@ -1583,7 +1583,9 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
     }
     // With the openness the reducer would have passed, so an airlock the player is holding open does
     // not read as a wall for the frame between the resize and the next tick.
-    val newStructure = StructureMap.derive(newGrid, newDeck, airlockOpenness(newDeck, newSignals))
+    // Two-pass: structure from signal-only openness, then openness with body overlap using that structure.
+    val preOpenness = airlockOpenness(newDeck, newSignals, newGrid, bodies, pose, structure)
+    val newStructure = StructureMap.derive(newGrid, newDeck, preOpenness)
 
     // ── 6. Bodies and the pose: nothing to do ────────────────────────────
     // Bodies used to be shifted by the same offset the tile indices moved by, because they were

@@ -39,26 +39,71 @@ import org.emerge.demo.outofspace.world.machine.DeckArray
  * step change at the moment the door leaves shut, because containment is a yes-or-no question and
  * there is no graded answer to give it. The gas leaving is smooth; only the label snaps.
  */
-fun airlockOpenness(deck: DeckArray, signals: SignalField): IntArray? {
+fun airlockOpenness(
+    deck: DeckArray,
+    signals: SignalField,
+    grid: Grid,
+    bodies: List<RigidBody> = emptyList(),
+    pose: Pose? = null,
+    structure: StructureMap,
+): IntArray? {
     var openness: IntArray? = null
     for (i in 0 until deck.size) {
         val m = deck[TileIndex(i)]
         if (m !is Airlock) continue
         val array = openness ?: IntArray(deck.size).also { openness = it }
-        array[i] = airlockOpenness(m, signals)
+        array[i] = airlockOpenness(m, signals, grid, bodies, pose, structure)
     }
     return openness
 }
+
 /**
- * A door is open or shut.
+ * The same, but aware of rigid bodies.
  *
- * It used to open in proportion to activation, and the note here used to say it might again. It will
- * not by way of the wire: a signal is a verdict now and carries no amount to open by — see [Wiring].
- * A door that wanted to crack itself ajar would decide that on its own tile, out of a setting of its
- * own, the way a sensor decides its threshold.
+ * [m.sealed] gates the rigid-body check: when sealed, the airlock stays open while any body
+ * overlaps its footprint (it refuses to shut on something in its way). When not sealed, an
+ * unsignalled airlock closes regardless of bodies.
+ *
+ * [structure] is the structure map from the previous tick. It tells us whether the airlock was
+ * open or closed at the start of this tick. If the airlock tile is [Structure.Hull] or
+ * [Structure.Machine] in [structure], the airlock was shut at tick start — it stays shut unless
+ * now signalled open. This implements the "armed but once closed, stays closed" behaviour: a body
+ * drifting into a closed airlock's footprint does not re-open it. If the airlock was already open
+ * (not Hull/Machine in [structure]), body overlap can keep it open — again, only if [sealed].
  */
-fun airlockOpenness(m: Airlock, signals: SignalField): Int =
-    if (m.wiring.isOn(Action.Run, signals.at(m.center))) ApertureField.OPEN else 0
+fun airlockOpenness(
+    m: Airlock,
+    signals: SignalField,
+    grid: Grid,
+    bodies: List<RigidBody>,
+    pose: Pose?,
+    structure: StructureMap,
+): Int {
+    val signalled = m.wiring.isOn(Action.Run, signals.at(m.center))
+    if (signalled) return ApertureField.OPEN
+    // Not signalled: normally it shuts. If sealed and a body overlaps, hold open — but only if the
+    // airlock was already open at tick start (structure != Hull/Machine). If it was closed, it
+    // stays closed regardless of body position (the "armed" behaviour).
+    val wasOpen = structure[m.center.index] != Structure.Hull
+    if (wasOpen && pose != null && bodyOverlaps(m, grid, bodies, pose)) return ApertureField.OPEN
+    return 0
+}
+
+/**
+ * Whether any rigid body's bounding box overlaps the footprint of [airlock] in grid coordinates.
+ *
+ * The airlock's footprint is a single tile at [Airlock.center]. A body overlaps if its axis-aligned
+ * bounding box in grid space covers that tile. The body's centre of mass is converted to grid
+ * coordinates using [shipPose], then expanded by half its width/height.
+ */
+fun bodyOverlaps(airlock: Airlock, grid: Grid, bodies: List<RigidBody>, shipPose: Pose): Boolean {
+    for (body in bodies) {
+        if (body.mass <= 0L) continue
+        val overlaps = tileOverlapsRock(grid, airlock.center, body, body.pose, shipPose)
+        if (overlaps) return true
+    }
+    return false
+}
 
 class ApertureField(
     private val edges: EdgeGrid,

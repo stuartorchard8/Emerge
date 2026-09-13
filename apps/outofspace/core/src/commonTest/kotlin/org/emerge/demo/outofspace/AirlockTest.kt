@@ -160,8 +160,9 @@ class AirlockTest {
     @Test
     fun `a door is open or shut, with nothing in between`() {
         val signals = SignalField.none(1)
-        assertEquals(ApertureField.OPEN, airlockOpenness(Airlock(TileIndex(0), wiring = held()), signals))
-        assertEquals(0, airlockOpenness(Airlock(TileIndex(0), wiring = Wiring(mapOf(Action.Run to emptyList()))), signals))
+        val grid = Grid(10, 10)
+        assertEquals(ApertureField.OPEN, airlockOpenness(Airlock(TileIndex(0), wiring = held()), signals, grid))
+        assertEquals(0, airlockOpenness(Airlock(TileIndex(0), wiring = Wiring(mapOf(Action.Run to emptyList()))), signals, grid))
     }
 
     // ── Thrust ────────────────────────────────────────────────────────────────

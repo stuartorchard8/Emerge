@@ -452,7 +452,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
             // Signals before structure: an airlock is a wall whose solidity is a signal.
             // Edits this tick are already applied in w, so sensors/gauges still see them.
-            openness = airlockOpenness(w.deck, state.signals) ?: IntArray(w.grid.size)
+            // Two-pass: first derive structure from signal-only openness, then re-derive
+            // openness with body overlap using the structure (which tells us if the airlock
+            // was already closed — the "armed" behaviour for sealed airlocks).
+            openness = airlockOpenness(w.deck, state.signals, w.grid, w.bodies, state.pose, state.structure) ?: IntArray(w.grid.size)
             structure = StructureMap.derive(w.grid, w.deck, openness)
         } else {
             // Carried rather than recomputed — see the note on [machineTick]. `openness` is still
@@ -460,7 +463,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // the map (`solidityChanged`) cannot do it against a set of doors nothing ever consulted.
             networks = state.networks
             nextSignals = state.signals
-            openness = airlockOpenness(w.deck, state.signals) ?: IntArray(w.grid.size)
+            openness = airlockOpenness(w.deck, state.signals, w.grid, w.bodies, state.pose, state.structure) ?: IntArray(w.grid.size)
             structure = state.structure
         }
         w.networks = networks
