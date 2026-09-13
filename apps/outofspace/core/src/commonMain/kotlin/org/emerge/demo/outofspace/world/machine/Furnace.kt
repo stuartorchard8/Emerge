@@ -175,7 +175,7 @@ data class Furnace(
         copy(book = whitelist, oreByHand = ore)
 
     /** Locked onto [recipe], or broad when it is null — [Rocket.withPropellant]'s twin. */
-    fun withRecipe(recipe: Reaction?): Furnace = copy(recipe = recipe)
+    fun withRecipe(recipe: Reaction?): Furnace = copy(recipe = recipe, book = setOf(), oreByHand = false)
 
     fun withCompletion(permille: Int): Furnace =
         copy(completionPermille = permille.coerceIn(COMPLETIONS.first(), COMPLETIONS.last()))
