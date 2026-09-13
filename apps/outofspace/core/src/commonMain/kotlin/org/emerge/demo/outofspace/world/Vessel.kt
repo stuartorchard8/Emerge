@@ -1379,11 +1379,11 @@ private fun labelOf(machine: DeckMachine, role: BufferRole): String = when (mach
  * Named buffers rather than one lump, because "this concentrator holds 6kg" is far less useful than
  * "3kg waiting, 2kg of concentrate, 1kg of tailings" — the second tells you which side is stuck.
  */
-fun contentsBreakdown(machine: DeckMachine?, centre: TileIndex, grid: Grid, buffers: BufferLayer): List<Pair<String, Mixture>> = when (machine) {
+fun contentsBreakdown(machine: DeckMachine?, centre: TileIndex, grid: Grid, buffers: BufferLayer): List<Triple<String, Mixture, Int>> = when (machine) {
     null -> emptyList()
     else -> BufferRole.entries.mapNotNull { role ->
         val tile = bufferTile(grid, machine, centre, role) ?: return@mapNotNull null
-        buffers.resourceAt(tile)?.let { labelOf(machine, role) to it }
+        buffers.resourceAt(tile)?.let { Triple(labelOf(machine, role), it, buffers.stuff.kelvinAt(tile)) }
     }
 }
 

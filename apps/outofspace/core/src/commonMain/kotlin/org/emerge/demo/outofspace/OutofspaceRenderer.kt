@@ -1741,16 +1741,16 @@ class OutofspaceRenderer {
         return if (f <= 0f) {
             val c = -f
             rgba(
-                (ColorBase.COLD_R - Colors.COLD_R_OFFSET * c).toInt(),
-                (ColorBase.COLD_G - Colors.COLD_G_OFFSET * c).toInt(),
-                (ColorBase.COLD_B - Colors.COLD_B_OFFSET * c).toInt(),
+                (ColorBase.WARM_R + Colors.COLD_R_OFFSET * c).toInt(),
+                (ColorBase.WARM_G + Colors.COLD_G_OFFSET * c).toInt(),
+                (ColorBase.WARM_B + Colors.COLD_B_OFFSET * c).toInt(),
                 alpha,
             )
         } else {
             rgba(
-                (ColorBase.HOT_R + Colors.HOT_R_OFFSET * f).toInt(),
-                (ColorBase.HOT_G - Colors.HOT_G_OFFSET * f).toInt(),
-                (ColorBase.HOT_B - Colors.HOT_B_OFFSET * f).toInt(),
+                (ColorBase.WARM_R + Colors.HOT_R_OFFSET * f).toInt(),
+                (ColorBase.WARM_G - Colors.HOT_G_OFFSET * f).toInt(),
+                (ColorBase.WARM_B - Colors.HOT_B_OFFSET * f).toInt(),
                 alpha,
             )
         }
@@ -2025,12 +2025,9 @@ class OutofspaceRenderer {
 
     /** Base colours for the heat ramp — the same starting point for both cold and hot interpolation. */
     private object ColorBase {
-        const val COLD_R = 0x50
-        const val COLD_G = 0xA0
-        const val COLD_B = 0xC0
-        const val HOT_R = 0x50
-        const val HOT_G = 0xA0
-        const val HOT_B = 0xC0
+        const val WARM_R = 0xB0
+        const val WARM_G = 0xA0
+        const val WARM_B = 0x98
 
         /** Ambient, the midpoint of the diverging ramp: a dark neutral that reads as "nothing to see". */
         const val THIN_R = 0x2A
@@ -2244,9 +2241,9 @@ class OutofspaceRenderer {
         const val HEAT_ALPHA = 0xC8L
 
         // ── Temperature interpolation deltas ────────────────────────────
-        const val COLD_R_OFFSET = 0x30
-        const val COLD_G_OFFSET = 0x60
-        const val COLD_B_OFFSET = 0x30
+        const val COLD_R_OFFSET = 0xFF - 0xB0
+        const val COLD_G_OFFSET = 0xFF - 0xB0
+        const val COLD_B_OFFSET = 0xF0
         const val HOT_R_OFFSET = 0xAF
         const val HOT_G_OFFSET = 0x50
         const val HOT_B_OFFSET = 0xB0

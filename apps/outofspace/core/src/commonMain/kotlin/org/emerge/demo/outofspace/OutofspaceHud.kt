@@ -2163,9 +2163,13 @@ class OutofspaceHud {
         val buffers = contentsBreakdown(machine, anchor, grid, s.buffers)
         if (buffers.isNotEmpty()) {
             section("contents", "CONTENTS", open = true) {
-                for ((label, resource) in buffers) {
+                for ((label, resource, k) in buffers) {
                     keyValue(label, mass(resource.total))
                     compositionRows(controller, resource)
+                    text(
+                        "${"$k".padStart(4)}K (${k - 273}C)",
+                        if (k > Temperature.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
+                    )
                 }
             }
         }
@@ -2270,10 +2274,8 @@ class OutofspaceHud {
                     keyValue("CARRYING", mass(riding.total))
                     compositionRows(controller, riding)
                     val k = s.rail.stuff.kelvinAt(tile)
-                    keyValue(
-                        "TEMPERATURE",
-                        "${k}K  (${k - 273}C)",
-                        0x9A9A9AFFL,
+                    text(
+                        "${"$k".padStart(4)}K  (${k - 273}C)",
                         if (k > Temperature.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
                     )
                 } else {
