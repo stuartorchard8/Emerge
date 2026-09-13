@@ -89,6 +89,7 @@ data class Thruster(
      * Where this motor takes its orders from. Flight controls by default — see [ThrusterControl].
      */
     override val control: ThrusterControl = ThrusterControl.Flight,
+
     /**
      * What it was actually told to do last tick, in permille — a readout, not a setting.
      *
@@ -107,6 +108,7 @@ data class Thruster(
     override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
     override fun withControl(control: ThrusterControl): Engine = copy(control = control)
     override fun told(activation: Int, carry: Long): Engine = copy(firing = activation, carry = carry)
+    override fun base(grid: Grid): TileIndex = center
 
     /**
      * ⛔ **The throttle meters what leaves**, which is the whole of a cold gas thruster: there is

@@ -2,7 +2,6 @@ package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferRole
-import org.emerge.demo.outofspace.world.bufferRolesOf
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.chem.Mixture
@@ -14,7 +13,6 @@ import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.RockSpawner
-import org.emerge.demo.outofspace.Edit
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.StructureMap
 import org.emerge.demo.outofspace.world.TileIndex
@@ -26,7 +24,6 @@ import org.emerge.demo.outofspace.world.machine.ExhaustPath
 import org.emerge.demo.outofspace.world.machine.exhaustPath
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
-import org.emerge.demo.outofspace.DeleteLayer
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals

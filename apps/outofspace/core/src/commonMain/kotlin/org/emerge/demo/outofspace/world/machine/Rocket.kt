@@ -8,6 +8,7 @@ import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
@@ -163,6 +164,7 @@ data class Rocket(
     override fun rotated(): DeckMachine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
     override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
+    override fun base(grid: Grid): TileIndex = grid.neighbour(center, facing.opposite)
 
     override val massPerTick: Long get() = MASS_PER_TICK
 

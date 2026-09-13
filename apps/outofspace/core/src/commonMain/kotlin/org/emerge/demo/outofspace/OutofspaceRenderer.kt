@@ -69,6 +69,8 @@ import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.sqrt
 import org.emerge.demo.outofspace.world.machine.SolarPanel
+import org.emerge.render.torus.shader.PrimitiveRenderer
+import kotlin.math.min
 
 /**
  * Draws the vessel: tiles, machines, and every packet in transit.
@@ -90,7 +92,7 @@ import org.emerge.demo.outofspace.world.machine.SolarPanel
  */
 class OutofspaceRenderer {
 
-    private val rects = UiRectRenderer(maxRects = MAX_RECTS)
+    private val primitives = PrimitiveRenderer(maxInstances = MAX_PRIMITIVES)
     private val starscape = StarscapeShader()
 
     /**
@@ -151,8 +153,9 @@ class OutofspaceRenderer {
     }
 
     // Flat batch (refilled each frame).
-    private val matrices = FloatArray(MAX_RECTS * Mat4.FLOATS)
-    private val colors = FloatArray(MAX_RECTS * 4)
+    private val matrices = FloatArray(MAX_PRIMITIVES * Mat4.FLOATS)
+    private val colors = FloatArray(MAX_PRIMITIVES * 4)
+    private val shapes = FloatArray(MAX_PRIMITIVES)
     private var count = 0
 
     fun setResolution(widthPx: Float, heightPx: Float) {
@@ -490,7 +493,7 @@ class OutofspaceRenderer {
         // it is reporting.
         if (plan != null) drawPlan(state, plan)
 
-        rects.drawInstanced(count, matrices, colors)
+        primitives.drawInstanced(count, matrices, colors, shapes)
         // ⚠️ **After the batch, not into it.** Every rect on screen goes out in that one call, so
         // anything drawn before it is drawn *under* the entire world. A plume is light and belongs
         // over the hull it is bolted to — and it is additive, which is a blend mode the batch does
@@ -502,7 +505,7 @@ class OutofspaceRenderer {
     fun cleanup() {
         starscape.deleteProgram()
         exhaust.deleteProgram()
-        rects.deleteProgram()
+        primitives.deleteProgram()
     }
 
     // ── Exhaust ───────────────────────────────────────────────────────────────
@@ -565,8 +568,8 @@ class OutofspaceRenderer {
             // nozzle, inside the machine, and the fragment stage discards everything before
             // [PLUME_ANCHOR]. See the constant, which is the one number to move to put the tip at
             // the nozzle instead.
-            val lengthTiles = visible / (1f - PLUME_ANCHOR)
-            val widthTiles = PLUME_WIDTH_TILES * (0.45f + 0.55f * throttle)
+            val lengthTiles = visible / (1f - PLUME_ANCHOR) * plume.nozzleWidth
+            val widthTiles = PLUME_WIDTH_TILES * (0.45f + 0.55f * throttle) * plume.nozzleWidth
             plumeTransform(grid, plume, lengthTiles * tilePx, widthTiles * tilePx)
             plumeProduct.copyInto(plumeMatrices, n * Mat4.FLOATS)
 
@@ -618,8 +621,8 @@ class OutofspaceRenderer {
      * the same shear [ViewTurn] exists to prevent, arrived at from the other side.
      */
     private fun plumeTransform(grid: Grid, plume: Plume, lengthPx: Float, widthPx: Float) {
-        val wx = (grid.xOf(plume.bell) + 0.5f) * tilePx
-        val wy = (grid.yOf(plume.bell) + 0.5f) * tilePx
+        val wx = (grid.xOf(plume.bell) + 0.5f + plume.facing.dx/2f) * tilePx
+        val wy = (grid.yOf(plume.bell) + 0.5f + plume.facing.dy/2f) * tilePx
         val px = wx - camX * tilePx + resW * 0.5f
         val py = wy - camY * tilePx + resH * 0.5f
 
@@ -1058,9 +1061,10 @@ class OutofspaceRenderer {
             // mark sits on the *outer* face of the bell, so which way a thruster pushes is readable
             // without selecting it — the one thing about a motor you cannot afford to get wrong.
             is Thruster -> {
-                footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Thruster))
-                val bell = m.bell(state.grid)
-                edgeMark(state.grid.xOf(bell), state.grid.yOf(bell), m.facing, Colors.VENT_CORE)
+                val color = kindColor(DeckMachineKind.Thruster)
+                footprintSemi(state, m, Visual.MACHINE_INSET, color)
+                val base = m.base(state.grid)
+                tileRect(state.grid.xOf(base), state.grid.yOf(base), 1f, color)
             }
 
             // The same nozzle mark on a body three times the size, plus a bar for the chamber. ⚠️
@@ -1068,9 +1072,16 @@ class OutofspaceRenderer {
             // watches: full and hot is an engine about to push, and empty while the doors are backed
             // up is a mixture the dial is refusing to make.
             is Rocket -> {
-                footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Rocket))
-                val bell = m.bell(state.grid)
-                edgeMark(state.grid.xOf(bell), state.grid.yOf(bell), m.facing, Colors.VENT_CORE)
+                val color = kindColor(DeckMachineKind.Rocket)
+                footprintSemi(state, m, Visual.MACHINE_INSET, color)
+                val base = m.base(state.grid)
+                val lTile = state.grid.neighbour(base, m.facing.clockwise)
+                val rTile = state.grid.neighbour(base, m.facing.clockwise.opposite)
+                val lx = state.grid.xOf(lTile)
+                val ly = state.grid.yOf(lTile)
+                val rx = state.grid.xOf(rTile)
+                val ry = state.grid.yOf(rTile)
+                tilesRect(min(lx, rx), max(lx, rx), min(ly, ry), max(ly, ry), color)
                 fillBar(x, y, n, (state.buffers.resourceAt(bufferTile(state.grid, m, tile, BufferRole.Inside)!!)?.total ?: 0L)
                     .toFloat() / Rocket.CHAMBER_CAP)
             }
@@ -1214,6 +1225,14 @@ class OutofspaceRenderer {
     private fun footprintRect(state: VesselState, m: DeckMachine, inset: Float, color: Long) =
         overFootprint(state, m) { cx, cy, tilesW, tilesH ->
             rect(cx, cy, (tilesW - (1f - inset)) * tilePx, (tilesH - (1f - inset)) * tilePx, color)
+        }
+    private fun footprintEllipse(state: VesselState, m: DeckMachine, inset: Float, color: Long) =
+        overFootprint(state, m) { cx, cy, tilesW, tilesH ->
+            disc(cx, cy, (tilesW - (1f - inset)) * tilePx, (tilesH - (1f - inset)) * tilePx, color)
+        }
+    private fun footprintSemi(state: VesselState, m: DeckMachine, inset: Float, color: Long) =
+        overFootprint(state, m) { cx, cy, tilesW, tilesH ->
+            semi(cx, cy, (tilesW - (1f - inset)) * tilePx, (tilesH - (1f - inset)) * tilePx, color, angle = Coord(m.turns,2))
         }
 
     /** A hollow [footprintRect]: four thin sides around whatever shape the machine's footprint is. */
@@ -1917,9 +1936,12 @@ class OutofspaceRenderer {
     private fun tileRect(x: Int, y: Int, scale: Float, color: Long) =
         rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, scale * tilePx, scale * tilePx, color)
 
+    private fun tilesRect(l: Int, r: Int, t: Int, b: Int, color: Long) =
+        rect(((r+l)/2f + 0.5f) * tilePx, ((b+t)/2f + 0.5f) * tilePx, (r-l + 1) * tilePx, (b-t + 1) * tilePx, color)
+
     /** [wx],[wy] are world pixels (tile units × [tilePx]); converted to NDC here. */
-    private fun rect(wx: Float, wy: Float, w: Float, h: Float, color: Long, angle: Coord = Coord(0)) {
-        if (count >= MAX_RECTS) return
+    private fun primitive(wx: Float, wy: Float, w: Float, h: Float, color: Long, angle: Coord, shape: Float) {
+        if (count >= MAX_PRIMITIVES) return
         val px = wx - camX * tilePx + resW * 0.5f
         val py = wy - camY * tilePx + resH * 0.5f
 
@@ -1936,7 +1958,23 @@ class OutofspaceRenderer {
         colors[count * 4 + 1] = ((color shr 16) and 0xFF).toFloat() / 255f
         colors[count * 4 + 2] = ((color shr 8) and 0xFF).toFloat() / 255f
         colors[count * 4 + 3] = (color and 0xFF).toFloat() / 255f
+        shapes[count] = shape
         count++
+    }
+
+    /** [wx],[wy] are world pixels (tile units × [tilePx]); converted to NDC here. */
+    private fun rect(wx: Float, wy: Float, w: Float, h: Float, color: Long, angle: Coord = Coord(0)) {
+        primitive(wx,wy,w,h,color,angle,0f)
+    }
+
+    /** [wx],[wy] are world pixels (tile units × [tilePx]); converted to NDC here. */
+    private fun disc(wx: Float, wy: Float, w: Float, h: Float, color: Long, angle: Coord = Coord(0)) {
+        primitive(wx,wy,w,h,color,angle,1f)
+    }
+
+    /** [wx],[wy] are world pixels (tile units × [tilePx]); converted to NDC here. */
+    private fun semi(wx: Float, wy: Float, w: Float, h: Float, color: Long, angle: Coord = Coord(0)) {
+        primitive(wx,wy,w,h,color,angle,2f)
     }
 
     /** Base colours for the heat ramp — the same starting point for both cold and hot interpolation. */
@@ -1998,7 +2036,7 @@ class OutofspaceRenderer {
          * drops it silently, and an observability tool that quietly stops drawing at the far side of
          * the screen is worse than none.
          */
-        private const val MAX_RECTS = 48_000
+        private const val MAX_PRIMITIVES = 48_000
 
         /** Reach of the largest footprint, used to widen the machine pass past the screen edge. */
         private const val MAX_REACH = 2
@@ -2023,13 +2061,13 @@ class OutofspaceRenderer {
         private const val PLUME_ANCHOR = 2f / 3f
 
         /** How far a jet reaches per km/s of exhaust velocity, in tiles, at full throttle. */
-        private const val PLUME_TILES_PER_KM_S = 0.55f
+        private const val PLUME_TILES_PER_KM_S = 2.55f
 
         /** What even the feeblest propellant is worth in length, so a cold puff is still visible. */
         private const val PLUME_MIN_TILES = 0.7f
 
         /** How wide the mouth is at full throttle, in tiles. */
-        private const val PLUME_WIDTH_TILES = 0.9f
+        private const val PLUME_WIDTH_TILES = 3.0f
 
         /** Shorter than this and the triangle is smaller than the line around it. */
         private const val PLUME_NEGLIGIBLE_TILES = 0.05f

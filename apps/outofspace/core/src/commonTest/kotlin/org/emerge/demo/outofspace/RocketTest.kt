@@ -13,7 +13,6 @@ import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.Stuff
-import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.bufferTile

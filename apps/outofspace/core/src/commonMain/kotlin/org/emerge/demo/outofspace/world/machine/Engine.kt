@@ -86,6 +86,11 @@ sealed interface Engine : DirectedDeckMachine {
     fun bell(grid: Grid): TileIndex = grid.neighbour(center, facing)
 
     /**
+     * The base — where to draw the rectangular plate.
+     */
+    fun base(grid: Grid): TileIndex
+
+    /**
      * How much of [held] leaves the nozzle this tick, and the carry to keep.
      *
      * ⛔ **This is where the two engines stop agreeing about what a throttle is, and it belongs here

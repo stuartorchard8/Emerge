@@ -50,6 +50,10 @@ class Plume(
      * two is the mechanic a player is being shown.
      */
     val metresPerSecond: Long,
+    /**
+     * Width of the nozzle that the plume exited from in tiles.
+     */
+    val nozzleWidth: Long,
     /** How hot the parcel was as it went, in kelvin. */
     val kelvin: Int,
     /**

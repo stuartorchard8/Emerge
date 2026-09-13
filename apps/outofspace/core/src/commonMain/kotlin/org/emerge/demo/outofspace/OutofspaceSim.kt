@@ -7,7 +7,6 @@ import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.chem.electrolyteStrength
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.chem.CELL_FEED
-import org.emerge.demo.outofspace.chem.REACTIONS
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.MachineSettings
 import org.emerge.demo.outofspace.world.aimed
@@ -2032,6 +2031,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 facing = m.facing,
                 mass = ejectedMass,
                 metresPerSecond = speed,
+                nozzleWidth = if (m.kind == DeckMachineKind.Thruster) 1 else 3,
                 kelvin = kelvinOf(chunk.energy, thermalMassOf(chunk)),
                 firing = activation,
                 mixture = chunk,
