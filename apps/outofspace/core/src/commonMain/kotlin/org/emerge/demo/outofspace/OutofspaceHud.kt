@@ -2276,6 +2276,12 @@ class OutofspaceHud {
                         0x9A9A9AFFL,
                         if (k > Temperature.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
                     )
+                } else {
+                    text("EMPTY")
+                    text("")
+                    text("")
+                    text("")
+                    text("")
                 }
             }
             Conduit.Signal -> {
