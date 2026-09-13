@@ -334,6 +334,7 @@ class ExhaustAudioTest {
             facing = Direction.Right,
             mass = mass,
             metresPerSecond = 3_000L,
+            nozzleWidth = 1,
             kelvin = kelvin,
             firing = firing,
             mixture = Mixture.of(species to mass, energy = energyAtKelvin(thermalMassOf(cold), kelvin)),
