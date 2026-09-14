@@ -14,10 +14,14 @@ class SolidHeatStep(val energy: LongArray, val radiated: Long, val toAir: Long)
  * Advances every solid body's temperature one tick: conduction between touching bodies, exchange with air,
  * and radiation from exposed surfaces.
  *
- * Contact rules: shared tiles always touch; casings touch across tile faces whether or not they hold
- * the air out; a body open to airflow meets the air of its own tile, one that is not meets the air
- * across its faces; contents (cargo, buffer stores) touch only what shares their tile; fittings link
- * to linked fittings (per [Segment.links]).
+ * Contact rules: bodies on a shared tile touch, but filtered by type — DeckStore (casing)
+ * connects to all bodies on its tile; BufferStore (machine contents) connects only to DeckStore,
+ * so heat enters the casing first and never leaks directly to rail cargo or other tile-mates;
+ * RailCargo (lumps on track) connects to the track (Fitting), the casing (DeckStore) beneath,
+ * and other lumps — but never into buffer stores, which must heat through the casing first;
+ * Fitting connects to all bodies on its tile. Casings touch across tile faces whether or not
+ * they hold the air out; a body open to airflow meets the air of its own tile, one that is not
+ * meets the air across its faces; fittings link to linked fittings (per [Segment.links]).
  *
  * Radiation: a casing sheds through each face that space reaches ([StructureMap.openToSpace]), so a
  * tile buried inside a footprint sheds nothing; a fitting or a lump sheds only if the tile it stands
@@ -68,6 +72,19 @@ fun stepSolidHeat(
         for (i in tiles.startOf(body.tile) until tiles.endOf(body.tile)) {
             val other = tiles.id(i)
             if (other <= b) continue // each unordered pair once
+            // DeckStore (casing) and Fitting (conduit segment) conduct to every body on their tile.
+            // BufferStore conducts only into the casing — it sits inside the machine and has
+            // no exposed face; the comment at Body.kt:294–315 explains why the buffer's
+            // equalisation time is a contact conductance against the shell, not a direct path
+            // to rail cargo or other things sharing the tile.
+            // RailCargo conducts into the track (Fitting) and the casing (DeckStore) beneath it,
+            // and into other lumps on the same tile — but never into buffer stores, which must
+            // heat through the casing first, not through a cargo lump they share a tile with.
+            if (body.slot == BodySlot.BufferStore && bodies[other].slot != BodySlot.DeckStore) continue
+            if (body.slot == BodySlot.RailCargo && bodies[other].slot != BodySlot.DeckStore
+                && bodies[other].slot != BodySlot.Fitting
+                && bodies[other].slot != BodySlot.RailCargo
+            ) continue
             contacts.join(b, other, seriesConductance(k, bodies[other].conductance))
         }
 
