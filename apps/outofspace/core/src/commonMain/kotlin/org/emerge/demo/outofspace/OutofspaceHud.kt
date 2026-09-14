@@ -2165,11 +2165,7 @@ class OutofspaceHud {
             section("contents", "CONTENTS", open = true) {
                 for ((label, resource, k) in buffers) {
                     keyValue(label, mass(resource.total))
-                    compositionRows(controller, resource)
-                    text(
-                        "${"$k".padStart(4)}K (${k - 273}C)",
-                        if (k > Temperature.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
-                    )
+                    compositionRows(controller, resource, k)
                 }
             }
         }
@@ -2272,12 +2268,8 @@ class OutofspaceHud {
                 val riding = s.rail.resourceAt(tile)
                 if (riding != null) {
                     keyValue("CARRYING", mass(riding.total))
-                    compositionRows(controller, riding)
-                    val k = s.rail.stuff.kelvinAt(tile)
-                    text(
-                        "${"$k".padStart(4)}K  (${k - 273}C)",
-                        if (k > Temperature.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
-                    )
+                    val kelvin = s.rail.stuff.kelvinAt(tile)
+                    compositionRows(controller, riding, kelvin)
                 } else {
                     text("EMPTY")
                     text("")
@@ -2336,21 +2328,15 @@ class OutofspaceHud {
             return
         }
         keyValue("DENSITY", "${density * 100 / Stuff.AMBIENT_AIR.total}% atm", 0x9A9A9AFFL, 0x9AA4B4FFL)
-        val airK = s.airKelvinAt(tile)
-        keyValue(
-            "AIR TEMP",
-            "${airK}K  (${airK - 273}C)",
-            0x9A9A9AFFL,
-            if (airK > Temperature.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
-        )
         val speed = s.flow.speedAt(tile)
         if (speed > 0f && !Negligible.flow(s.flow.xAt(tile), s.flow.yAt(tile), density)) {
             keyValue("FLOW", "${(speed * 1000f).toInt()} mtiles/tick ${bearing(s, tile)}", 0x9A9A9AFFL, 0x9AA4B4FFL)
         }
         val mix = s.air.mixtureAt(tile)
         if (!mix.isEmpty) {
-            keyValue("MASS", mass(mix.total), 0x9A9A9AFFL, 0x9AA4B4FFL)
-            compositionRows(controller, mix, maxEntries = 5)
+            val airK = s.airKelvinAt(tile)
+            keyValue("CONTENTS", mass(mix.total), 0x9A9A9AFFL, 0x9AA4B4FFL)
+            compositionRows(controller, mix, airK, maxEntries = 5)
         }
     }
 
@@ -2367,6 +2353,7 @@ class OutofspaceHud {
     private fun PanelBuilder.compositionRows(
         controller: OutofspaceController,
         mixture: Mixture,
+        kelvin: Int,
         maxEntries: Int = 3,
     ) {
         if (mixture.isEmpty) return
@@ -2381,6 +2368,13 @@ class OutofspaceHud {
             speciesRow(controller, species, "${(if (percent < 1) "<1" else percent.toString()).padStart(4)}%")
         }
         if (present.size > maxEntries) text("${(if (listed > 99) "<1" else (100L - listed).toString()).padStart(4)}% other", 0x9AA4B4FFL)
+        text(
+            "${"$kelvin".padStart(4)}K  (${kelvin - 273}C)",
+            if (kelvin > Temperature.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
+        )
+        for (i in present.size..<maxEntries) {
+            text("")
+        }
     }
 
     /** Air direction as 8-point compass (+y is down). */

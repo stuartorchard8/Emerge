@@ -1351,7 +1351,19 @@ private fun labelOf(machine: DeckMachine, role: BufferRole): String = when (mach
     is Furnace -> when (role) {
         BufferRole.Inside -> "CHARGE"
         BufferRole.Product -> "OUTPUT"
-        else -> machine.speciesFor(role)?.name?.uppercase() ?: "INPUT"
+        else -> {
+            val species = machine.speciesFor(role)
+            if (species == null) {
+                "INPUT"
+            } else {
+                when (role) {
+                    BufferRole.Input -> "INPUT A"
+                    BufferRole.SecondReagent -> "INPUT B"
+                    BufferRole.ThirdReagent -> "INPUT C"
+                    else -> species.name.uppercase()
+                }
+            }
+        }
     }
 
     // ⚠️ **Neutral on purpose, and it must stay neutral.** This is what a machine with no entry of

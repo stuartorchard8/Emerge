@@ -1476,15 +1476,27 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
             // Only take exactly 1 packet of product, and leave the rest inside
             val output = r.product.takeAtLeast(Capacity.PACKET_MASS)
-            val remaining = if (output == null) r.product else r.product - output
+            var remaining = if (output == null) r.product else r.product - output
             if (output != null) {
                 putStore(m, tile, BufferRole.Product, banked + output)
                 // Leave everything else in the input store for the next packet to add to
-                putStore(m, tile, BufferRole.Inside, remaining + r.tailings)
+                remaining += r.tailings
             } else {
                 putStore(m, tile, BufferRole.Waste, tailings + r.tailings)
-                putStore(m, tile, BufferRole.Inside, remaining)
             }
+
+            val missingMass = Concentrator.CHARGE_MASS - remaining.total
+            if (missingMass > 0) {
+                // Top up with more input if available
+                val available = store(m, tile, BufferRole.Input)
+                val addition = available?.takeAtLeast(missingMass)
+                if (addition != null) {
+                    remaining += addition
+                    putStore(m, tile, BufferRole.Input, available-addition)
+                    heat(tile, heatOfWorking(remaining.total, m))
+                }
+            }
+            putStore(m, tile, BufferRole.Inside, remaining)
             return m.copy(progress = 0, carry = carry)
         }
         return m.copy(progress = m.progress + actionProgress.toInt(), carry = carry)
