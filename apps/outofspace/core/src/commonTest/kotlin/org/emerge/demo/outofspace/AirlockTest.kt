@@ -14,6 +14,7 @@ import org.emerge.demo.outofspace.world.Structure
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.StructureMap
 import org.emerge.demo.outofspace.world.Wiring
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachine
@@ -161,8 +162,9 @@ class AirlockTest {
     fun `a door is open or shut, with nothing in between`() {
         val signals = SignalField.none(1)
         val grid = Grid(10, 10)
-        assertEquals(ApertureField.OPEN, airlockOpenness(Airlock(TileIndex(0), wiring = held()), signals, grid))
-        assertEquals(0, airlockOpenness(Airlock(TileIndex(0), wiring = Wiring(mapOf(Action.Run to emptyList()))), signals, grid))
+        val structure = StructureMap.derive(grid, DeckArray(grid))
+        assertEquals(ApertureField.OPEN, airlockOpenness(Airlock(TileIndex(0), wiring = held()), signals, grid, emptyList(), null, structure))
+        assertEquals(0, airlockOpenness(Airlock(TileIndex(0), wiring = Wiring(mapOf(Action.Run to emptyList()))), signals, grid, emptyList(), null, structure))
     }
 
     // ── Thrust ────────────────────────────────────────────────────────────────
