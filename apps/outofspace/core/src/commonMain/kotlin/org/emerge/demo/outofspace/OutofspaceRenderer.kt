@@ -309,7 +309,7 @@ class OutofspaceRenderer {
             flowFade.forget()
         }
         fadedOverlay = overlay
-        if (overlay != Overlay.None) {
+        if (overlay != Overlay.None && overlay != Overlay.Heat) {
             val cadence = cadenceOf(overlay, state)
             overlayFade.sample(state.grid, cadence, simTime) { overlayColor(overlay, state, it) }
             if (overlay == Overlay.Flow) flowFade.sample(state.grid, cadence, simTime, state.flow)
@@ -366,7 +366,7 @@ class OutofspaceRenderer {
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
                 val tile = grid.tile(x, y)
-                drawDeckMachine(state, state.deck[tile] ?: continue)
+                drawDeckMachine(state, state.deck[tile] ?: continue, showHeat = overlay==Overlay.Heat)
             }
         }
         if (inspectLayer == InspectLayer.Deck && inspectTile != TileIndex.NONE) {
@@ -383,7 +383,15 @@ class OutofspaceRenderer {
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
                 val tile = grid.tile(x, y)
-                drawRail(state, tile, x, y, highlight = inspectLayer==InspectLayer.Rail && tile==inspectTile)
+                drawConduit(
+                    state,
+                    tile,
+                    x,
+                    y,
+                    Conduit.Rail,
+                    highlight = inspectLayer == InspectLayer.Rail && tile == inspectTile,
+                    showHeat = overlay == Overlay.Heat,
+                )
             }
         }
 
@@ -391,17 +399,33 @@ class OutofspaceRenderer {
             for (x in mMinX..mMaxX) {
                 val tile = grid.tile(x, y)
                 // Draw packets in their own sweep since animation may draw them where they were not where they are
-                drawRailPacket(state, tile, x, y)
+                drawRailPacket(state, tile, x, y, showHeat = overlay==Overlay.Heat)
             }
         }
-        drawDepartures(state)
+        drawDepartures(state, showHeat = overlay == Overlay.Heat)
 
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
                 val tile = grid.tile(x, y)
                 // Draw wire and signal largest to smallest
-                drawPowerWire(state, tile, x, y, highlight = inspectLayer==InspectLayer.Power && tile==inspectTile)
-                drawSignalWire(state, tile, x, y, highlight = inspectLayer==InspectLayer.Signal && tile==inspectTile)
+                drawConduit(
+                    state,
+                    tile,
+                    x,
+                    y,
+                    Conduit.Power,
+                    highlight = inspectLayer == InspectLayer.Power && tile == inspectTile,
+                    showHeat = overlay == Overlay.Heat,
+                )
+                drawConduit(
+                    state,
+                    tile,
+                    x,
+                    y,
+                    Conduit.Signal,
+                    highlight = inspectLayer == InspectLayer.Signal && tile == inspectTile,
+                    showHeat = overlay == Overlay.Heat,
+                )
             }
         }
 
@@ -413,7 +437,7 @@ class OutofspaceRenderer {
                 // Once per bridge, at its middle — it is stored at its centre and drawn across all
                 // three of its tiles, so visiting it per covered tile would draw it three times.
                 if (b.center != tile) continue
-                drawBridge(state, tile, b, x, y, highlight = inspectLayer== InspectLayer.Deck && tile==inspectTile)
+                drawBridge(state, tile, b, x, y, highlight = inspectLayer== InspectLayer.Deck && tile==inspectTile, showHeat = overlay==Overlay.Heat)
             }
         }
 
@@ -430,7 +454,7 @@ class OutofspaceRenderer {
         for (body in state.bodies) drawBody(body, state.pose)
 
         // Overlay over machines.
-        if (overlay != Overlay.None) {
+        if (overlay != Overlay.None && overlay != Overlay.Heat) {
             for (y in minY..maxY) {
                 for (x in minX..maxX) {
                     val tile = grid.tile(x, y)
@@ -700,73 +724,6 @@ class OutofspaceRenderer {
     }
 
     /**
-     * One tile of signal wire.
-     *
-     * The same spine as [drawPipe] and [drawRail] — a conduit is a conduit — but thinner than either,
-     * because it carries a reading rather than a thing and should not compete with the runs that move
-     * mass. Its colour is the value on it (Increment C); until something transmits, that is the dull
-     * end of the ramp, which is the honest picture of a wire nobody is driving.
-     */
-    private fun drawSignalWire(state: VesselState, tile: TileIndex, x: Int, y: Int, highlight: Boolean) {
-        val segment = state.conduits.at(Conduit.Signal, tile) ?: return
-        val cx = (x + 0.5f) * tilePx
-        val cy = (y + 0.5f) * tilePx
-        val color = lerpColor(Colors.WIRE_DARK, Colors.WIRE_LIVE, state.signals.at(tile) / SignalField.FULL.toFloat())
-        for (dir in Direction.ALL) {
-            if (!segment.linkedTo(dir)) continue
-            rect(
-                cx + dir.dx * Visual.WIRE_ARM_OFFSET * tilePx, cy + dir.dy * Visual.WIRE_ARM_OFFSET * tilePx,
-                (if (dir.dx != 0) Visual.WIRE_ARM_LENGTH else Visual.WIRE_DIAMETER) * tilePx,
-                (if (dir.dy != 0) Visual.WIRE_ARM_LENGTH else Visual.WIRE_DIAMETER) * tilePx,
-                color,
-            )
-        }
-        rect(cx, cy, Visual.WIRE_DIAMETER * tilePx, Visual.WIRE_DIAMETER * tilePx, color)
-        if (highlight) {
-            for (dir in Direction.ALL) {
-                if (!segment.linkedTo(dir)) continue
-                rect(
-                    cx + dir.dx * Visual.WIRE_ARM_OFFSET * tilePx, cy + dir.dy * Visual.WIRE_ARM_OFFSET * tilePx,
-                    (if (dir.dx != 0) Visual.WIRE_ARM_LENGTH else Visual.WIRE_DIAMETER) * tilePx,
-                    (if (dir.dy != 0) Visual.WIRE_ARM_LENGTH else Visual.WIRE_DIAMETER) * tilePx,
-                    Colors.HOVER,
-                )
-            }
-            rect(cx, cy, Visual.WIRE_DIAMETER * tilePx, Visual.WIRE_DIAMETER * tilePx, Colors.HOVER)
-        }
-    }
-    // Thicker wires for current transfer
-    private fun drawPowerWire(state: VesselState, tile: TileIndex, x: Int, y: Int, highlight: Boolean) {
-        val segment = state.conduits.at(Conduit.Power, tile) ?: return
-        val cx = (x + 0.5f) * tilePx
-        val cy = (y + 0.5f) * tilePx
-        val color = Colors.WIRE_POWER
-        for (dir in Direction.ALL) {
-            if (!segment.linkedTo(dir)) continue
-            rect(
-                cx + dir.dx * Visual.POWER_ARM_OFFSET * tilePx, cy + dir.dy * Visual.POWER_ARM_OFFSET * tilePx,
-                (if (dir.dx != 0) Visual.POWER_ARM_LENGTH else Visual.POWER_DIAMETER) * tilePx,
-                (if (dir.dy != 0) Visual.POWER_ARM_LENGTH else Visual.POWER_DIAMETER) * tilePx,
-                color,
-            )
-        }
-        rect(cx, cy, Visual.POWER_DIAMETER * tilePx, Visual.POWER_DIAMETER * tilePx, color)
-        if (highlight) {
-            for (dir in Direction.ALL) {
-                if (!segment.linkedTo(dir)) continue
-                rect(
-                    cx + dir.dx * Visual.POWER_ARM_OFFSET * tilePx, cy + dir.dy * Visual.POWER_ARM_OFFSET * tilePx,
-                    (if (dir.dx != 0) Visual.POWER_ARM_LENGTH else Visual.POWER_DIAMETER) * tilePx,
-                    (if (dir.dy != 0) Visual.POWER_ARM_LENGTH else Visual.POWER_DIAMETER) * tilePx,
-                    Colors.HOVER,
-                )
-            }
-            rect(cx, cy, Visual.POWER_DIAMETER * tilePx, Visual.POWER_DIAMETER * tilePx, Colors.HOVER)
-        }
-    }
-
-
-    /**
      * What a length of conduit is drawn in, given how much of it is actually there.
      *
      * Three states, one ramp. Finished track is [kindColor] and always has been. A **ghost** fades up
@@ -784,7 +741,11 @@ class OutofspaceRenderer {
      */
     private fun conduitColor(state: VesselState, conduit: Conduit, tile: TileIndex): Long {
         val built = state.conduits.builtPermille(conduit, tile) / 1000f
-        val whole = kindColor(conduit)
+        val whole = if (conduit == Conduit.Signal) {
+            lerpColor(Colors.WIRE_DARK, Colors.WIRE_LIVE, state.signals.at(tile) / SignalField.FULL.toFloat())
+        } else {
+            Visual.kindColor(conduit)
+        }
         if (state.conduits.at(conduit, tile)?.deconstructing == true) {
             if (built > 0.99f) {
                 // Deconstruction hasn't begun, so represent the conduit's condemnation with the X
@@ -819,48 +780,62 @@ class OutofspaceRenderer {
         return lerpColor(Colors.GHOST, kindColor(m.kind), GHOST_FLOOR + (1f - GHOST_FLOOR) * built)
     }
 
-    /** Track tile + packet (thin spine, gauge collar). */
-    private fun drawRail(state: VesselState, tile: TileIndex, x: Int, y: Int, highlight: Boolean) {
-        val segment = state.railAt(tile) ?: return
+    private fun drawConduit(
+        state: VesselState,
+        tile: TileIndex,
+        x: Int,
+        y: Int,
+        conduit: Conduit,
+        highlight: Boolean,
+        showHeat: Boolean,
+    ) {
+        val segment = state.conduits.at(conduit, tile) ?: return
         val cx = (x + 0.5f) * tilePx
         val cy = (y + 0.5f) * tilePx
-        val railColor = conduitColor(state, Conduit.Rail, tile)
+        val capacity = state.conduits.heatCapacityAt(conduit, tile)
+        val kelvin = if (capacity == 0L) 0 else (state.conduits.energyAt(conduit, tile) / capacity).toInt()
+        val kelvinColor = temperatureColor(kelvin)
+        val coreColor = if (showHeat) kelvinColor else conduitColor(state, conduit, tile)
         val outlineColor = speciesColor(segment.material)
+
+        val diameter = Visual.conduitDiameter(conduit)
+        val coreDiameter = Visual.conduitCoreDiameter(conduit)
+        val armLength = Visual.conduitArmLength(conduit)
+        val armOffset = Visual.conduitArmOffset(conduit)
         // The hub, always drawn
-        rect(cx, cy, Visual.RAIL_DIAMETER * tilePx, Visual.RAIL_DIAMETER * tilePx, outlineColor)
-        rect(cx, cy, Visual.INNER_RAIL_DIAMETER * tilePx, Visual.INNER_RAIL_DIAMETER * tilePx, railColor)
+        rect(cx, cy, diameter * tilePx, diameter * tilePx, outlineColor)
+        rect(cx, cy, coreDiameter * tilePx, coreDiameter * tilePx, coreColor)
         // Only joined arms (not touching — two lines side by side stay separate).
         for (dir in Direction.ALL) {
             if (!segment.linkedTo(dir)) continue
             rect(
-                cx + dir.dx * Visual.RAIL_ARM_OFFSET * tilePx, cy + dir.dy * Visual.RAIL_ARM_OFFSET * tilePx,
-                (if (dir.dx != 0) Visual.RAIL_ARM_LENGTH else Visual.RAIL_DIAMETER) * tilePx,
-                (if (dir.dy != 0) Visual.RAIL_ARM_LENGTH else Visual.RAIL_DIAMETER) * tilePx,
+                cx + dir.dx * armOffset * tilePx, cy + dir.dy * armOffset * tilePx,
+                (if (dir.dx != 0) armLength else diameter) * tilePx,
+                (if (dir.dy != 0) armLength else diameter) * tilePx,
                 outlineColor,
             )
             rect(
-                cx + dir.dx * Visual.RAIL_ARM_OFFSET * tilePx, cy + dir.dy * Visual.RAIL_ARM_OFFSET * tilePx,
-                (if (dir.dx != 0) Visual.RAIL_ARM_LENGTH else Visual.INNER_RAIL_DIAMETER) * tilePx,
-                (if (dir.dy != 0) Visual.RAIL_ARM_LENGTH else Visual.INNER_RAIL_DIAMETER) * tilePx,
-                railColor,
+                cx + dir.dx * armOffset * tilePx, cy + dir.dy * armOffset * tilePx,
+                (if (dir.dx != 0) armLength else coreDiameter) * tilePx,
+                (if (dir.dy != 0) armLength else coreDiameter) * tilePx,
+                coreColor,
             )
         }
         if (highlight) {
             for (dir in Direction.ALL) {
                 if (!segment.linkedTo(dir)) continue
                 rect(
-                    cx + dir.dx * Visual.RAIL_ARM_OFFSET * tilePx, cy + dir.dy * Visual.RAIL_ARM_OFFSET * tilePx,
-                    (if (dir.dx != 0) Visual.RAIL_ARM_LENGTH else Visual.INNER_RAIL_DIAMETER) * tilePx,
-                    (if (dir.dy != 0) Visual.RAIL_ARM_LENGTH else Visual.INNER_RAIL_DIAMETER) * tilePx,
+                    cx + dir.dx * armOffset * tilePx, cy + dir.dy * armOffset * tilePx,
+                    (if (dir.dx != 0) armLength else coreDiameter) * tilePx,
+                    (if (dir.dy != 0) armLength else coreDiameter) * tilePx,
                     Colors.HOVER,
                 )
             }
-            rect(cx, cy, Visual.INNER_RAIL_DIAMETER * tilePx, Visual.INNER_RAIL_DIAMETER * tilePx, Colors.HOVER)
+            rect(cx, cy, coreDiameter * tilePx, coreDiameter * tilePx, Colors.HOVER)
         }
     }
 
-    private fun drawRailPacket(state: VesselState, tile: TileIndex, x: Int, y: Int) {
-        val segment = state.railAt(tile) ?: return
+    private fun drawRailPacket(state: VesselState, tile: TileIndex, x: Int, y: Int, showHeat: Boolean) {
         val packet = state.rail.packetAt(tile) ?: return
         val motion = state.motion
 
@@ -878,32 +853,43 @@ class OutofspaceRenderer {
             lerp(motion.previousMassAt(tile).toFloat(), packet.mass.toFloat(), railPacketAlpha),
             scale,
             packet.contents,
+            showHeat = showHeat,
         )
     }
 
     /** Material lump at fractional tile coords. [mass] = size (interpolated), [scale] = appear/disappear. */
-    private fun drawPacket(tx: Float, ty: Float, mass: Float, scale: Float, mixture: Mixture) {
+    private fun drawPacket(tx: Float, ty: Float, mass: Float, scale: Float, mixture: Mixture, showHeat: Boolean) {
         if (scale <= 0f) return
         val fill = (mass / Capacity.PACKET_MASS).coerceIn(Visual.PACKET_MIN_FILL, 1f)
         val side = Visual.PACKET_FILL * fill * scale
-        rect(tx * tilePx, ty * tilePx, side * tilePx, side * tilePx, mixture.color.toLong())
+        rect(tx * tilePx, ty * tilePx, side * tilePx, side * tilePx,
+            mixture.color.toLong(),
+        )
+        if (showHeat) {
+            rect(tx * tilePx, ty * tilePx, (side-0.05f) * tilePx, (side-0.05f) * tilePx,
+                temperatureColor(mixture.kelvin),
+            )
+        }
     }
 
     private fun lerp(from: Float, to: Float, t: Float): Float = from + (to - from) * t
 
     /** Bridge: elevated track (off-color, not part of lower track). */
-    private fun drawBridge(state: VesselState, tile: TileIndex, b: Bridge, x: Int, y: Int, highlight: Boolean) {
+    private fun drawBridge(state: VesselState, tile: TileIndex, b: Bridge, x: Int, y: Int, highlight: Boolean, showHeat: Boolean) {
         val horizontal = b.facing.dx != 0
         val long = if (horizontal) Visual.BRIDGE_SPAN_X else Visual.BRIDGE_SPAN_Y
         val across = if (horizontal) Visual.BRIDGE_SPAN_Y else Visual.BRIDGE_SPAN_X
         val cx = (x + 0.5f) * tilePx
         val cy = (y + 0.5f) * tilePx
+        val species = state.deck.stuff.mixtureAt(tile)
+        val dominant = speciesColor(species.dominant)
         // The span fades up from slate as it builds and is framed when it is on its way out, exactly
         // as every other machine is — it just does it here, because a bridge is drawn over the track
         // it crosses rather than on a tile. ⚠️ A marked bridge goes on carrying, so its slots are
         // still drawn below: watching a condemned gantry walk its last load off is the point.
-        rect(cx, cy, (long - Visual.BRIDGE_INSET) * tilePx, (across - Visual.BRIDGE_INSET) * tilePx, ghostColor(state, b))
-        if (highlight) rect(cx, cy, (long - Visual.BRIDGE_INSET) * tilePx, (across - Visual.BRIDGE_INSET) * tilePx, Colors.HOVER)
+        footprintRect(state, b, Visual.conduitDiameter(Conduit.Rail), dominant)
+        footprintRect(state, b, Visual.conduitCoreDiameter(Conduit.Rail), if (showHeat) temperatureColor(species.kelvin) else ghostColor(state, b))
+        if (highlight) footprintRect(state, b, Visual.RAIL_DIAMETER, Colors.HOVER)
         if (tile in state.scrapping) {
             frame(x, y, Colors.SCRAPPING)
             markedForDeconstruction.add(tile)
@@ -926,6 +912,14 @@ class OutofspaceRenderer {
                 cy + b.facing.dy * at * tilePx,
                 size, size, packet.color.toLong(),
             )
+            if (showHeat) {
+                val size = (Visual.BRIDGE_PACKET_SIZE-0.05f) * tilePx
+                rect(
+                    cx + b.facing.dx * at * tilePx,
+                    cy + b.facing.dy * at * tilePx,
+                    size, size, temperatureColor(packet.kelvin),
+                )
+            }
         }
     }
 
@@ -936,7 +930,7 @@ class OutofspaceRenderer {
      * them. Without this a packet arriving at a smelter simply stops existing between two frames,
      * which reads as a dropped item rather than as one being taken in.
      */
-    private fun drawDepartures(state: VesselState) {
+    private fun drawDepartures(state: VesselState, showHeat: Boolean) {
         for (d in state.motion.departures) {
             drawPacket(
                 state.grid.xOf(d.tile) + 0.5f,
@@ -944,13 +938,14 @@ class OutofspaceRenderer {
                 d.packet.mass.toFloat(),
                 1f - railPacketAlpha,
                 d.packet.contents,
+                showHeat = showHeat,
             )
         }
     }
 
     // ── Machine drawing ───────────────────────────────────────────────────────
 
-    private fun drawDeckMachine(state: VesselState, m: DeckMachine) {
+    private fun drawDeckMachine(state: VesselState, m: DeckMachine, showHeat: Boolean) {
         val tile = m.center
         val x = state.grid.xOf(tile)
         val y = state.grid.yOf(tile)
@@ -988,7 +983,7 @@ class OutofspaceRenderer {
         // door, it is *shut*, and a wall of red panic lights along the hull would say the opposite.
         // A transmitter is never "stopped": a sensor or a button with no activation is doing its
         // job, and so is a shut airlock — see the note on [Airlock.SEALED].
-        if (m !is Airlock && m !is Sensor && m !is WireButton &&
+        if (!showHeat && m !is Airlock && m !is Sensor && m !is WireButton &&
             !m.wiring.isOn(Action.Run, state.signals.at(tile))
         ) {
             footprintRect(state, m, Visual.MACHINE_INSET, Colors.STOPPED_BODY)
@@ -1018,46 +1013,67 @@ class OutofspaceRenderer {
             is SolarPanel -> {
                 val species = state.deck.stuff.mixtureAt(m.center)
                 val dominant = speciesColor(species.dominant)
-                footprintRect(state, m, Visual.MACHINE_INSET, dominant)
-                for (dx in -1..1) {
-                    for (dy in -1..1) {
-                        tileRect(x+dx, y+dy, Visual.MACHINE_INSET, kindColor(DeckMachineKind.SolarPanel))
+                val coreColor = machineCoreColor(state, m, showHeat)
+                footprintRect(state, m, Visual.MACHINE_BORDER_INSET, dominant)
+                if (showHeat) {
+                    footprintRect(state, m, Visual.MACHINE_INSET, coreColor)
+                } else {
+                    for (dx in -1..1) {
+                        for (dy in -1..1) {
+                            tileRect(x+dx, y+dy, Visual.MACHINE_INSET, coreColor)
+                        }
                     }
                 }
             }
             // Bright core, wider than the pipe it opens, centred on the tile.
-            is Valve -> footprintRect(state, m, Visual.VALVE_COLLAR, Colors.VALVE_CORE)
+            is Valve -> {
+                val species = state.deck.stuff.mixtureAt(m.center)
+                val dominant = speciesColor(species.dominant)
+                val coreColor = machineCoreColor(state, m, showHeat)
+                footprintRect(state, m, Visual.MACHINE_BORDER_INSET, dominant)
+                footprintRect(state, m, Visual.VALVE_COLLAR, coreColor)
+            }
             // A rod seen end-on, standing on the plate that bolts it down. Deliberately small: what
             // a terminal is *for* is the runs crossing under it, and a body that covered them would
             // hide the one thing the player put it there to join.
             is Terminal -> {
                 val species = state.deck.stuff.mixtureAt(m.center)
                 val dominant = speciesColor(species.dominant)
-                tileRect(x, y, Visual.TERMINAL_PLATE, kindColor(DeckMachineKind.Terminal))
-                tileRect(x, y, Visual.TERMINAL_ROD, dominant)
+                if (showHeat) {
+                    tileRect(x, y, Visual.TERMINAL_PLATE, temperatureColor(species.kelvin))
+                } else {
+                    tileRect(x, y, Visual.TERMINAL_PLATE, kindColor(DeckMachineKind.Terminal))
+                    tileRect(x, y, Visual.TERMINAL_ROD, dominant)
+                }
             }
             is Hull -> {
                 val species = state.deck.stuff.mixtureAt(m.center)
-                val dominant = speciesColor(species.dominant)
+                val dominant = if (showHeat) temperatureColor(species.kelvin) else speciesColor(species.dominant)
                 tileRect(x, y, 1f, dominant)
             }
             is Extractor -> {
                 val species = state.deck.stuff.mixtureAt(m.center)
                 val dominant = speciesColor(species.dominant)
+                val coreColor = machineCoreColor(state, m, showHeat)
+                footprintRect(state, m, Visual.MACHINE_BORDER_INSET, dominant)
                 // A tray, not a block. The recessed floor is what says "things go on top of this",
                 // and the rock pass draws over it — see [drawRock].
-                footprintRect(state, m, Visual.MACHINE_BORDER_INSET, dominant)
-                footprintRect(state, m, Visual.EXTRACTOR_FLOOR_INSET, kindColor(DeckMachineKind.Extractor))
-                fillBar(x, y, n, (state.buffers.resourceAt(bufferTile(state.grid, m, tile, BufferRole.Product)!!)?.total ?: 0L)
-                    .toFloat() / Extractor.BUFFER_CAP)
+                footprintRect(state, m, Visual.EXTRACTOR_FLOOR_INSET, coreColor)
+                if (!showHeat) {
+                    fillBar(x, y, n, (state.buffers.resourceAt(bufferTile(state.grid, m, tile, BufferRole.Product)!!)?.total ?: 0L)
+                        .toFloat() / Extractor.BUFFER_CAP)
+                }
             }
 
             is Concentrator -> {
                 val species = state.deck.stuff.mixtureAt(m.center)
                 val dominant = speciesColor(species.dominant)
+                val coreColor = machineCoreColor(state, m, showHeat)
                 footprintRect(state, m, Visual.MACHINE_BORDER_INSET, dominant)
-                footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Concentrator))
-                fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
+                footprintRect(state, m, Visual.MACHINE_INSET, coreColor)
+                if (!showHeat) {
+                    fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
+                }
             }
             // A body with a bar, like every other buffered installation. Its own collar and the
             // berth markings are a docking-increment problem; drawn plainly here so the machine is
@@ -1065,23 +1081,32 @@ class OutofspaceRenderer {
             is DockingPort -> {
                 val species = state.deck.stuff.mixtureAt(m.center)
                 val dominant = speciesColor(species.dominant)
+                val coreColor = machineCoreColor(state, m, showHeat)
                 footprintRect(state, m, Visual.MACHINE_BORDER_INSET, dominant)
-                footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.DockingPort))
-                fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
+                footprintRect(state, m, Visual.MACHINE_INSET, coreColor)
+                if (!showHeat) {
+                    fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
+                }
             }
             is Electrolyzer -> {
                 val species = state.deck.stuff.mixtureAt(m.center)
                 val dominant = speciesColor(species.dominant)
+                val coreColor = machineCoreColor(state, m, showHeat)
                 footprintRect(state, m, Visual.MACHINE_BORDER_INSET, dominant)
-                footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Electrolyzer))
-                fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
+                footprintRect(state, m, Visual.MACHINE_INSET, coreColor)
+                if (!showHeat) {
+                    fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
+                }
             }
             is Furnace -> {
                 val species = state.deck.stuff.mixtureAt(m.center)
                 val dominant = speciesColor(species.dominant)
+                val coreColor = machineCoreColor(state, m, showHeat)
                 footprintRect(state, m, Visual.MACHINE_BORDER_INSET, dominant)
-                footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Furnace))
-                fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
+                footprintRect(state, m, Visual.MACHINE_INSET, coreColor)
+                if (!showHeat) {
+                    fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
+                }
             }
             // Two tiles: the chamber it is stored at and the bell in front of it, drawn as one
             // body so a motor reads as the object it is rather than as two machines. The nozzle
@@ -1089,7 +1114,7 @@ class OutofspaceRenderer {
             // without selecting it — the one thing about a motor you cannot afford to get wrong.
             is Thruster -> {
                 val species = state.deck.stuff.mixtureAt(m.center)
-                val dominant = speciesColor(species.dominant)
+                val dominant = if (showHeat) temperatureColor(species.kelvin) else speciesColor(species.dominant)
                 footprintSemi(state, m, Visual.MACHINE_INSET, dominant)
                 val base = m.base(state.grid)
                 tileRect(state.grid.xOf(base), state.grid.yOf(base), 1f, dominant)
@@ -1101,8 +1126,8 @@ class OutofspaceRenderer {
             // up is a mixture the dial is refusing to make.
             is Rocket -> {
                 val species = state.deck.stuff.mixtureAt(m.center)
-                val dominant = speciesColor(species.dominant)
-                footprintSemi(state, m, Visual.MACHINE_INSET, dominant)
+                val dominant = if (showHeat) temperatureColor(species.kelvin) else speciesColor(species.dominant)
+                footprintSemi(state, m, Visual.MACHINE_BORDER_INSET, dominant)
                 val base = m.base(state.grid)
                 val lTile = state.grid.neighbour(base, m.facing.clockwise)
                 val rTile = state.grid.neighbour(base, m.facing.clockwise.opposite)
@@ -1110,9 +1135,11 @@ class OutofspaceRenderer {
                 val ly = state.grid.yOf(lTile)
                 val rx = state.grid.xOf(rTile)
                 val ry = state.grid.yOf(rTile)
-                tilesRect(min(lx, rx), max(lx, rx), min(ly, ry), max(ly, ry), dominant)
-                fillBar(x, y, n, (state.buffers.resourceAt(bufferTile(state.grid, m, tile, BufferRole.Inside)!!)?.total ?: 0L)
-                    .toFloat() / Rocket.CHAMBER_CAP)
+                tilesRect(min(lx, rx), max(lx, rx), min(ly, ry), max(ly, ry), 1f, dominant)
+                if (!showHeat) {
+                    fillBar(x, y, n, (state.buffers.resourceAt(bufferTile(state.grid, m, tile, BufferRole.Inside)!!)?.total ?: 0L)
+                        .toFloat() / Rocket.CHAMBER_CAP)
+                }
             }
 
             // A button: its face lights up while it is held, and its key is written on it by the
@@ -1120,31 +1147,49 @@ class OutofspaceRenderer {
             is WireButton -> {
                 val species = state.deck.stuff.mixtureAt(m.center)
                 val dominant = speciesColor(species.dominant)
+                val coreColor = machineCoreColor(state, m, showHeat)
                 footprintRect(state, m, Visual.MACHINE_BORDER_INSET, dominant)
-                tileRect(x, y, Visual.MACHINE_INSET, kindColor(DeckMachineKind.KeyInput))
-                val pressed = state.signals.at(tile) / SignalField.FULL.toFloat()
-                tileRect(x, y, Visual.BUTTON_FACE, lerpColor(Colors.WIRE_DARK, Colors.WIRE_LIVE, pressed))
+                tileRect(x, y, Visual.MACHINE_INSET, coreColor)
+                if (!showHeat) {
+                    val pressed = state.signals.at(tile) / SignalField.FULL.toFloat()
+                    tileRect(x, y, Visual.BUTTON_FACE, lerpColor(Colors.WIRE_DARK, Colors.WIRE_LIVE, pressed))
+                }
             }
             is Sensor -> {
                 val species = state.deck.stuff.mixtureAt(m.center)
                 val dominant = speciesColor(species.dominant)
+                val coreColor = machineCoreColor(state, m, showHeat)
                 footprintRect(state, m, Visual.MACHINE_BORDER_INSET, dominant)
-                tileRect(x, y, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Sensor))
-                // Faces its target, and its eye glows with whatever it is putting on the wire — the
-                // same ramp the wire itself uses, so a lit sensor and a lit run read as one thing.
-                val emitting = lerpColor(Colors.WIRE_DARK, Colors.WIRE_LIVE, state.signals.at(tile) / SignalField.FULL.toFloat())
-                edgeMark(x, y, m.facing, emitting)
-                tileRect(x, y, Visual.SENSOR_EYE_SCALE, emitting)
+                tileRect(x, y, Visual.MACHINE_INSET, coreColor)
+                if (!showHeat) {
+                    // Faces its target, and its eye glows with whatever it is putting on the wire — the
+                    // same ramp the wire itself uses, so a lit sensor and a lit run read as one thing.
+                    val emitting = lerpColor(Colors.WIRE_DARK, Colors.WIRE_LIVE, state.signals.at(tile) / SignalField.FULL.toFloat())
+                    edgeMark(x, y, m.facing, emitting)
+                    tileRect(x, y, Visual.SENSOR_EYE_SCALE, emitting)
+                }
             }
             // Pump intake: arrow shows facing (room direction).
             is Pump -> {
-                tileRect(x, y, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Pump))
-                intakeArrow(x, y, m.facing)
+                val species = state.deck.stuff.mixtureAt(m.center)
+                val dominant = speciesColor(species.dominant)
+                val coreColor = machineCoreColor(state, m, showHeat)
+                footprintRect(state, m, Visual.MACHINE_BORDER_INSET, dominant)
+                footprintRect(state, m, Visual.MACHINE_INSET, coreColor)
+                if (!showHeat) {
+                    intakeArrow(x, y, m.facing)
+                }
             }
 
             is Ejector -> {
-                tileRect(x, y, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Ejector))
-                tileRect(x, y, Visual.VENT_CORE_SCALE, Colors.VENT_CORE)
+                val species = state.deck.stuff.mixtureAt(m.center)
+                val dominant = speciesColor(species.dominant)
+                val coreColor = machineCoreColor(state, m, showHeat)
+                footprintRect(state, m, Visual.MACHINE_BORDER_INSET, dominant)
+                tileRect(x, y, Visual.MACHINE_INSET, coreColor)
+                if (!showHeat) {
+                    tileRect(x, y, Visual.VENT_CORE_SCALE, Colors.VENT_CORE)
+                }
             }
             // Tank: room-sized fill, legible at distance. ⚠️ **Drawn over the footprint's own
             // bounding box rather than off `n`**, because two of the three store sizes are not
@@ -1153,9 +1198,11 @@ class OutofspaceRenderer {
             // is against [Storage.capacity], so a full buffer draws full.
             is Storage -> {
                 val species = state.deck.stuff.mixtureAt(m.center)
-                val dominant = speciesColor(species.dominant)
-                footprintRect(state, m, Visual.MACHINE_BORDER_INSET, dominant)
-                footprintRect(state, m, Visual.MACHINE_INSET, kindColor(m.kind))
+                val materialColor = speciesColor(species.dominant)
+                val coreColor = machineCoreColor(state, m, showHeat)
+                footprintRect(state, m, Visual.MACHINE_BORDER_INSET, materialColor)
+                footprintRect(state, m, Visual.MACHINE_INSET, coreColor)
+
                 val stored = state.buffers.resourceAt(bufferTile(state.grid, m, tile, BufferRole.Inside)!!)
                 val level = (stored?.total ?: 0L).toFloat() / m.capacity
                 if (level > 0f) overFootprint(state, m) { cx, cy, tilesW, tilesH ->
@@ -1165,7 +1212,7 @@ class OutofspaceRenderer {
                     rect(
                         cx, (bottom - h * 0.5f) * tilePx,
                         w * tilePx, h * tilePx,
-                        stored?.color?.toLong() ?: 0x000000FF,
+                        (if (showHeat) stored?.kelvin?.let { temperatureColor(it) } else stored?.color?.toLong()) ?: 0x000000FF,
                     )
                 }
             }
@@ -1175,8 +1222,10 @@ class OutofspaceRenderer {
             is Airlock -> {
                 val species = state.deck.stuff.mixtureAt(m.center)
                 val dominant = speciesColor(species.dominant)
-                tileRect(x, y, 1f, kindColor(DeckMachineKind.Airlock))
-                tileRect(x, y, Visual.MACHINE_INSET, dominant)
+                val coreColor = machineCoreColor(state, m, showHeat)
+                tileRect(x, y, 1f, dominant)
+                tileRect(x, y, Visual.MACHINE_INSET, coreColor)
+
                 val open = airlockOpenness(m, state.signals, state.grid, state.bodies, state.pose, state.structure) / ApertureField.OPEN
                 if (open > 0f) tileRect(x, y, Visual.MACHINE_INSET * open, Colors.VENT_CORE)
                 // Sealed but not signalled = primed to close. If still open, a body blocks it.
@@ -1229,11 +1278,7 @@ class OutofspaceRenderer {
             // one for track. No arms: which way a run joins is decided by the drag, and drawing arms
             // before there is a drag would be inventing a shape the click will not produce.
             is Brush.Run -> {
-                val gauge = when (brush.conduit) {
-                    Conduit.Rail -> Visual.INNER_RAIL_DIAMETER
-                    Conduit.Power -> Visual.POWER_DIAMETER
-                    Conduit.Signal -> Visual.WIRE_DIAMETER
-                }
+                val gauge = Visual.conduitDiameter(brush.conduit)
                 rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, gauge * tilePx, gauge * tilePx, edge)
                 tileRect(x, y, 1f, fill)
             }
@@ -1736,7 +1781,6 @@ class OutofspaceRenderer {
     }
 
     private fun temperatureColor(kelvin: Int): Long {
-        val alpha = Colors.HEAT_ALPHA
         val f = ((kelvin - Temperature.AMBIENT_KELVIN).toFloat() / RAMP_SPAN).coerceIn(-1f, 1f)
         return if (f <= 0f) {
             val c = -f
@@ -1744,16 +1788,22 @@ class OutofspaceRenderer {
                 (ColorBase.WARM_R + Colors.COLD_R_OFFSET * c).toInt(),
                 (ColorBase.WARM_G + Colors.COLD_G_OFFSET * c).toInt(),
                 (ColorBase.WARM_B + Colors.COLD_B_OFFSET * c).toInt(),
-                alpha,
+                0xFF,
             )
         } else {
             rgba(
-                (ColorBase.WARM_R + Colors.HOT_R_OFFSET * f).toInt(),
+                (ColorBase.WARM_R - Colors.HOT_R_OFFSET * f).toInt(),
                 (ColorBase.WARM_G - Colors.HOT_G_OFFSET * f).toInt(),
                 (ColorBase.WARM_B - Colors.HOT_B_OFFSET * f).toInt(),
-                alpha,
+                0xFF,
             )
         }
+    }
+
+    private fun machineCoreColor(state: VesselState, m: DeckMachine, showHeat: Boolean): Long = if (showHeat) {
+        temperatureColor(state.deck.stuff.kelvinAt(m.center))
+    } else {
+        kindColor(m.kind)
     }
 
     /**
@@ -1982,8 +2032,8 @@ class OutofspaceRenderer {
     private fun tileRect(x: Int, y: Int, scale: Float, color: Long) =
         rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, scale * tilePx, scale * tilePx, color)
 
-    private fun tilesRect(l: Int, r: Int, t: Int, b: Int, color: Long) =
-        rect(((r+l)/2f + 0.5f) * tilePx, ((b+t)/2f + 0.5f) * tilePx, (r-l + 1) * tilePx, (b-t + 1) * tilePx, color)
+    private fun tilesRect(l: Int, r: Int, t: Int, b: Int, scale: Float, color: Long) =
+        rect(((r+l)/2f + 0.5f) * tilePx, ((b+t)/2f + 0.5f) * tilePx, (r-l + scale) * tilePx, (b-t + scale) * tilePx, color)
 
     /** [wx],[wy] are world pixels (tile units × [tilePx]); converted to NDC here. */
     private fun primitive(wx: Float, wy: Float, w: Float, h: Float, color: Long, angle: Coord, shape: Float) {
@@ -2025,9 +2075,9 @@ class OutofspaceRenderer {
 
     /** Base colours for the heat ramp — the same starting point for both cold and hot interpolation. */
     private object ColorBase {
-        const val WARM_R = 0xB0
-        const val WARM_G = 0xA0
-        const val WARM_B = 0x98
+        const val WARM_R = 0xB4
+        const val WARM_G = 0xB0
+        const val WARM_B = 0xB0
 
         /** Ambient, the midpoint of the diverging ramp: a dark neutral that reads as "nothing to see". */
         const val THIN_R = 0x2A
@@ -2185,9 +2235,8 @@ class OutofspaceRenderer {
         // ── Stopped machine states ──────────────────────────────────────
         /** The gauge's collar, and the two ends of the wire's value ramp. */
         const val GAUGE_COLLAR = 0xE0A93AFFL
-        const val WIRE_DARK    = 0x33513FFFL
-        const val WIRE_LIVE    = 0x6EE08AFFL
-        const val WIRE_POWER   = 0xE08A3AFFL
+        const val WIRE_DARK    = 0x232F81FFL
+        const val WIRE_LIVE    = 0x4E9AF0FFL
 
         const val STOPPED_BODY    = 0x1A1A20FFL
         const val STOPPED_INDICATOR = 0x8A3030FFL
@@ -2244,9 +2293,9 @@ class OutofspaceRenderer {
         const val COLD_R_OFFSET = 0xFF - 0xB0
         const val COLD_G_OFFSET = 0xFF - 0xB0
         const val COLD_B_OFFSET = 0xF0
-        const val HOT_R_OFFSET = 0xAF
-        const val HOT_G_OFFSET = 0x50
-        const val HOT_B_OFFSET = 0xB0
+        const val HOT_R_OFFSET = 0x10
+        const val HOT_G_OFFSET = 0xA0
+        const val HOT_B_OFFSET = 0xFF
 
         // ── Fill bar colours ────────────────────────────────────────────
         const val FILL_WARN = 0xE05A4AFFL
@@ -2324,9 +2373,25 @@ class OutofspaceRenderer {
 
         const val SPECIES_OUTLINE_DIAMETER = 0.10f
 
+        // ── Conduit dimensions ─────────────────────────────────────────────
+        fun conduitDiameter(conduit: Conduit) = when(conduit) {
+            Conduit.Rail -> RAIL_DIAMETER
+            Conduit.Power -> POWER_DIAMETER
+            Conduit.Signal -> SIGNAL_DIAMETER
+        }
+        fun conduitCoreDiameter(conduit: Conduit) = conduitDiameter(conduit) - SPECIES_OUTLINE_DIAMETER
+        fun conduitArmLength(conduit: Conduit) = (1f-conduitCoreDiameter(conduit))/2f
+        fun conduitArmOffset(conduit: Conduit) = (1f+conduitCoreDiameter(conduit))/4f
+
+        /** Palette colour for a machine kind, shared by the renderer and the HUD's brush swatch. */
+        fun kindColor(conduit: Conduit): Long = when (conduit) {
+            Conduit.Rail -> 0x39445AFFL
+            Conduit.Power -> 0xE03A24FFL
+            Conduit.Signal -> Colors.WIRE_DARK
+        }
+
         // ── Rail dimensions ─────────────────────────────────────────────
         const val RAIL_DIAMETER = 0.50f
-        const val INNER_RAIL_DIAMETER = RAIL_DIAMETER - SPECIES_OUTLINE_DIAMETER
 
         /** Wider than the pipe, so a tap reads against a long run without hiding its arms. */
         const val VALVE_COLLAR  = 0.46f
@@ -2337,24 +2402,17 @@ class OutofspaceRenderer {
         const val INTAKE_OFFSET = 0.34f
         const val INTAKE_WIDTH  = 0.44f
         const val INTAKE_DEPTH  = 0.14f
-        const val RAIL_ARM_LENGTH = (1f-INNER_RAIL_DIAMETER)/2f
-        const val RAIL_ARM_OFFSET = (1f+INNER_RAIL_DIAMETER)/4f
 
         /** Narrower than the rail, so a crossing reads as two runs rather than one junction. */
-        const val POWER_DIAMETER = 0.20f
-        const val POWER_ARM_LENGTH = (1f-POWER_DIAMETER)/2f
-        const val POWER_ARM_OFFSET = (1f+POWER_DIAMETER)/4f
+        const val POWER_DIAMETER = 0.24f
 
         // ── Signal wire dimensions ──────────────────────────────────────
         /** Thinner than power wires: it carries a low current reading. */
-        const val WIRE_DIAMETER = 0.12f
-        const val WIRE_ARM_LENGTH = (1f-WIRE_DIAMETER)/2f
-        const val WIRE_ARM_OFFSET = (1f+WIRE_DIAMETER)/4f
+        const val SIGNAL_DIAMETER = 0.16f
 
         // ── Bridge dimensions ───────────────────────────────────────────
         const val BRIDGE_SPAN_X = 3.0f
         const val BRIDGE_SPAN_Y = 1.0f
-        const val BRIDGE_INSET = 1f - RAIL_DIAMETER
         const val BRIDGE_PACKET_SIZE = 0.375f
 
         // ── Frame (channel collar) dimensions ───────────────────────────
@@ -2426,15 +2484,9 @@ class OutofspaceRenderer {
     }
 }
 
-/** Palette colour for a machine kind, shared by the renderer and the HUD's brush swatch. */
-fun kindColor(conduit: Conduit): Long = when (conduit) {
-    Conduit.Rail -> 0x39445AFFL
-    Conduit.Power, Conduit.Signal -> 0x4A7A5AFFL
-}
-
 /** The swatch the build menu shows for a brush, whichever of the two kinds it names. */
 fun brushColor(brush: Brush): Long = when (brush) {
-    is Brush.Run -> kindColor(brush.conduit)
+    is Brush.Run -> OutofspaceRenderer.Visual.kindColor(brush.conduit)
     is Brush.Building -> kindColor(brush.kind)
 }
 fun kindColor(kind: DeckMachineKind): Long = when (kind) {

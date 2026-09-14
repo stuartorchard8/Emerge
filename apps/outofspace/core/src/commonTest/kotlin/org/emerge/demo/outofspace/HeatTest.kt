@@ -9,7 +9,6 @@ import org.emerge.demo.outofspace.logistics.Capacity
 
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Temperature
@@ -17,7 +16,6 @@ import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.setTemperature
 import org.emerge.demo.outofspace.world.Structure
 import org.emerge.demo.outofspace.world.machine.Concentrator
-import org.emerge.demo.outofspace.world.machine.Ejector
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.TileIndex

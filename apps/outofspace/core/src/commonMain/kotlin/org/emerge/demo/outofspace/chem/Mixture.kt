@@ -2,6 +2,9 @@ package org.emerge.demo.outofspace.chem
 
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.speciesColor
+import org.emerge.demo.outofspace.world.capacityPerTileOf
+import org.emerge.demo.outofspace.world.heatCapacityOf
+import org.emerge.demo.outofspace.world.specificHeatOf
 
 /**
  * Grams of each Species. Mass = integer (exact conservation, reproducible across machines).
@@ -151,6 +154,11 @@ class Mixture private constructor(val masses: LongArray, val energy: Long) {
      * this exists for — see `OutofspaceSim.bite`.
      */
     fun withEnergy(energy: Long): Mixture = Mixture(masses.copyOf(), energy)
+
+    val kelvin : Int by lazy {
+        val capacity = heatCapacityOf(this)
+        if (capacity == 0L) 0 else (energy/heatCapacityOf(this)).toInt()
+    }
 
     /** Human-readable, dominant species first — for debug output and test failures. */
     override fun toString(): String {
